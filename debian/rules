@@ -40,7 +40,9 @@ override_dh_auto_configure:
 		--localstatedir=/var \
 		--sysconfdir=/etc \
 		--disable-silent-rules \
-		--enable-gcc-warnings-advisory
+		--enable-gcc-warnings-advisory \
+		--enable-lzma \
+		--enable-zstd
 
 override_dh_clean:
 	! [ -e debian/micro-revision.i ] || rm -f ./micro-revision.i
