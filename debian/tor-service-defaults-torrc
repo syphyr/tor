@@ -5,8 +5,8 @@ User debian-tor
 
 ControlSocket /run/tor/control GroupWritable RelaxDirModeCheck
 ControlSocketsGroupWritable 1
-SocksPort unix:/run/tor/socks WorldWritable
-SocksPort 9050
+SOCKSPort unix:/run/tor/socks WorldWritable
+SOCKSPort 9050
 
 CookieAuthentication 1
 CookieAuthFileGroupReadable 1
