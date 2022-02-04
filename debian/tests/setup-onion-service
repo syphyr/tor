@@ -97,7 +97,7 @@ launchshare() {
 cat > torrc << EOF
 RunAsDaemon 1
 SafeLogging 0
-SocksPort auto
+SOCKSPort auto
 DataDirectory $(pwd)/tor
 Log notice file $LOGFILE
 ControlSocket $(pwd)/ctl RelaxDirModeCheck
