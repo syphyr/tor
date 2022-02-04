@@ -93,7 +93,7 @@ install -d "$etc"
 # /usr/share/tor/tor-service-defaults-torrc-instances
 # which is unix:/run/tor-instances/$name/socks
 
-+SocksPort auto
++SOCKSPort auto
 EOF
 
 [ -x /bin/systemctl ] && systemctl daemon-reload || true
