@@ -476,6 +476,13 @@ static const config_var_t option_vars_[] = {
 #ifdef _WIN32
   V(GeoIPFile,                   FILENAME, "<default>"),
   V(GeoIPv6File,                 FILENAME, "<default>"),
+#elif defined(__ANDROID__)
+  /* Android apps use paths that are configured at runtime.
+   * /data/local/tmp is guaranteed to exist, but will only be
+   * usable by the 'shell' and 'root' users, so this fallback is
+   * for debugging only. */
+  V(GeoIPFile,                   FILENAME, "/data/local/tmp/geoip"),
+  V(GeoIPv6File,                 FILENAME, "/data/local/tmp/geoip6"),
 #else
   V(GeoIPFile,                   FILENAME,
     SHARE_DATADIR PATH_SEPARATOR "tor" PATH_SEPARATOR "geoip"),
@@ -549,7 +556,7 @@ static const config_var_t option_vars_[] = {
   V(MaxConsensusAgeForDiffs,     INTERVAL, "0 seconds"),
   VAR("MaxMemInQueues",          MEMUNIT,   MaxMemInQueues_raw, "0"),
   OBSOLETE("MaxOnionsPending"),
-  V(MaxOnionQueueDelay,          MSEC_INTERVAL, "1750 msec"),
+  V(MaxOnionQueueDelay,          MSEC_INTERVAL, "0"),
   V(MaxUnparseableDescSizeToLog, MEMUNIT, "10 MB"),
   VPORT(MetricsPort),
   V(MetricsPortPolicy,           LINELIST, NULL),
@@ -6884,6 +6891,15 @@ get_data_directory(const char *val)
     return tor_strdup(val);
   } else {
     return tor_strdup(get_windows_conf_root());
+  }
+#elif defined(__ANDROID__)
+  /* Android apps can only use paths that are configured at runtime.
+   * /data/local/tmp is guaranteed to exist, but is only usable by the
+   * 'shell' and 'root' users, so this fallback is for debugging only. */
+  if (val) {
+    return tor_strdup(val);
+  } else {
+    return tor_strdup("/data/local/tmp");
   }
 #else /* !defined(_WIN32) */
   const char *d = val;

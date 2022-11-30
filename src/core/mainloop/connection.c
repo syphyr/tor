@@ -138,6 +138,18 @@
 #include <sys/un.h>
 #endif
 
+/**
+ * Override log_err and log_warn here since stdout/stderr don't work
+ * https://gitlab.torproject.org/tpo/core/tor/-/issues/32036
+ */
+#ifdef __ANDROID__
+#include <android/log.h>
+#define log_err(ignored, ...) \
+  __android_log_print(ANDROID_LOG_ERROR, "Tor-connection", ##__VA_ARGS__)
+#define log_warn(ignored, ...) \
+  __android_log_print(ANDROID_LOG_WARN, "Tor-connection", ##__VA_ARGS__)
+#endif // __ANDROID__
+
 #include "feature/dircommon/dir_connection_st.h"
 #include "feature/control/control_connection_st.h"
 #include "core/or/entry_connection_st.h"
@@ -590,7 +602,6 @@ or_connection_new(int type, int socket_family)
     /* If we aren't told an address for this connection, we should
      * presume it isn't local, and should be rate-limited. */
     TO_CONN(or_conn)->always_rate_limit_as_remote = 1;
-    connection_or_set_ext_or_identifier(or_conn);
   }
 
   return or_conn;
@@ -658,6 +669,9 @@ listener_connection_new(int type, int socket_family)
   listener_connection_t *listener_conn =
     tor_malloc_zero(sizeof(listener_connection_t));
   connection_init(time(NULL), TO_CONN(listener_conn), type, socket_family);
+  /* Listener connections aren't accounted for with note_connection() so do
+   * this explicitly so to count them. */
+  rep_hist_note_conn_opened(false, type, socket_family);
   return listener_conn;
 }
 
@@ -957,7 +971,6 @@ connection_free_minimal(connection_t *conn)
     connection_or_clear_identity(TO_OR_CONN(conn));
   }
   if (conn->type == CONN_TYPE_OR || conn->type == CONN_TYPE_EXT_OR) {
-    tor_free(TO_OR_CONN(conn)->ext_or_conn_id);
     tor_free(TO_OR_CONN(conn)->ext_or_auth_correct_client_hash);
     tor_free(TO_OR_CONN(conn)->ext_or_transport);
   }
@@ -1160,6 +1173,10 @@ connection_mark_for_close_internal_, (connection_t *conn,
    * the number of seconds since last successful write, so
    * we get our whole 15 seconds */
   conn->timestamp_last_write_allowed = time(NULL);
+
+  /* Note the connection close. */
+  rep_hist_note_conn_closed(conn->from_listener, conn->type,
+                            conn->socket_family);
 }
 
 /** Find each connection that has hold_open_until_flushed set to
@@ -2007,6 +2024,7 @@ connection_handle_listener_read(connection_t *conn, int new_type)
         log_notice(LD_APP,
                    "Denying socks connection from untrusted address %s.",
                    fmt_and_decorate_addr(&addr));
+        rep_hist_note_conn_rejected(new_type, conn->socket_family);
         tor_close_socket(news);
         return 0;
       }
@@ -2016,6 +2034,7 @@ connection_handle_listener_read(connection_t *conn, int new_type)
       if (dir_policy_permits_address(&addr) == 0) {
         log_notice(LD_DIRSERV,"Denying dir connection from address %s.",
                    fmt_and_decorate_addr(&addr));
+        rep_hist_note_conn_rejected(new_type, conn->socket_family);
         tor_close_socket(news);
         return 0;
       }
@@ -2024,6 +2043,7 @@ connection_handle_listener_read(connection_t *conn, int new_type)
       /* Assess with the connection DoS mitigation subsystem if this address
        * can open a new connection. */
       if (dos_conn_addr_get_defense_type(&addr) == DOS_CONN_DEFENSE_CLOSE) {
+        rep_hist_note_conn_rejected(new_type, conn->socket_family);
         tor_close_socket(news);
         return 0;
       }
@@ -2074,6 +2094,9 @@ connection_handle_listener_read(connection_t *conn, int new_type)
     tor_assert(0);
   };
 
+  /* We are receiving this connection. */
+  newconn->from_listener = 1;
+
   if (connection_add(newconn) < 0) { /* no space, forget it */
     connection_free(newconn);
     return 0; /* no need to tear down the parent */
@@ -2085,7 +2108,7 @@ connection_handle_listener_read(connection_t *conn, int new_type)
     return 0;
   }
 
-  note_connection(true /* inbound */, conn->socket_family);
+  note_connection(true /* inbound */, newconn);
 
   return 0;
 }
@@ -2258,7 +2281,7 @@ connection_connect_sockaddr,(connection_t *conn,
     }
   }
 
-  note_connection(false /* outbound */, conn->socket_family);
+  note_connection(false /* outbound */, conn);
 
   /* it succeeded. we're connected. */
   log_fn(inprogress ? LOG_DEBUG : LOG_INFO, LD_NET,

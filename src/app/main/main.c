@@ -34,6 +34,9 @@
 #include "core/or/connection_or.h"
 #include "core/or/relay.h"
 #include "core/or/status.h"
+#ifdef HAVE_JNI_H
+#include "feature/api/org_torproject_jni_TorService.h"
+#endif
 #include "feature/api/tor_api.h"
 #include "feature/api/tor_api_internal.h"
 #include "feature/client/addressmap.h"
@@ -922,8 +925,11 @@ sandbox_init_filter(void)
   if (options->BridgeAuthoritativeDir)
     OPEN_DATADIR_SUFFIX("networkstatus-bridges", ".tmp");
 
-  if (authdir_mode(options))
+  if (authdir_mode(options)) {
     OPEN_DATADIR("approved-routers");
+    OPEN_CACHEDIR_SUFFIX("my-consensus-microdesc", ".tmp");
+    OPEN_CACHEDIR_SUFFIX("my-consensus-ns", ".tmp");
+  }
 
   if (options->ServerDNSResolvConfFile)
     sandbox_cfg_allow_open_filename(&cfg,
