@@ -30,6 +30,19 @@
 ## Enable DNS port
 #DNSPort 9053
 
+## Enable Bridges
+#UseBridges 1
+## Use obfs4proxy to provide all supported protocol.
+#ClientTransportPlugin obfs2,obfs3,obfs4,scramblesuit,meek exec /usr/bin/obfs4proxy
+## Use obfs4proxy to provide obfs4 protocol.
+#ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
+## Use obfsproxy to provide obfs3 protocol (deprecated)
+#ClientTransportPlugin obfs3,scramblesuit exec /usr/bin/obfsproxy managed
+## List of obfs4 bridges from https://bridges.torproject.org/options/
+## Example: Bridge obfs4 <ip:port> <key>
+## List of obfs3 bridges
+## Example: Bridge obfs3 <ip:port> <key>
+
 ## Logs go to stdout at level "notice" unless redirected by something
 ## else, like one of the below lines. You can have as many Log lines as
 ## you want.
