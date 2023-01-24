@@ -27,6 +27,9 @@
 #SOCKSPolicy accept6 FC00::/7
 #SOCKSPolicy reject *
 
+## Enable DNS port
+#DNSPort 9053
+
 ## Logs go to stdout at level "notice" unless redirected by something
 ## else, like one of the below lines. You can have as many Log lines as
 ## you want.
