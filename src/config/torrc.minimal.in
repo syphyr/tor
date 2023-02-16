@@ -38,10 +38,19 @@
 #ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
 ## Use obfsproxy to provide obfs3 protocol (deprecated)
 #ClientTransportPlugin obfs3,scramblesuit exec /usr/bin/obfsproxy managed
+## Use snowflake-client to provide snowflake protocol
+#ClientTransportPlugin snowflake exec /usr/bin/snowflake-client
+
 ## List of obfs4 bridges from https://bridges.torproject.org/options/
 ## Example: Bridge obfs4 <ip:port> <key>
 ## List of obfs3 bridges
 ## Example: Bridge obfs3 <ip:port> <key>
+
+## List of Snowflake bridges
+#Bridge snowflake 192.0.2.3:80 2B280B23E1107BB62ABFC40DDCC8824814F80A72 fingerprint=2B280B23E1107BB62ABFC40DDCC8824814F80A72 url=https://snowflake-broker.torproject.net.global.prod.fastly.net/ front=cdn.sstatic.net ice=stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.bluesip.net:3478,stun:stun.dus.net:3478,stun:stun.epygi.com:3478,stun:stun.sonetel.com:3478,stun:stun.uls.co.za:3478,stun:stun.voipgate.com:3478,stun:stun.voys.nl:3478 utls-imitate=hellorandomizedalpn
+#Bridge snowflake 192.0.2.4:80 8838024498816A039FCBBAB14E6F40A0843051FA fingerprint=8838024498816A039FCBBAB14E6F40A0843051FA url=https://snowflake-broker.torproject.net.global.prod.fastly.net/ front=cdn.sstatic.net ice=stun:stun.l.google.com:19302,stun:stun.antisip.com:3478,stun:stun.bluesip.net:3478,stun:stun.dus.net:3478,stun:stun.epygi.com:3478,stun:stun.sonetel.net:3478,stun:stun.uls.co.za:3478,stun:stun.voipgate.com:3478,stun:stun.voys.nl:3478 utls-imitate=hellorandomizedalpn
+## Snowflake requires auto SocksPort enabled
+#SocksPort auto
 
 ## Logs go to stdout at level "notice" unless redirected by something
 ## else, like one of the below lines. You can have as many Log lines as
