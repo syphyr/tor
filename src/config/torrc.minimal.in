@@ -32,10 +32,10 @@
 
 ## Enable Bridges
 #UseBridges 1
-## Use obfs4proxy to provide all supported protocol.
-#ClientTransportPlugin obfs2,obfs3,obfs4,scramblesuit,meek exec /usr/bin/obfs4proxy
-## Use obfs4proxy to provide obfs4 protocol.
-#ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy
+## Use lyrebird to provide all supported protocol.
+#ClientTransportPlugin obfs2,obfs3,obfs4,scramblesuit,meek exec /usr/bin/lyrebird
+## Use lyrebird to provide obfs4 protocol.
+#ClientTransportPlugin obfs4 exec /usr/bin/lyrebird
 ## Use obfsproxy to provide obfs3 protocol (deprecated)
 #ClientTransportPlugin obfs3,scramblesuit exec /usr/bin/obfsproxy managed
 ## Use snowflake-client to provide snowflake protocol
