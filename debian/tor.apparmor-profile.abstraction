@@ -17,7 +17,7 @@
   /usr/bin/tor r,
   /usr/sbin/tor r,
 
-  # Needed by obfs4proxy
+  # Needed by obfs4proxy/lyrebird
   /proc/sys/net/core/somaxconn r,
   /sys/kernel/mm/transparent_hugepage/hpage_pmd_size r,
 
@@ -30,3 +30,4 @@
 
   /usr/bin/obfsproxy PUx,
   /usr/bin/obfs4proxy Pix,
+  /usr/bin/lyrebird Pix,
