@@ -132,6 +132,9 @@ static uint8_t bwe_sendme_min;
  */
 static uint8_t rtt_reset_pct;
 
+/** Metric to count the number of congestion control circuits **/
+uint64_t cc_stats_circs_created = 0;
+
 /** Return the number of RTT reset that have been done. */
 uint64_t
 congestion_control_get_num_rtt_reset(void)
@@ -421,6 +424,8 @@ congestion_control_new(const circuit_params_t *params, cc_path_t path)
   congestion_control_t *cc = tor_malloc_zero(sizeof(congestion_control_t));
 
   congestion_control_init(cc, params, path);
+
+  cc_stats_circs_created++;
 
   return cc;
 }
@@ -897,7 +902,7 @@ congestion_control_update_circuit_rtt(congestion_control_t *cc,
   if (cc->min_rtt_usec == 0) {
     // If we do not have a min_rtt yet, use current ewma
     cc->min_rtt_usec = cc->ewma_rtt_usec;
-  } else if (cc->cwnd == cc->cwnd_min) {
+  } else if (cc->cwnd == cc->cwnd_min && !cc->in_slow_start) {
     // Raise min rtt if cwnd hit cwnd_min. This gets us out of a wedge state
     // if we hit cwnd_min due to an abnormally low rtt.
     uint64_t new_rtt = percent_max_mix(cc->ewma_rtt_usec, cc->min_rtt_usec,
