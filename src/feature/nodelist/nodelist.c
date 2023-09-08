@@ -761,15 +761,21 @@ nodelist_set_consensus(const networkstatus_t *ns)
     }
     node_set_country(node);
 
-    /* If we're not an authdir, believe others. */
-    if (!authdir) {
+    /* Set node's flags based on rs's flags. */
+    {
       node->is_valid = rs->is_valid;
       node->is_running = rs->is_flagged_running;
       node->is_fast = rs->is_fast;
       node->is_stable = rs->is_stable;
       node->is_possible_guard = rs->is_possible_guard;
       node->is_exit = rs->is_exit;
-      node->is_bad_exit = rs->is_bad_exit;
+      if (!authdir) {
+        /* Authdirs treat is_bad_exit specially in that they only assign
+         * it when the descriptor arrives. So when a dir auth is reading
+         * the flags from an existing consensus, don't believe the bit
+         * here, else it will get stuck 'on' forever. */
+        node->is_bad_exit = rs->is_bad_exit;
+      }
       node->is_hs_dir = rs->is_hs_dir;
       node->ipv6_preferred = 0;
       if (reachable_addr_prefer_ipv6_orport(options) &&
