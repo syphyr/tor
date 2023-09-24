@@ -17,9 +17,10 @@
   /usr/bin/tor r,
   /usr/sbin/tor r,
 
-  # Needed by obfs4proxy/lyrebird
+  # Needed by obfs4proxy/lyrebird/snowflake-client
   /proc/sys/net/core/somaxconn r,
   /sys/kernel/mm/transparent_hugepage/hpage_pmd_size r,
+  /etc/ssl/certs/java/ r,
 
   /proc/sys/kernel/random/uuid r,
   /sys/devices/system/cpu/ r,
@@ -31,3 +32,4 @@
   /usr/bin/obfsproxy PUx,
   /usr/bin/obfs4proxy Pix,
   /usr/bin/lyrebird Pix,
+  /usr/bin/snowflake-client Pix,
