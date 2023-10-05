@@ -35,6 +35,9 @@ relay_msg_t *relay_msg_decode_cell(
 relay_cell_fmt_t relay_msg_get_format(const circuit_t *circ,
                                       const crypt_path_t *cpath);
 
+/* Helpers. */
+void relay_msg_free_messages(smartlist_t *messages);
+
 #ifdef RELAY_MSG_PRIVATE
 
 #endif /* RELAY_MSG_PRIVATE */

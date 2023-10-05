@@ -13,15 +13,17 @@
 #include "core/or/conflux_cell.h"
 #include "core/or/conflux_st.h"
 #include "trunnel/conflux.h"
+#include "core/or/relay_msg.h"
+#include "core/or/relay_msg_st.h"
 
 #include "lib/crypt_ops/crypto_rand.h"
 
 static void
 test_link(void *arg)
 {
-  cell_t cell;
   conflux_cell_link_t link;
   conflux_cell_link_t *decoded_link = NULL;
+  relay_msg_t msg;
 
   (void) arg;
 
@@ -34,10 +36,12 @@ test_link(void *arg)
 
   crypto_rand((char *) link.nonce, sizeof(link.nonce));
 
-  ssize_t cell_len = build_link_cell(&link, cell.payload+RELAY_HEADER_SIZE);
+  msg.body = tor_malloc(500);
+  ssize_t cell_len = build_link_cell(&link, msg.body);
   tt_int_op(cell_len, OP_GT, 0);
+  msg.length = cell_len;
 
-  decoded_link = conflux_cell_parse_link(&cell, cell_len);
+  decoded_link = conflux_cell_parse_link(&msg);
   tt_assert(decoded_link);
 
   uint8_t buf[RELAY_PAYLOAD_SIZE];
@@ -49,6 +53,7 @@ test_link(void *arg)
   tor_free(decoded_link);
 
  done:
+  relay_msg_clear(&msg);
   tor_free(decoded_link);
 }
 
@@ -57,4 +62,3 @@ struct testcase_t conflux_cell_tests[] = {
 
   END_OF_TESTCASES
 };
-
