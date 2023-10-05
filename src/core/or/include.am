@@ -107,6 +107,8 @@ noinst_HEADERS +=					\
 	src/core/or/relay.h				\
 	src/core/or/relay_cell.h			\
 	src/core/or/relay_crypto_st.h			\
+	src/core/or/relay_msg.h		        	\
+	src/core/or/relay_msg_st.h	        	\
 	src/core/or/scheduler.h				\
 	src/core/or/sendme.h				\
 	src/core/or/congestion_control_flow.h				\
