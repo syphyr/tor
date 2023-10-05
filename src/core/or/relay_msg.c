@@ -8,13 +8,20 @@
 
 #define RELAY_MSG_PRIVATE
 
-#include "core/or/relay_msg.h"
+#include "app/config/config.h"
 
+#include "core/or/cell_st.h"
+#include "core/or/circuitlist.h"
+#include "core/or/relay.h"
+#include "core/or/relay_cell.h"
+#include "core/or/relay_msg.h"
 #include "core/or/relay_cell.h"
 #include "lib/crypt_ops/crypto_rand.h"
 
 #include "core/or/cell_st.h"
 #include "core/or/relay_msg_st.h"
+#include "core/or/crypt_path_st.h"
+#include "core/or/or_circuit_st.h"
 
 /*
  * Public API
@@ -53,6 +60,36 @@ relay_msg_clear(relay_msg_t *msg)
 #define V1_STREAM_ID_OFFSET 19
 #define V1_PAYLOAD_OFFSET_NO_STREAM_ID 19
 #define V1_PAYLOAD_OFFSET_WITH_STREAM_ID 21
+
+/** Allocate a new relay message and copy the content of the given message. */
+relay_msg_t *
+relay_msg_copy(const relay_msg_t *msg)
+{
+  relay_msg_t *new = tor_malloc_zero(sizeof(*msg));
+
+  memcpy(new, msg, sizeof(*msg));
+  new->body = tor_memdup_nulterm(msg->body, msg->length);
+  memcpy(new->body, msg->body, new->length);
+
+  return new;
+}
+
+/** Set a relay message data into the given message. Useful for stack allocated
+ * messages. */
+void
+relay_msg_set(const uint8_t relay_cell_proto, const uint8_t cmd,
+              const streamid_t stream_id, const uint8_t *payload,
+              const uint16_t payload_len, relay_msg_t *msg)
+{
+  // TODO #41051: Should this free msg->body?
+  msg->relay_cell_proto = relay_cell_proto;
+  msg->command = cmd;
+  msg->stream_id = stream_id;
+
+  msg->length = payload_len;
+  msg->body = tor_malloc_zero(msg->length);
+  memcpy(msg->body, payload, msg->length);
+}
 
 /* Add random bytes to the unused portion of the payload, to foil attacks
  * where the other side can predict all of the bytes in the payload and thus
@@ -243,5 +280,23 @@ relay_msg_decode_cell(relay_cell_fmt_t format,
     default:
       tor_fragile_assert();
       return NULL;
+  }
+}
+
+/** Return the format to use.
+ *
+ * NULL can be passed but not for both. */
+/* TODO #41051: Rename this. */
+relay_cell_fmt_t
+relay_msg_get_format(const circuit_t *circ, const crypt_path_t *cpath)
+{
+  if (circ && CIRCUIT_IS_ORCIRC(circ)) {
+    return CONST_TO_OR_CIRCUIT(circ)->relay_cell_format;
+  } else if (cpath) {
+    return cpath->relay_cell_format;
+  } else {
+    /* We end up here when both params are NULL, which is not allowed, or when
+     * only an origin circuit is given (which again is not allowed). */
+    tor_assert_unreached();
   }
 }
