@@ -64,6 +64,8 @@ override_dh_auto_build:
 	a2x -f manpage debian/tor-instance-create.8.txt
 	chmod +x debian/systemd/tor-generator
 
+override_dh_auto_test:
+
 override_dh_install-arch:
 	dh_install --fail-missing
 
@@ -76,5 +78,6 @@ override_dh_install-arch:
 
 override_dh_strip:
 	dh_strip --dbgsym-migration='tor-dbg (<< 0.3.1.5-alpha)'
+
 override_dh_installinit:
 	dh_installinit --error-handler=tor_error_init
