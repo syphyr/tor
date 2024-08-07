@@ -227,6 +227,7 @@ crypto_openssl_early_init(void)
 
     setup_openssl_threading();
 
+#ifdef OPENSSL_1_1_API
     unsigned long version_num = tor_OpenSSL_version_num();
     const char *version_str = crypto_openssl_get_version_str();
     if (version_num == OPENSSL_VERSION_NUMBER &&
@@ -248,6 +249,7 @@ crypto_openssl_early_init(void)
                (unsigned long)OPENSSL_VERSION_NUMBER, OPENSSL_VERSION_TEXT,
                version_num, version_str);
     }
+#endif /* defined(OPENSSL_1_1_API) */
 
     crypto_force_rand_ssleay();
 }
