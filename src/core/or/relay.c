@@ -1343,7 +1343,7 @@ connection_ap_handshake_socks_got_resolved_cell(entry_connection_t *conn,
   /* Now convert it to the ugly old interface */
   if (! addr_best) {
     connection_ap_handshake_socks_resolved(conn,
-                                     RESOLVED_TYPE_ERROR,0,NULL,-1,-1);
+                                     RESOLVED_TYPE_NOERROR,0,NULL,-1,-1);
     return;
   }
 
