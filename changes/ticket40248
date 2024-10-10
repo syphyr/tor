@@ -1,0 +1,2 @@
+  o Minor feature (DNS, client):
+    - Add 0xF2 returned code in case of an empty DNS response. Closes ticket 40248
