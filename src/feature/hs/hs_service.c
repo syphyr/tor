@@ -264,7 +264,9 @@ set_service_default_config(hs_service_config_t *c,
   c->intro_dos_rate_per_sec = HS_CONFIG_V3_DOS_DEFENSE_RATE_PER_SEC_DEFAULT;
   c->intro_dos_burst_per_sec = HS_CONFIG_V3_DOS_DEFENSE_BURST_PER_SEC_DEFAULT;
   /* PoW default options. */
-  c->has_dos_defense_enabled = HS_CONFIG_V3_POW_DEFENSES_DEFAULT;
+  c->has_pow_defenses_enabled = HS_CONFIG_V3_POW_DEFENSES_DEFAULT;
+  c->pow_queue_rate = HS_CONFIG_V3_POW_QUEUE_RATE;
+  c->pow_queue_burst = HS_CONFIG_V3_POW_QUEUE_BURST;
 }
 
 /** Initialize PoW defenses */
@@ -4063,6 +4065,9 @@ hs_service_add_ephemeral_status_t
 hs_service_add_ephemeral(ed25519_secret_key_t *sk, smartlist_t *ports,
                          int max_streams_per_rdv_circuit,
                          int max_streams_close_circuit,
+                         int pow_defenses_enabled,
+                         uint32_t pow_queue_rate,
+                         uint32_t pow_queue_burst,
                          smartlist_t *auth_clients_v3, char **address_out)
 {
   hs_service_add_ephemeral_status_t ret;
@@ -4082,6 +4087,9 @@ hs_service_add_ephemeral(ed25519_secret_key_t *sk, smartlist_t *ports,
   service->config.is_ephemeral = 1;
   smartlist_free(service->config.ports);
   service->config.ports = ports;
+  service->config.has_pow_defenses_enabled = pow_defenses_enabled;
+  service->config.pow_queue_rate = pow_queue_rate;
+  service->config.pow_queue_burst = pow_queue_burst;
 
   /* Handle the keys. */
   memcpy(&service->keys.identity_sk, sk, sizeof(service->keys.identity_sk));
