@@ -1,0 +1,4 @@
+  o Minor bugfixes (tor-resolve):
+    -  Create socket with correct family as given by sockshost, fixes IPv6.
+       Fixes bug 40982; bugfix on 0.4.9.0-alpha.
+
