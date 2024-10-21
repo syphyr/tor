@@ -301,7 +301,6 @@ struct curve25519_public_key_t;
 #define RESOLVED_TYPE_IPV6 6
 #define RESOLVED_TYPE_ERROR_TRANSIENT 0xF0
 #define RESOLVED_TYPE_ERROR 0xF1
-#define RESOLVED_TYPE_NOERROR 0xF2
 
 /* Negative reasons are internal: we never send them in a DESTROY or TRUNCATE
  * call; they only go to the controller for tracking  */
