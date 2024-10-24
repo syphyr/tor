@@ -1020,7 +1020,7 @@ circuit_stream_is_being_handled(entry_connection_t *conn,
     if (CIRCUIT_IS_ORIGIN(circ) &&
         !circ->marked_for_close &&
         (circ->purpose == CIRCUIT_PURPOSE_C_GENERAL ||
-        circ->purpose == CIRCUIT_PURPOSE_CONFLUX_LINKED) &&
+         circ->purpose == CIRCUIT_PURPOSE_CONFLUX_LINKED) &&
         (!circ->timestamp_dirty ||
          circ->timestamp_dirty + get_options()->MaxCircuitDirtiness > now)) {
       origin_circuit_t *origin_circ = TO_ORIGIN_CIRCUIT(circ);
