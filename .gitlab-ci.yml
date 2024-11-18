@@ -228,7 +228,7 @@ debian-disable-relay:
 #####
 # GPL licensed mode, enables pow module
 debian-gpl:
-  image: debian:buster
+  image: debian:bullseye
   <<: *debian-template
   variables:
     GPL: "yes"
