@@ -130,7 +130,10 @@ debian-minimal:
 debian-i386-minimal:
   # TODO: Use a TPA-maintained image when there is one.
   # See https://gitlab.torproject.org/tpo/tpa/base-images/-/issues/3
-  image: i386/debian:bullseye
+  image:
+    name: i386/debian:bullseye
+    docker:
+      platform: linux/386
   <<: *debian-template
   script:
     - ./scripts/ci/ci-driver.sh
