@@ -17,7 +17,7 @@
   /usr/bin/tor r,
   /usr/sbin/tor r,
 
-  # Needed by obfs4proxy/lyrebird/snowflake-client/webtunnel
+  # Needed by obfs4proxy/lyrebird/snowflake-client/webtunnel/conjure
   /proc/sys/net/core/somaxconn r,
   /sys/kernel/mm/transparent_hugepage/hpage_pmd_size r,
   /etc/ssl/certs/java/ r,
@@ -28,9 +28,11 @@
 
   /etc/tor/* r,
   /usr/share/tor/** r,
+  /usr/bin/conjure-client r,
 
   /usr/bin/obfsproxy PUx,
   /usr/bin/obfs4proxy Pix,
   /usr/bin/lyrebird Pix,
   /usr/bin/snowflake-client Pix,
   /usr/bin/webtunnel-client Pix,
+  /usr/bin/conjure-client Pix,
