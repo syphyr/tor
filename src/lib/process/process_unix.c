@@ -137,7 +137,7 @@ process_unix_exec(process_t *process)
   int stdin_pipe[2];
   int stdout_pipe[2];
   int stderr_pipe[2];
-  int retval, fd;
+  int retval;
 
   unix_process = process_get_unix_process(process);
 
@@ -240,11 +240,9 @@ process_unix_exec(process_t *process)
     close(stdin_pipe[0]);
     close(stdin_pipe[1]);
 
-    /* Close all other fds, including the read end of the pipe.  XXX: We should
-     * now be doing enough FD_CLOEXEC setting to make this needless.
-     */
-    for (fd = STDERR_FILENO + 1; fd < max_fd; fd++)
-      close(fd);
+    /* Note that we don't close all FDs from here, which we used to do, because
+     * all our open are CLOEXEC. With a very large maximum number of FDs, the
+     * loop was taking a long time: #40990 */
 
     /* Create the argv value for our new process. */
     char **argv = process_get_argv(process);
