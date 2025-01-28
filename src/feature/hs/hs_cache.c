@@ -13,6 +13,7 @@
 #include "app/config/config.h"
 #include "lib/crypt_ops/crypto_format.h"
 #include "lib/crypt_ops/crypto_util.h"
+#include "lib/cc/torint.h"
 #include "feature/hs/hs_ident.h"
 #include "feature/hs/hs_common.h"
 #include "feature/hs/hs_client.h"
@@ -247,7 +248,7 @@ cache_clean_v3_by_downloaded_as_dir(const uint64_t target,
   }
 
   log_info(LD_REND, "Cleaning HS cache for downloaded target of %" PRIu64
-                    ". Maximum bytes to removed: %zu",
+                    ". Maximum bytes to removed: %" TOR_PRIuSZ,
            target, max_remove_bytes);
 
   DIGEST256MAP_FOREACH_MODIFY(hs_cache_v3_dir, key,
@@ -272,7 +273,8 @@ cache_clean_v3_by_downloaded_as_dir(const uint64_t target,
       char key_b64[BASE64_DIGEST256_LEN + 1];
       digest256_to_base64(key_b64, (const char *) key);
       log_info(LD_REND, "Removing v3 descriptor '%s' from HSDir cache. "
-                        "Downloaded %" PRIu64 " times and size of %zu bytes",
+                        "Downloaded %" PRIu64 " times and "
+                        "size of %" TOR_PRIuSZ " bytes",
                safe_str_client(key_b64), entry->n_downloaded, entry_size);
     }
     /* Remove it from our cache. */
