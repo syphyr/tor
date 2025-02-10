@@ -16,6 +16,7 @@ struct curve25519_public_key_t;
 struct ed25519_public_key_t;
 struct nodefamily_t;
 struct short_policy_t;
+struct smartlist_t;
 
 #include "ext/ht.h"
 
@@ -73,6 +74,11 @@ struct microdesc_t {
   uint16_t ipv6_orport;
   /** As routerinfo_t.family, with readable members parsed. */
   struct nodefamily_t *family;
+  /** A list of strings representing router family IDs.
+   * May be null; Copied from family-ids.
+   * (Happy families only.) */
+  struct smartlist_t *family_ids;
+
   /** IPv4 exit policy summary */
   struct short_policy_t *exit_policy;
   /** IPv6 exit policy summary */
