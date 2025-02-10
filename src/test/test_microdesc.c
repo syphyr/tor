@@ -789,6 +789,44 @@ test_md_parse_no_onion_key(void *arg)
   teardown_capture_of_logs();
 }
 
+static void
+test_md_parse_family_ids(void *arg)
+{
+  (void)arg;
+
+  const char GOOD_MDS[] =
+    "onion-key\n"
+    "ntor-onion-key VHlycmFueSwgbGlrZSBoZWxsLCBpcyBub3QgZWFzaWw\n"
+    "id ed25519 eSBjb25xdWVyZWQ7IHlldCB3ZSBoYXZlIHRoaXMgY28\n"
+    "family-ids\n"
+    "onion-key\n"
+    "ntor-onion-key bnNvbGF0aW9uIHdpdGggdXMsIHRoYXQgdGhlIGhhcmQ\n"
+    "id ed25519 ZXIgdGhlIGNvbmZsaWN0LCB0aGUgbW9yZSBnbG9yaW8\n"
+    "family-ids ed25519:dXMgdGhlIHRyaXVtcGguICAgIC1UaG9tYXMgUGFpbmU "
+       "other:Example\n";
+  smartlist_t *mds = NULL;
+  mds = microdescs_parse_from_string(GOOD_MDS, NULL, 1, SAVED_NOWHERE, NULL);
+  tt_assert(mds);
+  tt_int_op(smartlist_len(mds), OP_EQ, 2);
+
+  const microdesc_t *md1 = smartlist_get(mds, 0);
+  tt_ptr_op(md1->family_ids, OP_EQ, NULL);
+
+  const microdesc_t *md2 = smartlist_get(mds, 1);
+  tt_ptr_op(md2->family_ids, OP_NE, NULL);
+  tt_int_op(smartlist_len(md2->family_ids), OP_EQ, 2);
+  tt_str_op(smartlist_get(md2->family_ids, 0), OP_EQ,
+            "ed25519:dXMgdGhlIHRyaXVtcGguICAgIC1UaG9tYXMgUGFpbmU");
+  tt_str_op(smartlist_get(md2->family_ids, 1), OP_EQ,
+            "other:Example");
+
+ done:
+  if (mds) {
+    SMARTLIST_FOREACH(mds, microdesc_t *, m, microdesc_free(m));
+    smartlist_free(mds);
+  }
+}
+
 static int mock_rgsbd_called = 0;
 static routerstatus_t *mock_rgsbd_val_a = NULL;
 static routerstatus_t *mock_rgsbd_val_b = NULL;
@@ -924,6 +962,7 @@ struct testcase_t microdesc_tests[] = {
   { "parse", test_md_parse, 0, NULL, NULL },
   { "parse_id_ed25519", test_md_parse_id_ed25519, 0, NULL, NULL },
   { "parse_no_onion_key", test_md_parse_no_onion_key, 0, NULL, NULL },
+  { "parse_family_ids", test_md_parse_family_ids, 0, NULL, NULL },
   { "reject_cache", test_md_reject_cache, TT_FORK, NULL, NULL },
   { "corrupt_desc", test_md_corrupt_desc, TT_FORK, NULL, NULL },
   END_OF_TESTCASES
