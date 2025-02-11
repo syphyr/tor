@@ -2172,6 +2172,38 @@ node_has_declared_family_list(const node_t *node)
 }
 
 /**
+ * Return the listed family IDs of `a`, if it has any.
+ */
+static const smartlist_t *
+node_get_family_ids(const node_t *node)
+{
+  if (node->ri && node->ri->family_ids) {
+    return node->ri->family_ids;
+  } else if (node->md && node->md->family_ids) {
+    return node->md->family_ids;
+  } else {
+    return NULL;
+  }
+}
+
+/**
+ * Return true iff `a` and `b` have any family ID in common.
+ **/
+static bool
+nodes_have_common_family_id(const node_t *a, const node_t *b)
+{
+  const smartlist_t *ids_a = node_get_family_ids(a);
+  const smartlist_t *ids_b = node_get_family_ids(b);
+  if (ids_a == NULL || ids_b == NULL)
+    return false;
+  SMARTLIST_FOREACH(ids_a, const char *, id, {
+      if (smartlist_contains_string(ids_b, id))
+        return true;
+    });
+  return false;
+}
+
+/**
  * Add to <b>out</b> every node_t that is listed by <b>node</b> as being in
  * its family.  (Note that these nodes are not in node's family unless they
  * also agree that node is in their family.)
@@ -2217,9 +2249,17 @@ nodes_in_same_family(const node_t *node1, const node_t *node2)
       return 1;
   }
 
-  /* Are they in the same family because the agree they are? */
-  if (node_family_list_contains(node1, node2) &&
+  /* Are they in the same family because they agree they are? */
+  if (use_family_lists &&
+      node_family_list_contains(node1, node2) &&
       node_family_list_contains(node2, node1)) {
+    return 1;
+  }
+
+  /* Are they in the same family because they have a common
+   * verified family ID? */
+  if (use_family_ids &&
+      nodes_have_common_family_id(node1, node2)) {
     return 1;
   }
 
@@ -2279,7 +2319,8 @@ nodelist_add_node_and_family(smartlist_t *sl, const node_t *node)
 
   /* Now, add all nodes in the declared family of this node, if they
    * also declare this node to be in their family. */
-  if (node_has_declared_family_list(node)) {
+  if (use_family_lists &&
+      node_has_declared_family_list(node)) {
     smartlist_t *declared_family = smartlist_new();
     node_lookup_declared_family_list(declared_family, node);
 
@@ -2291,6 +2332,16 @@ nodelist_add_node_and_family(smartlist_t *sl, const node_t *node)
       }
     } SMARTLIST_FOREACH_END(node2);
     smartlist_free(declared_family);
+  }
+
+  /* Now add all the nodes that share a verified family ID with this node. */
+  if (use_family_ids &&
+      node_get_family_ids(node)) {
+    SMARTLIST_FOREACH(all_nodes, const node_t *, node2, {
+        if (nodes_have_common_family_id(node, node2)) {
+          smartlist_add(sl, (void *)node2);
+        }
+      });
   }
 
   /* If the user declared any families locally, honor those too. */
