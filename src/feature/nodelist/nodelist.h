@@ -170,9 +170,10 @@ int count_loading_descriptors_progress(void);
 STATIC int node_nickname_matches(const node_t *node, const char *nickname);
 STATIC int node_in_nickname_smartlist(const smartlist_t *lst,
                                       const node_t *node);
-STATIC int node_family_contains(const node_t *n1, const node_t *n2);
-STATIC bool node_has_declared_family(const node_t *node);
-STATIC void node_lookup_declared_family(smartlist_t *out, const node_t *node);
+STATIC int node_family_list_contains(const node_t *n1, const node_t *n2);
+STATIC bool node_has_declared_family_list(const node_t *node);
+STATIC void node_lookup_declared_family_list(smartlist_t *out,
+                                             const node_t *node);
 
 #ifdef TOR_UNIT_TESTS
 

@@ -2142,7 +2142,7 @@ node_in_nickname_smartlist(const smartlist_t *lst, const node_t *node)
 
 /** Return true iff n1's declared family contains n2. */
 STATIC int
-node_family_contains(const node_t *n1, const node_t *n2)
+node_family_list_contains(const node_t *n1, const node_t *n2)
 {
   if (n1->ri && n1->ri->declared_family) {
     return node_in_nickname_smartlist(n1->ri->declared_family, n2);
@@ -2157,7 +2157,7 @@ node_family_contains(const node_t *n1, const node_t *n2)
  * Return true iff <b>node</b> has declared a nonempty family.
  **/
 STATIC bool
-node_has_declared_family(const node_t *node)
+node_has_declared_family_list(const node_t *node)
 {
   if (node->ri && node->ri->declared_family &&
       smartlist_len(node->ri->declared_family)) {
@@ -2177,7 +2177,7 @@ node_has_declared_family(const node_t *node)
  * also agree that node is in their family.)
  **/
 STATIC void
-node_lookup_declared_family(smartlist_t *out, const node_t *node)
+node_lookup_declared_family_list(smartlist_t *out, const node_t *node)
 {
   if (node->ri && node->ri->declared_family &&
       smartlist_len(node->ri->declared_family)) {
@@ -2218,8 +2218,8 @@ nodes_in_same_family(const node_t *node1, const node_t *node2)
   }
 
   /* Are they in the same family because the agree they are? */
-  if (node_family_contains(node1, node2) &&
-      node_family_contains(node2, node1)) {
+  if (node_family_list_contains(node1, node2) &&
+      node_family_list_contains(node2, node1)) {
     return 1;
   }
 
@@ -2279,14 +2279,14 @@ nodelist_add_node_and_family(smartlist_t *sl, const node_t *node)
 
   /* Now, add all nodes in the declared family of this node, if they
    * also declare this node to be in their family. */
-  if (node_has_declared_family(node)) {
+  if (node_has_declared_family_list(node)) {
     smartlist_t *declared_family = smartlist_new();
-    node_lookup_declared_family(declared_family, node);
+    node_lookup_declared_family_list(declared_family, node);
 
     /* Add every r such that router declares familyness with node, and node
      * declares familyhood with router. */
     SMARTLIST_FOREACH_BEGIN(declared_family, const node_t *, node2) {
-      if (node_family_contains(node2, node)) {
+      if (node_family_list_contains(node2, node)) {
         smartlist_add(sl, (void*)node2);
       }
     } SMARTLIST_FOREACH_END(node2);
