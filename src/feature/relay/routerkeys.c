@@ -44,6 +44,9 @@ static uint8_t *rsa_ed_crosscert = NULL;
 static size_t rsa_ed_crosscert_len = 0;
 static time_t rsa_ed_crosscert_expiration = 0;
 
+// list of ed25519_keypair_t
+static smartlist_t *family_id_keys = NULL;
+
 /**
  * Running as a server: load, reload, or refresh our ed25519 keys and
  * certificates, creating and saving new ones as needed.
@@ -674,6 +677,43 @@ get_current_auth_key_cert(void)
   return auth_key_cert;
 }
 
+/**
+ * Return a list of our current family id keypairs,
+ * as a list of `ed25519_keypair_t`.
+ *
+ * Never returns NULL.
+ *
+ * TODO PROP321: Right now this is only used in testing;
+ * when we add relay support we'll need a way to actually
+ * read these keys from disk.
+ **/
+const smartlist_t *
+get_current_family_id_keys(void)
+{
+  if (family_id_keys == NULL)
+    family_id_keys = smartlist_new();
+  return family_id_keys;
+}
+
+#ifdef TOR_UNIT_TESTS
+/**
+ * Testing only: Replace our list of family ID keys with `family_id_keys`,
+ * which must be a list of `ed25519_keypair_t`.
+ *
+ * Takes ownership of its input.
+ */
+void
+set_mock_family_id_keys(smartlist_t *keys)
+{
+  if (family_id_keys) {
+    SMARTLIST_FOREACH(family_id_keys, ed25519_keypair_t *, kp,
+                      ed25519_keypair_free(kp));
+    smartlist_free(family_id_keys);
+  }
+  family_id_keys = keys;
+}
+#endif
+
 void
 get_master_rsa_crosscert(const uint8_t **cert_out,
                          size_t *size_out)
@@ -746,6 +786,12 @@ routerkeys_free_all(void)
   ed25519_keypair_free(master_identity_key);
   ed25519_keypair_free(master_signing_key);
   ed25519_keypair_free(current_auth_key);
+  if (family_id_keys) {
+    SMARTLIST_FOREACH(family_id_keys, ed25519_keypair_t *, kp,
+                      ed25519_keypair_free(kp));
+    smartlist_free(family_id_keys);
+  }
+
   tor_cert_free(signing_key_cert);
   tor_cert_free(link_cert_cert);
   tor_cert_free(auth_key_cert);

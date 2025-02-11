@@ -3034,6 +3034,34 @@ router_dump_router_to_string(routerinfo_t *router,
     we_are_hibernating() ? "hibernating 1\n" : "",
     "hidden-service-dir\n");
 
+  SMARTLIST_FOREACH_BEGIN(get_current_family_id_keys(),
+                          const ed25519_keypair_t *, k_family_id) {
+    // TODO PROP321: We may want this to be configurable;
+    // we can probably use a smaller value.
+#define FAMILY_CERT_LIFETIME (30*86400)
+    tor_cert_t *family_cert = tor_cert_create_ed25519(
+          k_family_id,
+          CERT_TYPE_FAMILY_V_IDENTITY,
+          get_master_identity_key(),
+          router->cache_info.published_on,
+          FAMILY_CERT_LIFETIME, CERT_FLAG_INCLUDE_SIGNING_KEY);
+    char family_cert_base64[256];
+    if (base64_encode(family_cert_base64, sizeof(family_cert_base64),
+                      (const char*) family_cert->encoded,
+                      family_cert->encoded_len, BASE64_ENCODE_MULTILINE) < 0) {
+      log_err(LD_BUG, "Base64 encoding family cert failed!?");
+      tor_cert_free(family_cert);
+      goto err;
+    }
+    smartlist_add_asprintf(chunks,
+                           "family-cert\n"
+                           "-----BEGIN FAMILY CERT-----\n"
+                           "%s"
+                           "-----END FAMILY CERT-----\n",
+                           family_cert_base64);
+    tor_cert_free(family_cert);
+  } SMARTLIST_FOREACH_END(k_family_id);
+
   if (options->ContactInfo && strlen(options->ContactInfo)) {
     const char *ci = options->ContactInfo;
     if (strchr(ci, '\n') || strchr(ci, '\r'))

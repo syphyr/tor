@@ -21,6 +21,8 @@ const ed25519_keypair_t *get_current_auth_keypair(void);
 const struct tor_cert_st *get_current_link_cert_cert(void);
 const struct tor_cert_st *get_current_auth_key_cert(void);
 
+const smartlist_t *get_current_family_id_keys(void);
+
 void get_master_rsa_crosscert(const uint8_t **cert_out,
                               size_t *size_out);
 
@@ -126,6 +128,7 @@ make_tap_onion_key_crosscert(const crypto_pk_t *onion_key,
 #ifdef TOR_UNIT_TESTS
 const ed25519_keypair_t *get_master_identity_keypair(void);
 void init_mock_ed_keys(const crypto_pk_t *rsa_identity_key);
+void set_mock_family_id_keys(smartlist_t *keys);
 #endif
 
 #endif /* !defined(TOR_ROUTERKEYS_H) */
