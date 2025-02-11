@@ -21,6 +21,7 @@
 #define RELAY_PRIVATE
 #define ROUTERLIST_PRIVATE
 #define ROUTER_PRIVATE
+#define ROUTERPARSE_PRIVATE
 #define UNPARSEABLE_PRIVATE
 #define VOTEFLAGS_PRIVATE
 
@@ -864,7 +865,20 @@ test_dir_formats_rsa_ed25519(void *arg)
   tt_str_op(buf, OP_EQ, buf2);
   tor_free(buf);
 
+  /* We make a couple of changes now before we make the desc that we're going
+   * to parse and check the signature on. */
   setup_mock_configured_ports(r2->ipv4_orport, 0);
+
+  ed25519_keypair_t family_1;
+  ed25519_keypair_t family_2;
+  ed25519_keypair_generate(&family_1, 0);
+  ed25519_keypair_generate(&family_2, 0);
+  {
+    smartlist_t *family_keys = smartlist_new();
+    smartlist_add(family_keys, tor_memdup(&family_1, sizeof(family_1)));
+    smartlist_add(family_keys, tor_memdup(&family_2, sizeof(family_2)));
+    set_mock_family_id_keys(family_keys); // takes ownership.
+  }
 
   buf = router_dump_router_to_string(r2, r2->identity_pkey,
                                      r2_onion_pkey,
@@ -882,6 +896,20 @@ test_dir_formats_rsa_ed25519(void *arg)
   tt_mem_op(rp2->onion_curve25519_pkey->public_key,OP_EQ,
              r2->onion_curve25519_pkey->public_key,
              CURVE25519_PUBKEY_LEN);
+
+  // Check family ids.
+  tt_assert(rp2->family_ids != NULL);
+  tt_int_op(smartlist_len(rp2->family_ids), OP_EQ, 2);
+ {
+    char k[ED25519_BASE64_LEN+1];
+    char b[sizeof(k)+16];
+    ed25519_public_to_base64(k, &family_1.pubkey);
+    tor_snprintf(b, sizeof(b), "ed25519:%s", k);
+    tt_assert(smartlist_contains_string(rp2->family_ids, b));
+    ed25519_public_to_base64(k, &family_2.pubkey);
+    tor_snprintf(b, sizeof(b), "ed25519:%s", k);
+    tt_assert(smartlist_contains_string(rp2->family_ids, b));
+  }
 
   CHECK_PARSED_EXIT_POLICY(rp2);
 
@@ -7268,6 +7296,126 @@ test_dir_dirserv_add_own_fingerprint(void *arg)
   crypto_pk_free(pk);
 }
 
+static void
+test_dir_parse_family_cert(void *arg)
+{
+  (void)arg;
+  ed25519_keypair_t kp_family;
+  ed25519_keypair_t kp_id;
+  char family_b64[ED25519_BASE64_LEN+1];
+  tor_cert_t *cert = NULL;
+  int r;
+
+  time_t now = 1739288377;
+  time_t lifetime = 86400;
+  time_t got_expiration = -1;
+  char *got_family_id = NULL;
+  char *expect_family_id = NULL;
+
+  setup_capture_of_logs(LOG_WARN);
+
+  ed25519_keypair_generate(&kp_family, 0);
+  ed25519_keypair_generate(&kp_id, 0);
+  ed25519_public_to_base64(family_b64, &kp_family.pubkey);
+  tor_asprintf(&expect_family_id, "ed25519:%s", family_b64);
+
+  // Wrong type.
+  cert = tor_cert_create_ed25519(&kp_family,
+                                 CERT_TYPE_ID_SIGNING,
+                                 &kp_id.pubkey,
+                                 now, lifetime,
+                                 CERT_FLAG_INCLUDE_SIGNING_KEY);
+  tt_assert(cert);
+  r = check_one_family_cert(cert->encoded, cert->encoded_len,
+                            &kp_id.pubkey,
+                            &got_family_id,
+                            &got_expiration);
+  tt_ptr_op(got_family_id, OP_EQ, NULL);
+  tt_int_op(r, OP_EQ, -1);
+  expect_single_log_msg_containing("Wrong cert type");
+  mock_clean_saved_logs();
+  tor_cert_free(cert);
+
+  // Family key not included.
+  cert = tor_cert_create_ed25519(&kp_family,
+                                 CERT_TYPE_FAMILY_V_IDENTITY,
+                                 &kp_id.pubkey,
+                                 now, lifetime,
+                                 0);
+  tt_assert(cert);
+  r = check_one_family_cert(cert->encoded, cert->encoded_len,
+                            &kp_id.pubkey,
+                            &got_family_id,
+                            &got_expiration);
+  tt_ptr_op(got_family_id, OP_EQ, NULL);
+  tt_int_op(r, OP_EQ, -1);
+  expect_single_log_msg_containing("Missing family key");
+  mock_clean_saved_logs();
+  tor_cert_free(cert);
+
+  // Certified key isn't correct
+  cert = tor_cert_create_ed25519(&kp_family,
+                                 CERT_TYPE_FAMILY_V_IDENTITY,
+                                 &kp_family.pubkey,
+                                 now, lifetime,
+                                 CERT_FLAG_INCLUDE_SIGNING_KEY);
+  tt_assert(cert);
+  r = check_one_family_cert(cert->encoded, cert->encoded_len,
+                            &kp_id.pubkey,
+                            &got_family_id,
+                            &got_expiration);
+  tt_ptr_op(got_family_id, OP_EQ, NULL);
+  tt_int_op(r, OP_EQ, -1);
+  expect_single_log_msg_containing("Key mismatch");
+  mock_clean_saved_logs();
+  tor_cert_free(cert);
+
+  // Signature is bogus.
+  cert = tor_cert_create_ed25519(&kp_family,
+                                 CERT_TYPE_FAMILY_V_IDENTITY,
+                                 &kp_id.pubkey,
+                                 now, lifetime,
+                                 CERT_FLAG_INCLUDE_SIGNING_KEY);
+  tt_assert(cert);
+  cert->encoded[cert->encoded_len-1] ^= 0x77; // corrupt the signature
+  r = check_one_family_cert(cert->encoded, cert->encoded_len,
+                            &kp_id.pubkey,
+                            &got_family_id,
+                            &got_expiration);
+  tt_ptr_op(got_family_id, OP_EQ, NULL);
+  tt_int_op(r, OP_EQ, -1);
+  expect_single_log_msg_containing("Invalid signature");
+  mock_clean_saved_logs();
+  tor_cert_free(cert);
+
+  // Everything is okay!
+  cert = tor_cert_create_ed25519(&kp_family,
+                                 CERT_TYPE_FAMILY_V_IDENTITY,
+                                 &kp_id.pubkey,
+                                 now, lifetime,
+                                 CERT_FLAG_INCLUDE_SIGNING_KEY);
+  tt_assert(cert);
+  got_expiration = -1;
+  r = check_one_family_cert(cert->encoded, cert->encoded_len,
+                            &kp_id.pubkey,
+                            &got_family_id,
+                            &got_expiration);
+  expect_no_log_entry();
+  tt_int_op(r, OP_EQ, 0);
+  tt_int_op(got_expiration, OP_NE, -1);
+  // Cert expirations have 1-hour granularity
+  tt_int_op(got_expiration, OP_GE, now + lifetime);
+  tt_int_op(got_expiration, OP_LT, now + lifetime + 3601);
+  tt_str_op(got_family_id, OP_EQ, expect_family_id);
+  tt_assert(!strchr(got_family_id, '=')); // not family
+
+ done:
+  tor_cert_free(cert);
+  tor_free(got_family_id);
+  tor_free(expect_family_id);
+  teardown_capture_of_logs();
+}
+
 #ifndef COCCI
 #define DIR_LEGACY(name)                             \
   { #name, test_dir_ ## name , TT_FORK, NULL, NULL }
@@ -7354,5 +7502,6 @@ struct testcase_t dir_tests[] = {
   DIR(dirserv_router_get_status, TT_FORK),
   DIR(dirserv_would_reject_router, TT_FORK),
   DIR(dirserv_add_own_fingerprint, TT_FORK),
+  DIR(parse_family_cert, TT_FORK),
   END_OF_TESTCASES
 };

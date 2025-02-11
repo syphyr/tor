@@ -3042,7 +3042,8 @@ router_dump_router_to_string(routerinfo_t *router,
     tor_cert_t *family_cert = tor_cert_create_ed25519(
           k_family_id,
           CERT_TYPE_FAMILY_V_IDENTITY,
-          get_master_identity_key(),
+          // (this is the identity key "KP_relayid_ed")
+          &router->cache_info.signing_key_cert->signing_key,
           router->cache_info.published_on,
           FAMILY_CERT_LIFETIME, CERT_FLAG_INCLUDE_SIGNING_KEY);
     char family_cert_base64[256];

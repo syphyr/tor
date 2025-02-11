@@ -51,6 +51,7 @@
  **/
 
 #define ROUTERDESC_TOKEN_TABLE_PRIVATE
+#define ROUTERPARSE_PRIVATE
 
 #include "core/or/or.h"
 #include "app/config/config.h"
@@ -114,6 +115,7 @@ const token_rule_t routerdesc_token_table[] = {
   T01("allow-single-hop-exits",K_ALLOW_SINGLE_HOP_EXITS,    NO_ARGS, NO_OBJ ),
 
   T01("family",              K_FAMILY,              ARGS,    NO_OBJ ),
+  T0N("family-cert",         K_FAMILY_CERT,         ARGS,    NEED_OBJ ),
   T01("caches-extra-info",   K_CACHES_EXTRA_INFO,   NO_ARGS, NO_OBJ ),
   T0N("or-address",          K_OR_ADDRESS,          GE(1),   NO_OBJ ),
 
@@ -172,6 +174,10 @@ static token_rule_t extrainfo_token_table[] = {
 /* static function prototypes */
 static int router_add_exit_policy(routerinfo_t *router,directory_token_t *tok);
 static smartlist_t *find_all_exitpolicy(smartlist_t *s);
+static int check_family_certs(const smartlist_t *family_cert_tokens,
+                              const ed25519_public_key_t *identity_key,
+                              smartlist_t **family_ids_out,
+                              time_t *family_expiration_out);
 
 /** Set <b>digest</b> to the SHA-1 digest of the hash of the first router in
  * <b>s</b>. Return 0 on success, -1 on failure.
@@ -894,6 +900,21 @@ router_parse_entry_from_string(const char *s, const char *end,
     }
   }
 
+  {
+    smartlist_t *family_cert_toks = find_all_by_keyword(tokens, K_FAMILY_CERT);
+    time_t family_expiration = TIME_MAX;
+    int r = 0;
+    if (family_cert_toks)  {
+      r = check_family_certs(family_cert_toks,
+                             &router->cache_info.signing_key_cert->signing_key,
+                             &router->family_ids,
+                             &family_expiration);
+      smartlist_free(family_cert_toks);
+    }
+    if (r<0)
+      goto err;
+  }
+
   if (find_opt_by_keyword(tokens, K_CACHES_EXTRA_INFO))
     router->caches_extra_info = 1;
 
@@ -1248,6 +1269,115 @@ find_all_exitpolicy(smartlist_t *s)
           t->tp == K_REJECT || t->tp == K_REJECT6)
         smartlist_add(out,t));
   return out;
+}
+
+/**
+ * Parse and validate a single `FAMILY_CERT` token's object.
+ *
+ * Arguments are as for `check_family_certs()`.
+ */
+STATIC int
+check_one_family_cert(const uint8_t *cert_body,
+                      size_t cert_body_size,
+                      const ed25519_public_key_t *identity_key,
+                      char **family_id_out,
+                      time_t *family_expiration_out)
+{
+  tor_cert_t *cert = NULL;
+  int r = -1;
+
+  cert = tor_cert_parse(cert_body, cert_body_size);
+
+  if (! cert)
+    goto done;
+  if (cert->cert_type != CERT_TYPE_FAMILY_V_IDENTITY) {
+    log_warn(LD_DIR, "Wrong cert type in family certificate.");
+    goto done;
+  }
+  if (! cert->signing_key_included) {
+    log_warn(LD_DIR, "Missing family key in family certificate.");
+    goto done;
+  }
+  if (! ed25519_pubkey_eq(&cert->signed_key, identity_key)) {
+    log_warn(LD_DIR, "Key mismatch in family certificate.");
+    goto done;
+  }
+
+  time_t valid_until = cert->valid_until;
+
+  /* We're using NULL for the key, since the cert has the signing key included.
+   * We're using 0 for "now", since we're going to extract the expiration
+   * separately.
+   */
+  if (tor_cert_checksig(cert, NULL, 0) < 0) {
+    log_warn(LD_DIR, "Invalid signature in family certificate");
+    goto done;
+  }
+
+  /* At this point we know that the cert is valid.
+   * We extract the expiration time and the signing key. */
+  *family_expiration_out = valid_until;
+
+  char buf[ED25519_BASE64_LEN+1];
+  ed25519_public_to_base64(buf, &cert->signing_key);
+  tor_asprintf(family_id_out, "ed25519:%s", buf);
+
+  r = 0;
+ done:
+  tor_cert_free(cert);
+  return r;
+}
+
+/**
+ * Given a list of `FAMILY_CERT` tokens, and a relay's ed25519 `identity_key`,
+ * validate the family certificates in all the tokens, and convert them into
+ * family IDs in a newly allocated `family_ids_out` list.
+ * Set `family_expiration_out` to the earliest time at which any certificate
+ * in the list expires.
+ * Return 0 on success, and -1 on failure.
+ */
+static int
+check_family_certs(const smartlist_t *family_cert_tokens,
+                   const ed25519_public_key_t *identity_key,
+                   smartlist_t **family_ids_out,
+                   time_t *family_expiration_out)
+{
+  if (BUG(!identity_key) ||
+      BUG(!family_ids_out) ||
+      BUG(!family_expiration_out))
+    return -1;
+
+  *family_expiration_out = TIME_MAX;
+
+  if (family_cert_tokens == NULL || smartlist_len(family_cert_tokens) == 0) {
+    *family_ids_out = NULL;
+    return 0;
+  }
+
+  *family_ids_out = smartlist_new();
+  SMARTLIST_FOREACH_BEGIN(family_cert_tokens, directory_token_t *, tok) {
+    if (BUG(tok->object_body == NULL))
+      goto err;
+
+    char *this_id = NULL;
+    time_t this_expiration = TIME_MAX;
+    if (check_one_family_cert((const uint8_t*)tok->object_body,
+                              tok->object_size,
+                              identity_key,
+                              &this_id, &this_expiration) < 0)
+      goto err;
+    smartlist_add(*family_ids_out, this_id);
+    *family_expiration_out = MIN(*family_expiration_out, this_expiration);
+  } SMARTLIST_FOREACH_END(tok);
+
+  smartlist_sort_strings(*family_ids_out);
+  smartlist_uniq_strings(*family_ids_out);
+
+  return 0;
+ err:
+  SMARTLIST_FOREACH(*family_ids_out, char *, cp, tor_free(cp));
+  smartlist_free(*family_ids_out);
+  return -1;
 }
 
 /** Called on startup; right now we just handle scanning the unparseable
