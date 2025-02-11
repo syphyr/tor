@@ -680,6 +680,32 @@ get_estimated_address_per_node, (void))
   return ESTIMATED_ADDRESS_PER_NODE;
 }
 
+/**
+ * If true, we use relays' listed family members in order to
+ * determine which relays are in the same family.
+ */
+static int use_family_lists = 1;
+/**
+ * If true, we use relays' validated family IDs in order to
+ * determine which relays are in the same family.
+ */
+static int use_family_ids = 1;
+
+/**
+ * Update consensus parameters relevant to nodelist operations.
+ *
+ * We need to cache these values rather than searching for them every time
+ * we check whether two relays are in the same family.
+ **/
+static void
+nodelist_update_consensus_params(const networkstatus_t *ns)
+{
+  use_family_lists = networkstatus_get_param(ns, "use-family-lists",
+                                             1, 0, 1); // default, low, high
+  use_family_ids = networkstatus_get_param(ns, "use-family-ids",
+                                             1, 0, 1); // default, low, high
+}
+
 /** Tell the nodelist that the current usable consensus is <b>ns</b>.
  * This makes the nodelist change all of the routerstatus entries for
  * the nodes, drop nodes that no longer have enough info to get used,
@@ -697,6 +723,8 @@ nodelist_set_consensus(const networkstatus_t *ns)
 
   SMARTLIST_FOREACH(the_nodelist->nodes, node_t *, node,
                     node->rs = NULL);
+
+  nodelist_update_consensus_params(ns);
 
   /* Conservatively estimate that every node will have 2 addresses (v4 and
    * v6). Then we add the number of configured trusted authorities we have. */
