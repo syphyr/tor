@@ -3900,6 +3900,13 @@ dirvote_create_microdescriptor(const routerinfo_t *ri, int consensus_method)
     tor_free(canonical_family);
   }
 
+  if (consensus_method >= MIN_METHOD_FOR_FAMILY_IDS &&
+      ri->family_ids && smartlist_len(ri->family_ids)) {
+    char *family_ids = smartlist_join_strings(ri->family_ids, " ", 0, NULL);
+    smartlist_add_asprintf(chunks, "family-ids %s\n", family_ids);
+    tor_free(family_ids);
+  }
+
   if (summary && strcmp(summary, "reject 1-65535"))
     smartlist_add_asprintf(chunks, "p %s\n", summary);
 
@@ -3995,6 +4002,8 @@ static const struct consensus_method_range_t {
   int high;
 } microdesc_consensus_methods[] = {
   {MIN_SUPPORTED_CONSENSUS_METHOD,
+   MIN_METHOD_FOR_FAMILY_IDS - 1},
+  {MIN_METHOD_FOR_FAMILY_IDS,
    MAX_SUPPORTED_CONSENSUS_METHOD},
   {-1, -1}
 };

@@ -378,6 +378,21 @@ static const char test_md2_withfamily_33[] =
   "p accept 1-65535\n"
   "id ed25519 J5lkRqyL6qW+CpN3E4RIlgJZeLgwjtmOOrjZvVhuwLQ\n";
 
+static const char test_md2_withfamilyids_35[] =
+  "onion-key\n"
+  "-----BEGIN RSA PUBLIC KEY-----\n"
+  "MIGJAoGBAMvEJ/JVNK7I38PPWhQMuCgkET/ki4WIas4tj5Kmqfb9kHqxMR+EunRD\n"
+  "83k4pel1yB7QdV+iTd/4SZOI8RpZP+BO1KnOTWfpztAU1lDGr19/PwdwcHaILpBD\n"
+  "nNzm6otk4/bKUQ0vqpOfJljtg0DfAm4uMAQ6BMFy6uEAF7+JupuPAgMBAAE=\n"
+  "-----END RSA PUBLIC KEY-----\n"
+  "ntor-onion-key FChIfm77vrWB7JsxQ+jMbN6VSSp1P0DYbw/2aqey4iA\n"
+  "family !Strange $D219590AC9513BCDEBBA9AB721007A4CC01BBAE3 othernode\n"
+  "family-ids "
+       "ed25519:YWxsIGhhcHB5IGZhbWlsaWVzIGFyZSBhbGlrZSAtTFQ "
+       "rlwe:0YHRh9Cw0YHRgtC70LjQstGL0LUg0YHQtdC80YzQuC0\n"
+  "p accept 1-65535\n"
+  "id ed25519 J5lkRqyL6qW+CpN3E4RIlgJZeLgwjtmOOrjZvVhuwLQ\n";
+
 static void
 test_md_generate(void *arg)
 {
@@ -394,6 +409,16 @@ test_md_generate(void *arg)
   smartlist_add_strdup(ri->declared_family, "OtherNode !Strange");
   md = dirvote_create_microdescriptor(ri, 33);
   tt_str_op(md->body, OP_EQ, test_md2_withfamily_33);
+
+  // Try family-ids.
+  microdesc_free(md);
+  ri->family_ids = smartlist_new();
+  smartlist_add_strdup(ri->family_ids,
+                       "ed25519:YWxsIGhhcHB5IGZhbWlsaWVzIGFyZSBhbGlrZSAtTFQ");
+  smartlist_add_strdup(ri->family_ids,
+                       "rlwe:0YHRh9Cw0YHRgtC70LjQstGL0LUg0YHQtdC80YzQuC0");
+  md = dirvote_create_microdescriptor(ri, 35);
+  tt_str_op(md->body, OP_EQ, test_md2_withfamilyids_35);
 
  done:
   microdesc_free(md);
