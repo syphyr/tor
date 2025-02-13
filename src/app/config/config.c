@@ -572,6 +572,7 @@ static const config_var_t option_vars_[] = {
   V(MetricsPortPolicy,           LINELIST, NULL),
   V(TestingMinTimeToReportBandwidth,    INTERVAL, "1 day"),
   VAR("MyFamily",                LINELIST, MyFamily_lines,       NULL),
+  V(UseFamilyKeys,               BOOL,     "0"),
   V(NewCircuitPeriod,            INTERVAL, "30 seconds"),
   OBSOLETE("NamingAuthoritativeDirectory"),
   OBSOLETE("NATDListenAddress"),

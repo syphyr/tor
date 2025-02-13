@@ -1274,6 +1274,7 @@ options_transition_affects_descriptor(const or_options_t *old_options,
   YES_IF_CHANGED_STRING(ContactInfo);
   YES_IF_CHANGED_STRING(BridgeDistribution);
   YES_IF_CHANGED_LINELIST(MyFamily);
+  YES_IF_CHANGED_BOOL(UseFamilyKeys);
   YES_IF_CHANGED_STRING(AccountingStart);
   YES_IF_CHANGED_INT(AccountingMax);
   YES_IF_CHANGED_INT(AccountingRule);

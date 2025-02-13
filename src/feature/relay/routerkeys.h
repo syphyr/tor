@@ -41,6 +41,11 @@ uint8_t *make_tap_onion_key_crosscert(const crypto_pk_t *onion_key,
 
 int log_cert_expiration(void);
 int load_ed_keys(const or_options_t *options, time_t now);
+int load_family_id_keys(const or_options_t *options,
+                        const networkstatus_t *ns);
+int create_family_id_key(const char *fname);
+void warn_about_family_id_config(const or_options_t *options,
+                                 const networkstatus_t *ns);
 int should_make_new_ed_keys(const or_options_t *options, const time_t now);
 
 int generate_ed_link_cert(const or_options_t *options, time_t now, int force);
@@ -122,13 +127,20 @@ make_tap_onion_key_crosscert(const crypto_pk_t *onion_key,
  * CMD_KEYGEN. */
 #define load_ed_keys(x,y)                                                \
   (puts("Not available: Tor has been compiled without relay support"), 0)
+#define load_family_id_keys(x,y)                                         \
+  (puts("Not available: Tor has been compiled without relay support"), 0)
 
 #endif /* defined(HAVE_MODULE_RELAY) */
 
 #ifdef TOR_UNIT_TESTS
 const ed25519_keypair_t *get_master_identity_keypair(void);
 void init_mock_ed_keys(const crypto_pk_t *rsa_identity_key);
-void set_mock_family_id_keys(smartlist_t *keys);
+#endif
+
+#ifdef ROUTERKEYS_PRIVATE
+STATIC void set_family_id_keys(smartlist_t *keys);
+STATIC bool is_family_key_fname(const char *fname);
+STATIC int load_family_id_keys_impl(const char *keydir);
 #endif
 
 #endif /* !defined(TOR_ROUTERKEYS_H) */

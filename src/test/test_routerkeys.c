@@ -5,6 +5,7 @@
 
 #include "orconfig.h"
 #define ROUTER_PRIVATE
+#define ROUTERKEYS_PRIVATE
 #include "core/or/or.h"
 #include "app/config/config.h"
 #include "feature/relay/router.h"
@@ -735,6 +736,76 @@ test_routerkeys_rsa_ed_crosscert(void *arg)
   tor_free(cc);
 }
 
+static void
+test_routerkeys_family_key_fname(void *arg)
+{
+  (void)arg;
+
+  tt_assert(is_family_key_fname("secret_family_key"));
+  tt_assert(is_family_key_fname("secret_family_key.1"));
+  tt_assert(is_family_key_fname("secret_family_key.413"));
+  tt_assert(! is_family_key_fname("secret_family_key.413x"));
+  tt_assert(! is_family_key_fname("secret_family_key1"));
+  tt_assert(! is_family_key_fname("secret_family_key.hello"));
+  tt_assert(! is_family_key_fname("secret_family_key.-1"));
+  tt_assert(! is_family_key_fname("fun_with_filenames.1"));
+  tt_assert(! is_family_key_fname("fun_with_filenames"));
+
+ done:
+  ;
+}
+
+static void
+test_routerkeys_load_family_keys(void *arg)
+{
+  (void) arg;
+  char *dname = tor_strdup(get_fname_rnd("fkeys"));
+  char *fname = NULL;
+
+#ifdef _WIN32
+  tt_assert(0==mkdir(dname));
+#else
+  tt_assert(0==mkdir(dname,0700));
+#endif
+
+  // Not a family key, will be ignored
+  tor_asprintf(&fname, "%s"PATH_SEPARATOR"junk.1", dname);
+  write_str_to_file(fname, "hello world", 0);
+  tor_free(fname);
+
+  tt_int_op(0, OP_EQ, load_family_id_keys_impl(dname));
+  tt_int_op(0, OP_EQ, smartlist_len(get_current_family_id_keys()));
+
+  // Create a family key; make sure we can load it.
+  tor_asprintf(&fname, "%s"PATH_SEPARATOR"secret_family_key.12", dname);
+  tt_int_op(0, OP_EQ, create_family_id_key(fname));
+  tor_free(fname);
+
+  tt_int_op(0, OP_EQ, load_family_id_keys_impl(dname));
+  tt_int_op(1, OP_EQ, smartlist_len(get_current_family_id_keys()));
+
+  //Try a second key.
+  tor_asprintf(&fname, "%s"PATH_SEPARATOR"secret_family_key.413", dname);
+  tt_int_op(0, OP_EQ, create_family_id_key(fname));
+  tor_free(fname);
+
+  tt_int_op(0, OP_EQ, load_family_id_keys_impl(dname));
+  tt_int_op(2, OP_EQ, smartlist_len(get_current_family_id_keys()));
+
+  // Make a junk key, make sure it causes an error.
+  tor_asprintf(&fname, "%s"PATH_SEPARATOR"secret_family_key.6", dname);
+  write_str_to_file(fname, "hello world", 0);
+  tor_free(fname);
+
+  tt_int_op(-1, OP_EQ, load_family_id_keys_impl(dname));
+  // keys unchanged
+  tt_int_op(2, OP_EQ, smartlist_len(get_current_family_id_keys()));
+
+ done:
+  tor_free(dname);
+  tor_free(fname);
+}
+
 #define TEST(name, flags)                                       \
   { #name , test_routerkeys_ ## name, (flags), NULL, NULL }
 
@@ -749,5 +820,7 @@ struct testcase_t routerkeys_tests[] = {
   TEST(cross_certify_ntor, 0),
   TEST(cross_certify_tap, 0),
   TEST(rsa_ed_crosscert, 0),
+  TEST(family_key_fname, 0),
+  TEST(load_family_keys, TT_FORK),
   END_OF_TESTCASES
 };

@@ -1065,6 +1065,11 @@ init_keys(void)
   if (new_signing_key < 0)
     return -1;
 
+  if (options->command == CMD_RUN_TOR) {
+    if (load_family_id_keys(options, networkstatus_get_latest_consensus()) < 0)
+      return -1;
+  }
+
   /* 2. Read onion key.  Make it if none is found. */
   keydir = get_keydir_fname("secret_onion_key");
   log_info(LD_GENERAL,"Reading/making onion key \"%s\"...",keydir);
@@ -2528,6 +2533,21 @@ router_new_consensus_params(const networkstatus_t *ns)
 
   publish_even_when_ipv4_orport_unreachable = ar;
   publish_even_when_ipv6_orport_unreachable = ar || ar6;
+
+  warn_about_family_id_config(get_options(), ns);
+}
+
+/**
+ * Return true if the parameters in `ns` say that we should publish
+ * a legacy family list.
+ *
+ * Use the latest networkstatus (or returns the default) if `ns` is NULL.
+ */
+bool
+should_publish_family_list(const networkstatus_t *ns)
+{
+  return networkstatus_get_param(ns, "publish-family-list",
+                                 1, 0, 1); // default, min, max
 }
 
 /** Mark our descriptor out of data iff the IPv6 omit status flag is flipped

@@ -21,6 +21,7 @@
 #define RELAY_PRIVATE
 #define ROUTERLIST_PRIVATE
 #define ROUTER_PRIVATE
+#define ROUTERKEYS_PRIVATE
 #define ROUTERPARSE_PRIVATE
 #define UNPARSEABLE_PRIVATE
 #define VOTEFLAGS_PRIVATE
@@ -877,7 +878,7 @@ test_dir_formats_rsa_ed25519(void *arg)
     smartlist_t *family_keys = smartlist_new();
     smartlist_add(family_keys, tor_memdup(&family_1, sizeof(family_1)));
     smartlist_add(family_keys, tor_memdup(&family_2, sizeof(family_2)));
-    set_mock_family_id_keys(family_keys); // takes ownership.
+    set_family_id_keys(family_keys); // takes ownership.
   }
 
   buf = router_dump_router_to_string(r2, r2->identity_pkey,

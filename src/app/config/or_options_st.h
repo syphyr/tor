@@ -493,6 +493,8 @@ struct or_options_t {
   struct config_line_t *MyFamily_lines; /**< Declared family for this OR. */
   struct config_line_t *MyFamily; /**< Declared family for this OR,
                                      normalized */
+  int UseFamilyKeys; /**< If set, we use one or more family keys
+                      * to certify this OR's membership. */
   struct config_line_t *NodeFamilies; /**< List of config lines for
                                 * node families */
   /** List of parsed NodeFamilies values. */

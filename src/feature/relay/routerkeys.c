@@ -14,6 +14,8 @@
  * (TODO: The keys in router.c should go here too.)
  */
 
+#define ROUTERKEYS_PRIVATE
+
 #include "core/or/or.h"
 #include "app/config/config.h"
 #include "feature/relay/router.h"
@@ -21,6 +23,8 @@
 #include "feature/relay/routermode.h"
 #include "feature/keymgt/loadkey.h"
 #include "feature/nodelist/torcert.h"
+#include "feature/nodelist/networkstatus_st.h"
+#include "feature/dirauth/dirvote.h"
 
 #include "lib/crypt_ops/crypto_util.h"
 #include "lib/tls/tortls.h"
@@ -678,6 +682,206 @@ get_current_auth_key_cert(void)
 }
 
 /**
+ * Prefix for the filename in which we expect to find a family ID key.
+ */
+#define FAMILY_KEY_FNAME "secret_family_key"
+
+/**
+ * Return true if `fname` is a possible filename of a family ID key.
+ *
+ * Family ID key filenames are FAMILY_KEY_FNAME, followed optionally
+ * by "." and a positive integer.
+ */
+STATIC bool
+is_family_key_fname(const char *fname)
+{
+  if (0 == strcmp(fname, FAMILY_KEY_FNAME))
+    return true;
+
+  unsigned num;
+  char ch;
+  if (tor_sscanf(fname, FAMILY_KEY_FNAME".%u%c", &num, &ch) == 1)
+    return true;
+
+  return false;
+}
+
+/**
+ * Tag to use on family key files.
+ */
+#define FAMILY_KEY_FILE_TAG "fmly-id"
+
+/**
+ * Look for all the family keys in `keydir`, load them into
+ * family_id_keys.
+ */
+STATIC int
+load_family_id_keys_impl(const char *keydir)
+{
+  if (BUG(!keydir))
+    return -1;
+
+  smartlist_t *files = tor_listdir(keydir);
+  smartlist_t *new_keys = NULL;
+  ed25519_keypair_t *kp_tmp = NULL;
+  char *fn_tmp = NULL;
+  char *tag_tmp = NULL;
+  int r = -1;
+
+  if (files == NULL) {
+    log_warn(LD_OR, "Unable to list contents of directory %s", keydir);
+    goto end;
+  }
+
+  new_keys = smartlist_new();
+  SMARTLIST_FOREACH_BEGIN(files, const char *, fn) {
+    if (!is_family_key_fname(fn))
+      continue;
+
+    tor_asprintf(&fn_tmp, "%s%s%s", keydir, PATH_SEPARATOR, fn);
+
+    kp_tmp = tor_malloc_zero(sizeof(*kp_tmp));
+    // TODO: If we ever allow cert provisioning here,
+    // use ed_key_init_from_file() instead.
+    if (ed25519_seckey_read_from_file(&kp_tmp->seckey, &tag_tmp, fn_tmp) < 0) {
+      log_warn(LD_OR, "%s was not an ed25519 secret key.", fn_tmp);
+      goto end;
+    }
+    if (0 != strcmp(tag_tmp, FAMILY_KEY_FILE_TAG)) {
+      log_warn(LD_OR, "%s was not a family ID key.", fn_tmp);
+      goto end;
+    }
+    if (ed25519_public_key_generate(&kp_tmp->pubkey, &kp_tmp->seckey) < 0) {
+      log_warn(LD_OR, "Unable to generate public key for %s", fn_tmp);
+      goto end;
+    }
+
+    smartlist_add(new_keys, kp_tmp);
+    kp_tmp = NULL; // prevent double-free
+
+    tor_free(fn_tmp);
+    tor_free(tag_tmp);
+  } SMARTLIST_FOREACH_END(fn);
+
+  set_family_id_keys(new_keys);
+  new_keys = NULL; // prevent double-free
+  r = 0;
+ end:
+  if (files) {
+    SMARTLIST_FOREACH(files, char *, cp, tor_free(cp));
+    smartlist_free(files);
+  }
+  if (new_keys) {
+    SMARTLIST_FOREACH(new_keys, ed25519_keypair_t *, kp,
+                      ed25519_keypair_free(kp));
+    smartlist_free(new_keys);
+  }
+  tor_free(fn_tmp);
+  tor_free(tag_tmp);
+  ed25519_keypair_free(kp_tmp);
+  return r;
+}
+
+/**
+ * Create a new family ID key, and store it in `fname`.
+ **/
+int
+create_family_id_key(const char *fname)
+{
+  int r = -1;
+  ed25519_keypair_t *kp = tor_malloc_zero(sizeof(ed25519_keypair_t));
+  if (ed25519_keypair_generate(kp, 1) < 0) {
+    log_warn(LD_BUG, "Can't generate ed25519 key!");
+    goto done;
+  }
+
+  if (ed25519_seckey_write_to_file(&kp->seckey,
+                                   fname, FAMILY_KEY_FILE_TAG)<0) {
+    log_warn(LD_BUG, "Can't write key to file.");
+    goto done;
+  }
+
+  r = 0;
+
+ done:
+  ed25519_keypair_free(kp);
+  return r;
+}
+
+/**
+ * If configured to do so, load our family keys from the key directory.
+ * Otherwise, clear the family keys.
+ *
+ * Additionally, warn about inconsistencies between family options.
+ * If `ns` is provided, provide additional warnings.
+ *
+ * `options` is required; `ns` may be NULL.
+ */
+int
+load_family_id_keys(const or_options_t *options,
+                    const networkstatus_t *ns)
+{
+  if (options->UseFamilyKeys) {
+    if (load_family_id_keys_impl(options->KeyDirectory) < 0)
+      return -1;
+
+    // This warning is _here_ because we want to give it (or not)
+    // every time keys are reloaded.
+    if (!smartlist_len(get_current_family_id_keys())) {
+      log_warn(LD_OR,
+               "UseFamilyKeys was configured, but no family keys were found. "
+               "Family keys need to be in %s, with names like "
+               FAMILY_KEY_FNAME", "FAMILY_KEY_FNAME".1, "
+               FAMILY_KEY_FNAME".2, etc. "
+               "See (XXXX INSERT URL HERE) for instructions.",
+               options->KeyDirectory);
+    } else {
+      log_info(LD_OR, "Found %d family ID keys",
+               smartlist_len(get_current_family_id_keys()));
+    }
+  } else {
+    set_family_id_keys(NULL);
+  }
+  warn_about_family_id_config(options, ns);
+  return 0;
+}
+
+/** Generate warnings as appropriate about our family ID configuration.
+ *
+ * `options` is required; `ns` may be NULL.
+ */
+void
+warn_about_family_id_config(const or_options_t *options,
+                            const networkstatus_t *ns)
+{
+  static int have_warned_absent_myfamily = 0;
+  static int have_warned_absent_familykeys = 0;
+
+  if (options->UseFamilyKeys) {
+    if (!have_warned_absent_myfamily &&
+        !options->MyFamily && ns && should_publish_family_list(ns)) {
+      log_warn(LD_OR,
+               "UseFamilyKeys was configured, but MyFamily was not. "
+               "UseFamilyKeys is good, but the Tor network still requires "
+               "MyFamily while clients are migrating to use family "
+               "keys instead.");
+      have_warned_absent_myfamily = 1;
+    }
+  } else {
+    if (!have_warned_absent_familykeys &&
+        options->MyFamily &&
+        ns && ns->consensus_method >= MIN_METHOD_FOR_FAMILY_IDS) {
+      log_notice(LD_OR,
+                 "MyFamily was configured, but UseFamilyKeys was not. "
+                 "It's a good time to start migrating your relays "
+                 "to use family keys. "
+                 "See (XXXX INSERT URL HERE) for instructions.");
+      have_warned_absent_familykeys = 1;
+    }
+  }
+}
+
+/**
  * Return a list of our current family id keypairs,
  * as a list of `ed25519_keypair_t`.
  *
@@ -695,15 +899,14 @@ get_current_family_id_keys(void)
   return family_id_keys;
 }
 
-#ifdef TOR_UNIT_TESTS
 /**
- * Testing only: Replace our list of family ID keys with `family_id_keys`,
+ * Replace our list of family ID keys with `family_id_keys`,
  * which must be a list of `ed25519_keypair_t`.
  *
  * Takes ownership of its input.
  */
-void
-set_mock_family_id_keys(smartlist_t *keys)
+STATIC void
+set_family_id_keys(smartlist_t *keys)
 {
   if (family_id_keys) {
     SMARTLIST_FOREACH(family_id_keys, ed25519_keypair_t *, kp,
@@ -712,7 +915,6 @@ set_mock_family_id_keys(smartlist_t *keys)
   }
   family_id_keys = keys;
 }
-#endif
 
 void
 get_master_rsa_crosscert(const uint8_t **cert_out,
@@ -786,11 +988,7 @@ routerkeys_free_all(void)
   ed25519_keypair_free(master_identity_key);
   ed25519_keypair_free(master_signing_key);
   ed25519_keypair_free(current_auth_key);
-  if (family_id_keys) {
-    SMARTLIST_FOREACH(family_id_keys, ed25519_keypair_t *, kp,
-                      ed25519_keypair_free(kp));
-    smartlist_free(family_id_keys);
-  }
+  set_family_id_keys(NULL);
 
   tor_cert_free(signing_key_cert);
   tor_cert_free(link_cert_cert);
