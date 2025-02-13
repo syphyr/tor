@@ -386,10 +386,10 @@ protocol_list_supports_protocol_or_later(const char *list,
 /*
  * XXX START OF HAZARDOUS ZONE XXX
  */
-/* All protocol version that this relay version supports. */
+/* All protocol version that this version of tor supports. */
 #define PR_CONFLUX_V   "1"
 #define PR_CONS_V      "1-2"
-#define PR_DESC_V      "1-3"
+#define PR_DESC_V      "1-4"
 #define PR_DIRCACHE_V  "2"
 #define PR_FLOWCTRL_V  "1-2"
 #define PR_HSDIR_V     "2"
