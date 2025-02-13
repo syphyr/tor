@@ -1387,6 +1387,9 @@ tor_run_main(const tor_main_configuration_t *tor_cfg)
   case CMD_KEYGEN:
     result = load_ed_keys(get_options(), time(NULL)) < 0;
     break;
+  case CMD_KEYGEN_FAMILY:
+    result = create_family_id_key(get_options()->command_arg);
+    break;
   case CMD_KEY_EXPIRATION:
     init_keys();
     result = log_cert_expiration();
