@@ -168,6 +168,14 @@ The following options in this section are only recognized on the
     make sure that they are owned by the user actually running the Tor
     daemon on your system.
 
+[[opt-keygen-family]] **`--keygen-family`** __filename__::
+    Generate a new family ID key in `filename`.
+    To use this key, install it on every relay in your family.
+    (Put it in the relay's `KeyDirectory`, with a filename like
+    `secret_family_key`, `secret_family_key.1`, `secret_family_key.2`.)
+    Then enable the UseFamilyKeys option on your relays.
+    See (XXXX INSERT URL HERE) for more information.
+
 **`--passphrase-fd`** __FILEDES__::
     File descriptor to read the passphrase from.  Note that unlike with the
     tor-gencert program, the entire file contents are read and used as
@@ -2472,6 +2480,18 @@ is non-zero):
     Note: do not use MyFamily when configuring your Tor instance as a
     bridge.
 
+[[UseFamilyKeys]] **UseFamilyKeys** **0**|**1**::
+    If 1, configure this relay to be part of a family identified by a shared
+    secret family key.  Family keys are generated with `--keygen-family`.
+    For information on generating and installing a family
+    key, see (XXXX INSERT URL HERE).
+      +
+    In the future, this will be the preferred way for relays
+    to advertise family membership.
+    But for now, relay families should configure
+    both this option _and_ MyFamily, so older clients
+    will still recognize the relays' family membership.
+
 [[Nickname]] **Nickname** __name__::
     Set the server's nickname to \'name'. Nicknames must be between 1 and 19
     characters inclusive, and must contain only the characters [a-zA-Z0-9].
@@ -4039,6 +4059,11 @@ __KeyDirectory__/**`secret_onion_key_ntor`** and **`secret_onion_key_ntor.old`**
     circuit extension requests. The **`.old`** file holds the previously
     generated key, which the relay uses to handle any requests that were made
     by clients that didn't have the new one.
+
+__KeyDirectory__/**`secret_family_key`**, **`secret_family_key.`**.__N__::
+    A relay family's family identity key.
+    Used to prove membership in a relay family.
+    See (XXXX INSERT URL HERE) for more information.
 
 __DataDirectory__/**`fingerprint`**::
     Only used by servers. Contains the fingerprint of the server's RSA
