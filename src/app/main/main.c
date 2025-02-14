@@ -187,8 +187,8 @@ do_hup(void)
         generate_ed_link_cert(options, now, new_signing_key > 0)) {
       log_warn(LD_OR, "Problem reloading Ed25519 keys; still using old keys.");
     }
-    const networkstatus_t *ns = networkstatus_get_latest_consensus();
-    if (load_family_id_keys(options, ns)) {
+    if (load_family_id_keys(options,
+                            networkstatus_get_latest_consensus())) {
       log_warn(LD_OR, "Problem reloading family ID keys; "
                "still using old keys.");
     }

@@ -876,6 +876,7 @@ router_initialize_tls_context(void)
 STATIC void
 router_announce_bridge_status_page(void)
 {
+#ifdef ENABLE_MODULE_RELAY
   char fingerprint[FINGERPRINT_LEN + 1];
 
   if (crypto_pk_get_hashed_fingerprint(get_server_identity_key(),
@@ -889,6 +890,7 @@ router_announce_bridge_status_page(void)
   log_notice(LD_GENERAL, "You can check the status of your bridge relay at "
                          "https://bridges.torproject.org/status?id=%s",
                          fingerprint);
+#endif
 }
 
 /** Compute fingerprint (or hashed fingerprint if hashed is 1) and write

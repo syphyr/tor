@@ -89,6 +89,10 @@ relay_key_is_unavailable_(void)
   ((void)(options), (void)(now), (void)(force), 0)
 #define should_make_new_ed_keys(options, now) \
   ((void)(options), (void)(now), 0)
+#define warn_about_family_id_config(options,ns) \
+  ((void)(options), (void)(ns))
+#define get_current_family_id_keys() \
+  (smartlist_new())
 
 // These can get removed once router.c becomes relay-only.
 static inline struct tor_cert_st *
@@ -129,6 +133,8 @@ make_tap_onion_key_crosscert(const crypto_pk_t *onion_key,
   (puts("Not available: Tor has been compiled without relay support"), 0)
 #define load_family_id_keys(x,y)                                         \
   (puts("Not available: Tor has been compiled without relay support"), 0)
+#define create_family_id_key(x)                                         \
+  (puts("Not available: Tor has been compiled without relay support"), -1)
 
 #endif /* defined(HAVE_MODULE_RELAY) */
 
