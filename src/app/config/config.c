@@ -470,6 +470,7 @@ static const config_var_t option_vars_[] = {
   V(UseDefaultFallbackDirs,      BOOL,     "1"),
 
   OBSOLETE("FallbackNetworkstatusFile"),
+  VAR("FamilyId",                LINELIST, FamilyId_lines,   NULL),
   V(FascistFirewall,             BOOL,     "0"),
   V(FirewallPorts,               CSV,      ""),
   OBSOLETE("FastFirstHopPK"),
@@ -572,7 +573,6 @@ static const config_var_t option_vars_[] = {
   V(MetricsPortPolicy,           LINELIST, NULL),
   V(TestingMinTimeToReportBandwidth,    INTERVAL, "1 day"),
   VAR("MyFamily",                LINELIST, MyFamily_lines,       NULL),
-  V(UseFamilyKeys,               BOOL,     "0"),
   V(NewCircuitPeriod,            INTERVAL, "30 seconds"),
   OBSOLETE("NamingAuthoritativeDirectory"),
   OBSOLETE("NATDListenAddress"),
@@ -1050,6 +1050,11 @@ options_clear_cb(const config_mgr_t *mgr, void *opts)
   tor_free(options->command_arg);
   tor_free(options->master_key_fname);
   config_free_lines(options->MyFamily);
+  if (options->FamilyIds) {
+    SMARTLIST_FOREACH(options->FamilyIds,
+                      ed25519_public_key_t *, k, tor_free(k));
+    smartlist_free(options->FamilyIds);
+  }
 }
 
 /** Release all memory allocated in options

@@ -27,6 +27,7 @@
 #include "feature/dirauth/dirvote.h"
 
 #include "lib/crypt_ops/crypto_util.h"
+#include "lib/crypt_ops/crypto_format.h"
 #include "lib/tls/tortls.h"
 #include "lib/tls/x509.h"
 
@@ -682,9 +683,9 @@ get_current_auth_key_cert(void)
 }
 
 /**
- * Prefix for the filename in which we expect to find a family ID key.
+ * Suffix for the filenames in which we expect to find a family ID key.
  */
-#define FAMILY_KEY_FNAME "secret_family_key"
+#define FAMILY_KEY_SUFFIX ".secret_family_key"
 
 /**
  * Return true if `fname` is a possible filename of a family ID key.
@@ -695,14 +696,32 @@ get_current_auth_key_cert(void)
 STATIC bool
 is_family_key_fname(const char *fname)
 {
-  if (0 == strcmp(fname, FAMILY_KEY_FNAME))
-    return true;
+  return 0 == strcmpend(fname, FAMILY_KEY_SUFFIX);
+}
 
-  unsigned num;
-  char ch;
-  if (tor_sscanf(fname, FAMILY_KEY_FNAME".%u%c", &num, &ch) == 1)
-    return true;
+/** Return true if `id` is configured in `options`. */
+static bool
+family_key_id_is_expected(const or_options_t *options,
+                          const ed25519_public_key_t *id)
+{
+  SMARTLIST_FOREACH(options->FamilyIds, const ed25519_public_key_t *, k, {
+      if (ed25519_pubkey_eq(k, id))
+        return true;
+    });
+  return false;
+}
 
+/** Return true if the key for `id` has been loaded. */
+static bool
+family_key_is_present(const ed25519_public_key_t *id)
+{
+  if (!family_id_keys)
+    return false;
+
+  SMARTLIST_FOREACH(family_id_keys, const ed25519_keypair_t *, kp, {
+      if (ed25519_pubkey_eq(&kp->pubkey, id))
+        return true;
+    });
   return false;
 }
 
@@ -716,9 +735,10 @@ is_family_key_fname(const char *fname)
  * family_id_keys.
  */
 STATIC int
-load_family_id_keys_impl(const char *keydir)
+load_family_id_keys_impl(const or_options_t *options,
+                         const char *keydir)
 {
-  if (BUG(!keydir))
+  if (BUG(!options) || BUG(!keydir))
     return -1;
 
   smartlist_t *files = tor_listdir(keydir);
@@ -756,8 +776,14 @@ load_family_id_keys_impl(const char *keydir)
       goto end;
     }
 
-    smartlist_add(new_keys, kp_tmp);
-    kp_tmp = NULL; // prevent double-free
+    if (family_key_id_is_expected(options, &kp_tmp->pubkey)) {
+      smartlist_add(new_keys, kp_tmp);
+      kp_tmp = NULL; // prevent double-free
+    } else {
+      log_warn(LD_OR, "Found secret family key in %s "
+               "with unexpected FamilyID %s",
+               fn_tmp, ed25519_fmt(&kp_tmp->pubkey));
+    }
 
     tor_free(fn_tmp);
     tor_free(tag_tmp);
@@ -784,9 +810,11 @@ load_family_id_keys_impl(const char *keydir)
 
 /**
  * Create a new family ID key, and store it in `fname`.
+ *
+ * If pk_out is provided, set it to the generated public key.
  **/
 int
-create_family_id_key(const char *fname)
+create_family_id_key(const char *fname, ed25519_public_key_t *pk_out)
 {
   int r = -1;
   ed25519_keypair_t *kp = tor_malloc_zero(sizeof(ed25519_keypair_t));
@@ -799,6 +827,10 @@ create_family_id_key(const char *fname)
                                    fname, FAMILY_KEY_FILE_TAG)<0) {
     log_warn(LD_BUG, "Can't write key to file.");
     goto done;
+  }
+
+  if (pk_out) {
+    ed25519_pubkey_copy(pk_out, &kp->pubkey);
   }
 
   r = 0;
@@ -821,24 +853,24 @@ int
 load_family_id_keys(const or_options_t *options,
                     const networkstatus_t *ns)
 {
-  if (options->UseFamilyKeys) {
-    if (load_family_id_keys_impl(options->KeyDirectory) < 0)
+  if (options->FamilyIds) {
+    if (load_family_id_keys_impl(options, options->KeyDirectory) < 0)
       return -1;
 
-    // This warning is _here_ because we want to give it (or not)
-    // every time keys are reloaded.
-    if (!smartlist_len(get_current_family_id_keys())) {
-      log_warn(LD_OR,
-               "UseFamilyKeys was configured, but no family keys were found. "
-               "Family keys need to be in %s, with names like "
-               FAMILY_KEY_FNAME", "FAMILY_KEY_FNAME".1, "
-               FAMILY_KEY_FNAME".2, etc. "
-               "See (XXXX INSERT URL HERE) for instructions.",
-               options->KeyDirectory);
-    } else {
-      log_info(LD_OR, "Found %d family ID keys",
-               smartlist_len(get_current_family_id_keys()));
-    }
+    bool any_missing = false;
+    SMARTLIST_FOREACH_BEGIN(options->FamilyIds,
+                            const ed25519_public_key_t *, id) {
+        if (!family_key_is_present(id)) {
+          log_err(LD_OR, "No key was found for listed FamilyID %s",
+                  ed25519_fmt(id));
+          any_missing = true;
+        }
+    } SMARTLIST_FOREACH_END(id);
+    if (any_missing)
+      return -1;
+
+    log_info(LD_OR, "Found %d family ID keys",
+             smartlist_len(get_current_family_id_keys()));
   } else {
     set_family_id_keys(NULL);
   }
@@ -857,12 +889,12 @@ warn_about_family_id_config(const or_options_t *options,
   static int have_warned_absent_myfamily = 0;
   static int have_warned_absent_familykeys = 0;
 
-  if (options->UseFamilyKeys) {
+  if (options->FamilyIds) {
     if (!have_warned_absent_myfamily &&
         !options->MyFamily && ns && should_publish_family_list(ns)) {
       log_warn(LD_OR,
-               "UseFamilyKeys was configured, but MyFamily was not. "
-               "UseFamilyKeys is good, but the Tor network still requires "
+               "FamilyId was configured, but MyFamily was not. "
+               "FamilyId is good, but the Tor network still requires "
                "MyFamily while clients are migrating to use family "
                "keys instead.");
       have_warned_absent_myfamily = 1;
@@ -872,7 +904,7 @@ warn_about_family_id_config(const or_options_t *options,
         options->MyFamily &&
         ns && ns->consensus_method >= MIN_METHOD_FOR_FAMILY_IDS) {
       log_notice(LD_OR,
-                 "MyFamily was configured, but UseFamilyKeys was not. "
+                 "MyFamily was configured, but FamilyId was not. "
                  "It's a good time to start migrating your relays "
                  "to use family keys. "
                  "See (XXXX INSERT URL HERE) for instructions.");

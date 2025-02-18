@@ -168,12 +168,11 @@ The following options in this section are only recognized on the
     make sure that they are owned by the user actually running the Tor
     daemon on your system.
 
-[[opt-keygen-family]] **`--keygen-family`** __filename__::
-    Generate a new family ID key in `filename`.
+[[opt-keygen-family]] **`--keygen-family`** __basename__::
+    Generate a new family ID key in __basename__`.secret_family_key`.
     To use this key, install it on every relay in your family.
-    (Put it in the relay's `KeyDirectory`, with a filename like
-    `secret_family_key`, `secret_family_key.1`, `secret_family_key.2`.)
-    Then enable the UseFamilyKeys option on your relays.
+    (Put it in the relay's `KeyDirectory`.)
+    Then enable the corresponding FamilyID option on your relays.
     See (XXXX INSERT URL HERE) for more information.
 
 **`--passphrase-fd`** __FILEDES__::
@@ -2480,9 +2479,14 @@ is non-zero):
     Note: do not use MyFamily when configuring your Tor instance as a
     bridge.
 
-[[UseFamilyKeys]] **UseFamilyKeys** **0**|**1**::
-    If 1, configure this relay to be part of a family identified by a shared
-    secret family key.  Family keys are generated with `--keygen-family`.
+[[FamilyId]] **FamilyId** __ident__::
+    Configure this relay to be part of a family
+    identified by a shared secret family key with the given key identity.
+    A corresponding family key must be stored in the relay's key directory.
+    This option can appear multiple times.
+    Family keys are generated with "--keygen-family";
+    this also generates the value you should use in the __ident__ field
+    in a file ending with ".public\_family\_id".
     For information on generating and installing a family
     key, see (XXXX INSERT URL HERE).
       +
@@ -4060,7 +4064,7 @@ __KeyDirectory__/**`secret_onion_key_ntor`** and **`secret_onion_key_ntor.old`**
     generated key, which the relay uses to handle any requests that were made
     by clients that didn't have the new one.
 
-__KeyDirectory__/**`secret_family_key`**, **`secret_family_key.`**.__N__::
+__KeyDirectory__/__keyname__**`.secret_family_key`**::
     A relay family's family identity key.
     Used to prove membership in a relay family.
     See (XXXX INSERT URL HERE) for more information.

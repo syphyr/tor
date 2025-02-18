@@ -21,6 +21,7 @@
 #include "lib/meminfo/meminfo.h"
 #include "lib/osinfo/uname.h"
 #include "lib/process/setuid.h"
+#include "lib/crypt_ops/crypto_format.h"
 
 /* Required for dirinfo_type_t in or_options_t */
 #include "core/or/or.h"
@@ -1180,6 +1181,19 @@ options_validate_relay_mode(const or_options_t *old_options,
                               options->MyFamily_lines, "MyFamily", msg))
     return -1;
 
+  if (options->FamilyId_lines) {
+    options->FamilyIds = smartlist_new();
+    config_line_t *line;
+    for (line = options->FamilyId_lines; line; line = line->next) {
+      ed25519_public_key_t pk;
+      if (ed25519_public_from_base64(&pk, line->value) < 0) {
+        tor_asprintf(msg, "Invalid FamilyId %s", line->value);
+        return -1;
+      }
+      smartlist_add(options->FamilyIds, tor_memdup(&pk, sizeof(pk)));
+    }
+  }
+
   if (options->ConstrainedSockets) {
     if (options->DirPort_set) {
       /* Providing cached directory entries while system TCP buffers are scarce
@@ -1274,7 +1288,7 @@ options_transition_affects_descriptor(const or_options_t *old_options,
   YES_IF_CHANGED_STRING(ContactInfo);
   YES_IF_CHANGED_STRING(BridgeDistribution);
   YES_IF_CHANGED_LINELIST(MyFamily);
-  YES_IF_CHANGED_BOOL(UseFamilyKeys);
+  YES_IF_CHANGED_LINELIST(FamilyId_lines);
   YES_IF_CHANGED_STRING(AccountingStart);
   YES_IF_CHANGED_INT(AccountingMax);
   YES_IF_CHANGED_INT(AccountingRule);

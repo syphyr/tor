@@ -830,6 +830,32 @@ do_dump_config(void)
   return 0;
 }
 
+/** Implement --keygen-family; create a family ID key and write it to a file.
+ */
+static int
+do_keygen_family(const char *fname_base)
+{
+  ed25519_public_key_t pk;
+  char *fname = NULL;
+  int r = -1;
+
+  if (BUG(!fname_base))
+    goto done;
+
+  tor_asprintf(&fname, "%s.secret_family_key", fname_base);
+
+  if (create_family_id_key(fname, &pk) < 0)
+    goto done;
+
+  printf("# Generated %s\n", fname);
+  printf("FamilyId %s\n", ed25519_fmt(&pk));
+  r = 0;
+
+ done:
+  tor_free(fname);
+  return r;
+}
+
 static void
 init_addrinfo(void)
 {
@@ -1388,7 +1414,7 @@ tor_run_main(const tor_main_configuration_t *tor_cfg)
     result = load_ed_keys(get_options(), time(NULL)) < 0;
     break;
   case CMD_KEYGEN_FAMILY:
-    result = create_family_id_key(get_options()->command_arg);
+    result = do_keygen_family(get_options()->command_arg);
     break;
   case CMD_KEY_EXPIRATION:
     init_keys();
