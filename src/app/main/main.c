@@ -836,23 +836,30 @@ static int
 do_keygen_family(const char *fname_base)
 {
   ed25519_public_key_t pk;
-  char *fname = NULL;
+  char *fname_key = NULL, *fname_id = NULL, *id_contents = NULL;
   int r = -1;
 
   if (BUG(!fname_base))
     goto done;
 
-  tor_asprintf(&fname, "%s.secret_family_key", fname_base);
+  tor_asprintf(&fname_key, "%s.secret_family_key", fname_base);
+  tor_asprintf(&fname_id, "%s.public_family_id", fname_base);
 
-  if (create_family_id_key(fname, &pk) < 0)
+  if (create_family_id_key(fname_key, &pk) < 0)
+    goto done;
+  tor_asprintf(&id_contents, "%s\n", ed25519_fmt(&pk));
+  if (write_str_to_file(fname_id, id_contents, 0) < 0)
     goto done;
 
-  printf("# Generated %s\n", fname);
+  printf("# Generated %s\n", fname_key);
   printf("FamilyId %s\n", ed25519_fmt(&pk));
+
   r = 0;
 
  done:
-  tor_free(fname);
+  tor_free(fname_key);
+  tor_free(fname_id);
+  tor_free(id_contents);
   return r;
 }
 

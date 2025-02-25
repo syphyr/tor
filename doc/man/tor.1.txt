@@ -172,6 +172,7 @@ The following options in this section are only recognized on the
     Generate a new family ID key in __basename__`.secret_family_key`.
     To use this key, install it on every relay in your family.
     (Put it in the relay's `KeyDirectory`.)
+    Also, store the corresponding family ID in __basename__`.public_family_id`.
     Then enable the corresponding FamilyID option on your relays.
     See https://community.torproject.org/relay/setup/post-install/family-ids/
     for more information.
