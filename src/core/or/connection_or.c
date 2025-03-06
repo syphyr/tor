@@ -1843,7 +1843,7 @@ connection_or_check_valid_tls_handshake(or_connection_t *conn,
 
   if (has_cert) {
     int v = tor_tls_verify(started_here?severity:LOG_INFO,
-                           conn->tls, &identity_rcvd);
+                           conn->tls, time(NULL), &identity_rcvd);
     if (started_here && v<0) {
       log_fn(severity,LD_HANDSHAKE,"Tried connecting to router at %s: It"
              " has a cert but it's invalid. Closing.",

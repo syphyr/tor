@@ -120,6 +120,9 @@ const char* caCertString =
   "KPpdzvvtTnOPlC7SQZSYmdunr3Bf9b77AiC/ZidstK36dRILKz7OA54=\n"
   "-----END CERTIFICATE-----\n";
 
+// A time at which the certs above are valid.
+const time_t cert_strings_valid_at = 1741267580;
+
 static tor_x509_cert_t *fixed_x509_cert = NULL;
 static tor_x509_cert_t *
 get_peer_cert_mock_return_fixed(tor_tls_t *tls)
@@ -497,6 +500,7 @@ test_tortls_verify(void *ignored)
   crypto_pk_t *k = NULL;
   tor_x509_cert_impl_t *cert1 = NULL, *cert2 = NULL, *invalidCert = NULL,
     *validCert = NULL, *caCert = NULL;
+  time_t now = cert_strings_valid_at;
 
   validCert = read_cert_from(validCertString);
   caCert = read_cert_from(caCertString);
@@ -507,23 +511,23 @@ test_tortls_verify(void *ignored)
   MOCK(try_to_extract_certs_from_tls, fixed_try_to_extract_certs_from_tls);
 
   fixed_try_to_extract_certs_from_tls_cert_out_result = cert1;
-  ret = tor_tls_verify(LOG_WARN, tls, &k);
+  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
   tt_int_op(ret, OP_EQ, -1);
 
   fixed_try_to_extract_certs_from_tls_id_cert_out_result = cert2;
-  ret = tor_tls_verify(LOG_WARN, tls, &k);
+  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
   tt_int_op(ret, OP_EQ, -1);
 
   fixed_try_to_extract_certs_from_tls_cert_out_result = invalidCert;
   fixed_try_to_extract_certs_from_tls_id_cert_out_result = invalidCert;
 
-  ret = tor_tls_verify(LOG_WARN, tls, &k);
+  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
   tt_int_op(ret, OP_EQ, -1);
 
   fixed_try_to_extract_certs_from_tls_cert_out_result = validCert;
   fixed_try_to_extract_certs_from_tls_id_cert_out_result = caCert;
 
-  ret = tor_tls_verify(LOG_WARN, tls, &k);
+  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
   tt_int_op(ret, OP_EQ, 0);
   tt_assert(k);
 
