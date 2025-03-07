@@ -470,6 +470,7 @@ static const config_var_t option_vars_[] = {
   V(UseDefaultFallbackDirs,      BOOL,     "1"),
 
   OBSOLETE("FallbackNetworkstatusFile"),
+  VAR("FamilyId",                LINELIST, FamilyId_lines,   NULL),
   V(FascistFirewall,             BOOL,     "0"),
   V(FirewallPorts,               CSV,      ""),
   OBSOLETE("FastFirstHopPK"),
@@ -1049,6 +1050,11 @@ options_clear_cb(const config_mgr_t *mgr, void *opts)
   tor_free(options->command_arg);
   tor_free(options->master_key_fname);
   config_free_lines(options->MyFamily);
+  if (options->FamilyIds) {
+    SMARTLIST_FOREACH(options->FamilyIds,
+                      ed25519_public_key_t *, k, tor_free(k));
+    smartlist_free(options->FamilyIds);
+  }
 }
 
 /** Release all memory allocated in options
@@ -2488,6 +2494,9 @@ static const struct {
     .command=CMD_LIST_FINGERPRINT },
   { .name="--keygen",
     .command=CMD_KEYGEN },
+  { .name="--keygen-family",
+    .command=CMD_KEYGEN_FAMILY,
+    .takes_argument=ARGUMENT_NECESSARY },
   { .name="--key-expiration",
     .takes_argument=ARGUMENT_OPTIONAL,
     .command=CMD_KEY_EXPIRATION },

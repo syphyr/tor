@@ -35,6 +35,7 @@ static token_rule_t microdesc_token_table[] = {
   T0N("id",                    K_ID,               GE(2),       NO_OBJ ),
   T0N("a",                     K_A,                GE(1),       NO_OBJ ),
   T01("family",                K_FAMILY,           CONCAT_ARGS, NO_OBJ ),
+  T01("family-ids",            K_FAMILY_IDS,       CONCAT_ARGS, NO_OBJ ),
   T01("p",                     K_P,                CONCAT_ARGS, NO_OBJ ),
   T01("p6",                    K_P6,               CONCAT_ARGS, NO_OBJ ),
   A01("@last-listed",          A_LAST_LISTED,      CONCAT_ARGS, NO_OBJ ),
@@ -251,6 +252,16 @@ microdesc_parse_fields(microdesc_t *md,
     md->family = nodefamily_parse(tok->args[0],
                                   NULL,
                                   NF_WARN_MALFORMED);
+  }
+  if ((tok = find_opt_by_keyword(tokens, K_FAMILY_IDS))) {
+    smartlist_t *ids = smartlist_new();
+    smartlist_split_string(ids, tok->args[0], " ",
+                           SPLIT_SKIP_SPACE|SPLIT_IGNORE_BLANK, 0);
+    if (smartlist_len(ids) > 0) {
+      md->family_ids = ids;
+    } else {
+      smartlist_free(ids);
+    }
   }
 
   if ((tok = find_opt_by_keyword(tokens, K_P))) {

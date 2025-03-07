@@ -940,6 +940,10 @@ routerinfo_free_(routerinfo_t *router)
     SMARTLIST_FOREACH(router->declared_family, char *, s, tor_free(s));
     smartlist_free(router->declared_family);
   }
+  if (router->family_ids) {
+    SMARTLIST_FOREACH(router->family_ids, char *, cp, tor_free(cp));
+    smartlist_free(router->family_ids);
+  }
   addr_policy_list_free(router->exit_policy);
   short_policy_free(router->ipv6_exit_policy);
 

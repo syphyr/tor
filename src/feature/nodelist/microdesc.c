@@ -915,6 +915,10 @@ microdesc_free_(microdesc_t *md, const char *fname, int lineno)
     tor_free(md->body);
 
   nodefamily_free(md->family);
+  if (md->family_ids) {
+    SMARTLIST_FOREACH(md->family_ids, char *, cp, tor_free(cp));
+    smartlist_free(md->family_ids);
+  }
   short_policy_free(md->exit_policy);
   short_policy_free(md->ipv6_exit_policy);
 

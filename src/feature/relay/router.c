@@ -876,6 +876,7 @@ router_initialize_tls_context(void)
 STATIC void
 router_announce_bridge_status_page(void)
 {
+#ifdef ENABLE_MODULE_RELAY
   char fingerprint[FINGERPRINT_LEN + 1];
 
   if (crypto_pk_get_hashed_fingerprint(get_server_identity_key(),
@@ -889,6 +890,7 @@ router_announce_bridge_status_page(void)
   log_notice(LD_GENERAL, "You can check the status of your bridge relay at "
                          "https://bridges.torproject.org/status?id=%s",
                          fingerprint);
+#endif
 }
 
 /** Compute fingerprint (or hashed fingerprint if hashed is 1) and write
@@ -1064,6 +1066,11 @@ init_keys(void)
   const int new_signing_key = load_ed_keys(options,now);
   if (new_signing_key < 0)
     return -1;
+
+  if (options->command == CMD_RUN_TOR) {
+    if (load_family_id_keys(options, networkstatus_get_latest_consensus()) < 0)
+      return -1;
+  }
 
   /* 2. Read onion key.  Make it if none is found. */
   keydir = get_keydir_fname("secret_onion_key");
@@ -2528,6 +2535,21 @@ router_new_consensus_params(const networkstatus_t *ns)
 
   publish_even_when_ipv4_orport_unreachable = ar;
   publish_even_when_ipv6_orport_unreachable = ar || ar6;
+
+  warn_about_family_id_config(get_options(), ns);
+}
+
+/**
+ * Return true if the parameters in `ns` say that we should publish
+ * a legacy family list.
+ *
+ * Use the latest networkstatus (or returns the default) if `ns` is NULL.
+ */
+bool
+should_publish_family_list(const networkstatus_t *ns)
+{
+  return networkstatus_get_param(ns, "publish-family-list",
+                                 1, 0, 1); // default, min, max
 }
 
 /** Mark our descriptor out of data iff the IPv6 omit status flag is flipped
@@ -3033,6 +3055,35 @@ router_dump_router_to_string(routerinfo_t *router,
     family_line,
     we_are_hibernating() ? "hibernating 1\n" : "",
     "hidden-service-dir\n");
+
+  SMARTLIST_FOREACH_BEGIN(get_current_family_id_keys(),
+                          const ed25519_keypair_t *, k_family_id) {
+    // TODO PROP321: We may want this to be configurable;
+    // we can probably use a smaller value.
+#define FAMILY_CERT_LIFETIME (30*86400)
+    tor_cert_t *family_cert = tor_cert_create_ed25519(
+          k_family_id,
+          CERT_TYPE_FAMILY_V_IDENTITY,
+          // (this is the identity key "KP_relayid_ed")
+          &router->cache_info.signing_key_cert->signing_key,
+          router->cache_info.published_on,
+          FAMILY_CERT_LIFETIME, CERT_FLAG_INCLUDE_SIGNING_KEY);
+    char family_cert_base64[256];
+    if (base64_encode(family_cert_base64, sizeof(family_cert_base64),
+                      (const char*) family_cert->encoded,
+                      family_cert->encoded_len, BASE64_ENCODE_MULTILINE) < 0) {
+      log_err(LD_BUG, "Base64 encoding family cert failed!?");
+      tor_cert_free(family_cert);
+      goto err;
+    }
+    smartlist_add_asprintf(chunks,
+                           "family-cert\n"
+                           "-----BEGIN FAMILY CERT-----\n"
+                           "%s"
+                           "-----END FAMILY CERT-----\n",
+                           family_cert_base64);
+    tor_cert_free(family_cert);
+  } SMARTLIST_FOREACH_END(k_family_id);
 
   if (options->ContactInfo && strlen(options->ContactInfo)) {
     const char *ci = options->ContactInfo;

@@ -168,6 +168,16 @@ The following options in this section are only recognized on the
     make sure that they are owned by the user actually running the Tor
     daemon on your system.
 
+[[opt-keygen-family]] **`--keygen-family`** __basename__::
+    Generate a new family ID key in __basename__`.secret_family_key`.
+    To use this key, install it on every relay in your family.
+    (Put it in the relay's `KeyDirectory`.)
+    Also, store the corresponding family ID in __basename__`.public_family_id`.
+    Then enable the corresponding FamilyID option on your relays.
+    This command overwrites these files if they already exist.
+    See https://community.torproject.org/relay/setup/post-install/family-ids/
+    for more information.
+
 **`--passphrase-fd`** __FILEDES__::
     File descriptor to read the passphrase from.  Note that unlike with the
     tor-gencert program, the entire file contents are read and used as
@@ -2472,6 +2482,23 @@ is non-zero):
     Note: do not use MyFamily when configuring your Tor instance as a
     bridge.
 
+[[FamilyId]] **FamilyId** __ident__::
+    Configure this relay to be part of a family
+    identified by a shared secret family key with the given key identity.
+    A corresponding family key must be stored in the relay's key directory.
+    This option can appear multiple times.
+    Family keys are generated with "--keygen-family";
+    this also generates the value you should use in the __ident__ field
+    in a file ending with ".public\_family\_id".
+    For information on generating and installing a family
+    key, see https://community.torproject.org/relay/setup/post-install/family-ids/
+      +
+    In the future, this will be the preferred way for relays
+    to advertise family membership.
+    But for now, relay families should configure
+    both this option _and_ MyFamily, so older clients
+    will still recognize the relays' family membership.
+
 [[Nickname]] **Nickname** __name__::
     Set the server's nickname to \'name'. Nicknames must be between 1 and 19
     characters inclusive, and must contain only the characters [a-zA-Z0-9].
@@ -4039,6 +4066,12 @@ __KeyDirectory__/**`secret_onion_key_ntor`** and **`secret_onion_key_ntor.old`**
     circuit extension requests. The **`.old`** file holds the previously
     generated key, which the relay uses to handle any requests that were made
     by clients that didn't have the new one.
+
+__KeyDirectory__/__keyname__**`.secret_family_key`**::
+    A relay family's family identity key.
+    Used to prove membership in a relay family.
+    See https://community.torproject.org/relay/setup/post-install/family-ids/
+    for more information.
 
 __DataDirectory__/**`fingerprint`**::
     Only used by servers. Contains the fingerprint of the server's RSA
