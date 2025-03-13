@@ -1154,14 +1154,6 @@ AUTHCHALLENGE_FAIL(nonzero_circid,
                    require_failure_message = "It had a nonzero circuit ID";
                    d->cell->circ_id = 1337)
 
-static int
-mock_get_tlssecrets(tor_tls_t *tls, uint8_t *secrets_out)
-{
-  (void)tls;
-  memcpy(secrets_out, "int getRandomNumber(){return 4;}", 32);
-  return 0;
-}
-
 static void
 mock_set_circid_type(channel_t *chan,
                      crypto_pk_t *identity_rcvd,
@@ -1186,7 +1178,6 @@ authenticate_data_cleanup(const struct testcase_t *test, void *arg)
   UNMOCK(connection_or_write_var_cell_to_buf);
   UNMOCK(tor_tls_get_peer_cert);
   UNMOCK(tor_tls_get_own_cert);
-  UNMOCK(tor_tls_get_tlssecrets);
   UNMOCK(connection_or_close_for_error);
   UNMOCK(channel_set_circid_type);
   UNMOCK(tor_tls_export_key_material);
@@ -1223,7 +1214,6 @@ authenticate_data_setup(const struct testcase_t *test)
   MOCK(connection_or_write_var_cell_to_buf, mock_write_var_cell);
   MOCK(tor_tls_get_peer_cert, mock_get_peer_cert);
   MOCK(tor_tls_get_own_cert, mock_get_own_cert);
-  MOCK(tor_tls_get_tlssecrets, mock_get_tlssecrets);
   MOCK(connection_or_close_for_error, mock_close_for_err);
   MOCK(channel_set_circid_type, mock_set_circid_type);
   MOCK(tor_tls_export_key_material, mock_export_key_material);

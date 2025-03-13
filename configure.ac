@@ -1122,10 +1122,7 @@ AC_CHECK_FUNCS([ \
 		SSL_CIPHER_find \
 		SSL_CTX_set1_groups_list \
 		SSL_CTX_set_security_level \
-		SSL_SESSION_get_master_key \
 		SSL_get_client_ciphers \
-		SSL_get_client_random \
-		SSL_get_server_random \
 		TLS_method \
 	       ])
 

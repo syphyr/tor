@@ -410,12 +410,10 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
 
   /* HMAC of clientrandom and serverrandom using master key : 32 octets */
   if (old_tlssecrets_algorithm) {
-    if (tor_tls_get_tlssecrets(conn->tls, auth->tlssecrets) < 0) {
-      log_fn(LOG_PROTOCOL_WARN, LD_OR, "Somebody asked us for an older TLS "
-         "authentication method (AUTHTYPE_RSA_SHA256_TLSSECRET) "
-         "which we don't support.");
-      goto err;
-    }
+    log_fn(LOG_PROTOCOL_WARN, LD_OR, "Somebody asked us for an obsolete TLS "
+           "authentication method (AUTHTYPE_RSA_SHA256_TLSSECRET) "
+           "which we don't support.");
+    goto err;
   } else {
     char label[128];
     tor_snprintf(label, sizeof(label),
