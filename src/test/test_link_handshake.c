@@ -1004,7 +1004,6 @@ recv_authchallenge_setup(const struct testcase_t *test)
 {
   (void)test;
 
-  testing__connection_or_pretend_TLSSECRET_is_supported = 1;
   authchallenge_data_t *d = tor_malloc_zero(sizeof(*d));
   d->c = or_connection_new(CONN_TYPE_OR, AF_INET);
   d->chan = tor_malloc_zero(sizeof(*d->chan));
@@ -1019,7 +1018,7 @@ recv_authchallenge_setup(const struct testcase_t *test)
   d->cell->payload_len = 38;
   d->cell->payload[33] = 2; /* 2 methods */
   d->cell->payload[35] = 7; /* This one isn't real */
-  d->cell->payload[37] = 1; /* This is the old RSA one. */
+  d->cell->payload[37] = 3; /* This is the currently supported Ed25519 one. */
   d->cell->command = CELL_AUTH_CHALLENGE;
 
   get_options_mutable()->ORPort_set = 1;
@@ -1043,18 +1042,19 @@ static struct testcase_setup_t setup_recv_authchallenge = {
 };
 
 static void
-test_link_handshake_recv_authchallenge_ok(void *arg)
+test_link_handshake_recv_authchallenge_no_ed25519(void *arg)
 {
   authchallenge_data_t *d = arg;
 
+  d->cell->payload[33] = 1; /* only 1 type supported. */
+  d->cell->payload_len -= 2;
+
+  setup_capture_of_logs(LOG_INFO);
   channel_tls_process_auth_challenge_cell(d->cell, d->chan);
-  tt_int_op(0, OP_EQ, mock_close_called);
-  tt_int_op(1, OP_EQ, d->c->handshake_state->received_auth_challenge);
-  tt_int_op(1, OP_EQ, mock_send_authenticate_called);
-  tt_int_op(1, OP_EQ, mock_send_netinfo_called);
-  tt_int_op(1, OP_EQ, mock_send_authenticate_called_with_type); /* RSA */
+  expect_log_msg_containing("we don't know any of its authentication types");
+
  done:
-  ;
+  teardown_capture_of_logs();
 }
 
 static void
@@ -1206,8 +1206,6 @@ static void *
 authenticate_data_setup(const struct testcase_t *test)
 {
   authenticate_data_t *d = tor_malloc_zero(sizeof(*d));
-
-  testing__connection_or_pretend_TLSSECRET_is_supported = 1;
 
   scheduler_init();
 
@@ -1533,7 +1531,7 @@ struct testcase_t link_handshake_tests[] = {
   TEST_RCV_CERTS(server_wrong_labels_1),
 
   TEST_RSA(send_authchallenge, TT_FORK),
-  TEST_RCV_AUTHCHALLENGE(ok),
+  TEST_RCV_AUTHCHALLENGE(no_ed25519),
   TEST_RCV_AUTHCHALLENGE(ok_ed25519),
   TEST_RCV_AUTHCHALLENGE(ok_noserver),
   TEST_RCV_AUTHCHALLENGE(ok_unrecognized),
