@@ -505,32 +505,6 @@ test_tortls_cert_get_key(void *ignored)
 }
 #endif /* !defined(OPENSSL_OPAQUE) */
 
-static void
-test_tortls_get_my_client_auth_key(void *ignored)
-{
-  (void)ignored;
-  crypto_pk_t *ret;
-  crypto_pk_t *expected;
-  tor_tls_context_t *ctx;
-  RSA *k = RSA_new();
-
-  ctx = tor_malloc_zero(sizeof(tor_tls_context_t));
-  expected = crypto_new_pk_from_openssl_rsa_(k);
-  ctx->auth_key = expected;
-
-  client_tls_context = NULL;
-  ret = tor_tls_get_my_client_auth_key();
-  tt_assert(!ret);
-
-  client_tls_context = ctx;
-  ret = tor_tls_get_my_client_auth_key();
-  tt_assert(ret == expected);
-
- done:
-  crypto_pk_free(expected);
-  tor_free(ctx);
-}
-
 #ifndef HAVE_SSL_GET_CLIENT_CIPHERS
 static SSL_CIPHER *
 get_cipher_by_name(const char *name)
@@ -2188,7 +2162,6 @@ struct testcase_t tortls_openssl_tests[] = {
   LOCAL_TEST_CASE(always_accept_verify_cb, 0),
   INTRUSIVE_TEST_CASE(x509_cert_free, 0),
   INTRUSIVE_TEST_CASE(cert_get_key, 0),
-  LOCAL_TEST_CASE(get_my_client_auth_key, TT_FORK),
   INTRUSIVE_TEST_CASE(get_ciphersuite_name, 0),
   INTRUSIVE_TEST_CASE(classify_client_ciphers, 0),
   LOCAL_TEST_CASE(client_is_using_v2_ciphers, 0),

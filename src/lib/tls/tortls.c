@@ -93,19 +93,6 @@ tor_tls_get_my_certs(int server,
   return rv;
 }
 
-/**
- * Return the authentication key that we use to authenticate ourselves as a
- * client in the V3 in-protocol handshake.
- */
-crypto_pk_t *
-tor_tls_get_my_client_auth_key(void)
-{
-  tor_tls_context_t *context = tor_tls_context_get(0);
-  if (! context)
-    return NULL;
-  return context->auth_key;
-}
-
 /** Increase the reference count of <b>ctx</b>. */
 void
 tor_tls_context_incref(tor_tls_context_t *ctx)

@@ -147,7 +147,6 @@ void tor_tls_log_one_error(tor_tls_t *tls, unsigned long err,
 int tor_tls_get_my_certs(int server,
                          const struct tor_x509_cert_t **link_cert_out,
                          const struct tor_x509_cert_t **id_cert_out);
-crypto_pk_t *tor_tls_get_my_client_auth_key(void);
 
 const char *tor_tls_get_ciphersuite_name(tor_tls_t *tls);
 
