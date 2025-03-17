@@ -2469,18 +2469,16 @@ channel_tls_process_authenticate_cell(var_cell_t *cell, channel_tls_t *chan)
   if (! expected_cell)
     ERR("Couldn't compute expected AUTHENTICATE cell body");
 
-  int sig_is_rsa;
-  if (authtype == AUTHTYPE_RSA_SHA256_TLSSECRET ||
-      authtype == AUTHTYPE_RSA_SHA256_RFC5705) {
-    bodylen = V3_AUTH_BODY_LEN;
-    sig_is_rsa = 1;
+  if (BUG(authtype != AUTHTYPE_ED25519_SHA256_RFC5705)) {
+    /* We should have detected that we don't support this
+     * authentication type earlier, when we called
+     * authchallenge_type_is_supported(). */
+    ERR("Unsupported authentication type");
   } else {
-    tor_assert(authtype == AUTHTYPE_ED25519_SHA256_RFC5705);
     /* Our earlier check had better have made sure we had room
      * for an ed25519 sig (inadvertently) */
     tor_assert(V3_AUTH_BODY_LEN > ED25519_SIG_LEN);
     bodylen = authlen - ED25519_SIG_LEN;
-    sig_is_rsa = 0;
   }
   if (expected_cell->payload_len != bodylen+4) {
     ERR("Expected AUTHENTICATE cell body len not as expected.");
@@ -2496,47 +2494,7 @@ channel_tls_process_authenticate_cell(var_cell_t *cell, channel_tls_t *chan)
   if (tor_memneq(expected_cell->payload+4, auth, bodylen-24))
     ERR("Some field in the AUTHENTICATE cell body was not as expected");
 
-  if (sig_is_rsa) {
-    if (chan->conn->handshake_state->certs->ed_id_sign != NULL)
-      ERR("RSA-signed AUTHENTICATE response provided with an ED25519 cert");
-
-    if (chan->conn->handshake_state->certs->auth_cert == NULL)
-      ERR("We never got an RSA authentication certificate");
-
-    crypto_pk_t *pk = tor_tls_cert_get_key(
-                             chan->conn->handshake_state->certs->auth_cert);
-    char d[DIGEST256_LEN];
-    char *signed_data;
-    size_t keysize;
-    int signed_len;
-
-    if (! pk) {
-      ERR("Couldn't get RSA key from AUTH cert.");
-    }
-    crypto_digest256(d, (char*)auth, V3_AUTH_BODY_LEN, DIGEST_SHA256);
-
-    keysize = crypto_pk_keysize(pk);
-    signed_data = tor_malloc(keysize);
-    signed_len = crypto_pk_public_checksig(pk, signed_data, keysize,
-                                           (char*)auth + V3_AUTH_BODY_LEN,
-                                           authlen - V3_AUTH_BODY_LEN);
-    crypto_pk_free(pk);
-    if (signed_len < 0) {
-      tor_free(signed_data);
-      ERR("RSA signature wasn't valid");
-    }
-    if (signed_len < DIGEST256_LEN) {
-      tor_free(signed_data);
-      ERR("Not enough data was signed");
-    }
-    /* Note that we deliberately allow *more* than DIGEST256_LEN bytes here,
-     * in case they're later used to hold a SHA3 digest or something. */
-    if (tor_memneq(signed_data, d, DIGEST256_LEN)) {
-      tor_free(signed_data);
-      ERR("Signature did not match data to be signed.");
-    }
-    tor_free(signed_data);
-  } else {
+  {
     if (chan->conn->handshake_state->certs->ed_id_sign == NULL)
       ERR("We never got an Ed25519 identity certificate.");
     if (chan->conn->handshake_state->certs->ed_sign_auth == NULL)
@@ -2563,7 +2521,7 @@ channel_tls_process_authenticate_cell(var_cell_t *cell, channel_tls_t *chan)
     const common_digests_t *id_digests = tor_x509_cert_get_id_digests(id_cert);
     const ed25519_public_key_t *ed_identity_received = NULL;
 
-    if (! sig_is_rsa) {
+    {
       chan->conn->handshake_state->authenticated_ed25519 = 1;
       ed_identity_received =
         &chan->conn->handshake_state->certs->ed_id_sign->signing_key;

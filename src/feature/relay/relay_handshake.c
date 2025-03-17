@@ -233,11 +233,6 @@ connection_or_send_auth_challenge_cell(or_connection_t *conn)
   tor_assert(sizeof(ac->challenge) == 32);
   crypto_rand((char*)ac->challenge, sizeof(ac->challenge));
 
-  if (authchallenge_type_is_supported(AUTHTYPE_RSA_SHA256_TLSSECRET))
-    auth_challenge_cell_add_methods(ac, AUTHTYPE_RSA_SHA256_TLSSECRET);
-  /* Disabled, because everything that supports this method also supports
-   * the much-superior ED25519_SHA256_RFC5705 */
-  /* auth_challenge_cell_add_methods(ac, AUTHTYPE_RSA_SHA256_RFC5705); */
   if (authchallenge_type_is_supported(AUTHTYPE_ED25519_SHA256_RFC5705))
     auth_challenge_cell_add_methods(ac, AUTHTYPE_ED25519_SHA256_RFC5705);
   auth_challenge_cell_set_n_methods(ac,
@@ -292,23 +287,20 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   auth1_t *auth = NULL;
   auth_ctx_t *ctx = auth_ctx_new();
   var_cell_t *result = NULL;
-  int old_tlssecrets_algorithm = 0;
   const char *authtype_str = NULL;
 
-  int is_ed = 0;
+  (void) signing_key; // XXXX remove.
 
   /* assert state is reasonable XXXX */
   switch (authtype) {
   case AUTHTYPE_RSA_SHA256_TLSSECRET:
-    authtype_str = "AUTH0001";
-    old_tlssecrets_algorithm = 1;
-    break;
   case AUTHTYPE_RSA_SHA256_RFC5705:
-    authtype_str = "AUTH0002";
+    /* These are unsupported; we should never reach this point. */
+    tor_assert_nonfatal_unreached_once();
+    return NULL;
     break;
   case AUTHTYPE_ED25519_SHA256_RFC5705:
     authtype_str = "AUTH0003";
-    is_ed = 1;
     break;
   default:
     tor_assert(0);
@@ -316,7 +308,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   }
 
   auth = auth1_new();
-  ctx->is_ed = is_ed;
+  ctx->is_ed = 1;
 
   /* Type: 8 bytes. */
   memcpy(auth1_getarray_type(auth), authtype_str, 8);
@@ -345,7 +337,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
     memcpy(auth->sid, server_id, 32);
   }
 
-  if (is_ed) {
+  {
     const ed25519_public_key_t *my_ed_id, *their_ed_id;
     if (!conn->handshake_state->certs->ed_id_sign) {
       log_warn(LD_OR, "Ed authenticate without Ed ID cert from peer.");
@@ -398,13 +390,8 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
     tor_x509_cert_free(cert);
   }
 
-  /* HMAC of clientrandom and serverrandom using master key : 32 octets */
-  if (old_tlssecrets_algorithm) {
-    log_fn(LOG_PROTOCOL_WARN, LD_OR, "Somebody asked us for an obsolete TLS "
-           "authentication method (AUTHTYPE_RSA_SHA256_TLSSECRET) "
-           "which we don't support.");
-    goto err;
-  } else {
+  /* RFC5709 key exporter material : 32 octets */
+  {
     char label[128];
     tor_snprintf(label, sizeof(label),
                  "EXPORTER FOR TOR TLS CLIENT BINDING %s", authtype_str);
@@ -425,10 +412,8 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   crypto_rand((char*)auth->rand, 24);
 
   ssize_t maxlen = auth1_encoded_len(auth, ctx);
-  if (ed_signing_key && is_ed) {
+  if (ed_signing_key) {
     maxlen += ED25519_SIG_LEN;
-  } else if (signing_key && !is_ed) {
-    maxlen += crypto_pk_keysize(signing_key);
   }
 
   const int AUTH_CELL_HEADER_LEN = 4; /* 2 bytes of type, 2 bytes of length */
@@ -469,7 +454,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
     goto done;
   }
 
-  if (ed_signing_key && is_ed) {
+  if (ed_signing_key) {
     ed25519_signature_t sig;
     if (ed25519_sign(&sig, out, len, ed_signing_key) < 0) {
       /* LCOV_EXCL_START */
@@ -479,22 +464,6 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
     }
     auth1_setlen_sig(auth, ED25519_SIG_LEN);
     memcpy(auth1_getarray_sig(auth), sig.sig, ED25519_SIG_LEN);
-
-  } else if (signing_key && !is_ed) {
-    auth1_setlen_sig(auth, crypto_pk_keysize(signing_key));
-
-    char d[32];
-    crypto_digest256(d, (char*)out, len, DIGEST_SHA256);
-    int siglen = crypto_pk_private_sign(signing_key,
-                                    (char*)auth1_getarray_sig(auth),
-                                    auth1_getlen_sig(auth),
-                                    d, 32);
-    if (siglen < 0) {
-      log_warn(LD_OR, "Unable to sign AUTH1 data.");
-      goto err;
-    }
-
-    auth1_setlen_sig(auth, siglen);
   }
 
   len = auth1_encode(out, outlen, auth, ctx);
