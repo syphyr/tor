@@ -268,19 +268,19 @@ connection_or_send_auth_challenge_cell(or_connection_t *conn)
  * determined by the rest of the handshake, and which match the provided value
  * exactly.
  *
- * If <b>server</b> is false and <b>signing_key</b> is NULL, calculate the
+ * If <b>server</b> is false and <b>ed_signing_key</b> is NULL, calculate the
  * first V3_AUTH_BODY_LEN bytes of the authenticator (that is, everything
  * that should be signed), but don't actually sign it.
  *
- * If <b>server</b> is false and <b>signing_key</b> is provided, calculate the
- * entire authenticator, signed with <b>signing_key</b>.
+ * If <b>server</b> is false and <b>ed_signing_key</b> is provided,
+ * calculate the
+ * entire authenticator, signed with <b>ed_signing_key</b>.
  *
  * Return the length of the cell body on success, and -1 on failure.
  */
 var_cell_t *
 connection_or_compute_authenticate_cell_body(or_connection_t *conn,
                                              const int authtype,
-                                             crypto_pk_t *signing_key,
                                       const ed25519_keypair_t *ed_signing_key,
                                       int server)
 {
@@ -288,8 +288,6 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   auth_ctx_t *ctx = auth_ctx_new();
   var_cell_t *result = NULL;
   const char *authtype_str = NULL;
-
-  (void) signing_key; // XXXX remove.
 
   /* assert state is reasonable XXXX */
   switch (authtype) {
@@ -494,13 +492,8 @@ MOCK_IMPL(int,
 connection_or_send_authenticate_cell,(or_connection_t *conn, int authtype))
 {
   var_cell_t *cell;
-  crypto_pk_t *pk = tor_tls_get_my_client_auth_key();
   /* XXXX make sure we're actually supposed to send this! */
 
-  if (!pk) {
-    log_warn(LD_BUG, "Can't compute authenticate cell: no client auth key");
-    return -1;
-  }
   if (! authchallenge_type_is_supported(authtype)) {
     log_warn(LD_BUG, "Tried to send authenticate cell with unknown "
              "authentication type %d", authtype);
@@ -509,7 +502,6 @@ connection_or_send_authenticate_cell,(or_connection_t *conn, int authtype))
 
   cell = connection_or_compute_authenticate_cell_body(conn,
                                                  authtype,
-                                                 pk,
                                                  get_current_auth_keypair(),
                                                  0 /* not server */);
   if (! cell) {

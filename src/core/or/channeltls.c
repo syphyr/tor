@@ -2465,7 +2465,7 @@ channel_tls_process_authenticate_cell(var_cell_t *cell, channel_tls_t *chan)
     ERR("Authenticator was too short");
 
   expected_cell = connection_or_compute_authenticate_cell_body(
-                chan->conn, authtype, NULL, NULL, 1);
+                chan->conn, authtype, NULL, 1);
   if (! expected_cell)
     ERR("Couldn't compute expected AUTHENTICATE cell body");
 
