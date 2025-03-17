@@ -285,7 +285,6 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
                                       int server)
 {
   auth1_t *auth = NULL;
-  auth_ctx_t *ctx = auth_ctx_new();
   var_cell_t *result = NULL;
   const char *authtype_str = NULL;
 
@@ -306,7 +305,6 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   }
 
   auth = auth1_new();
-  ctx->is_ed = 1;
 
   /* Type: 8 bytes. */
   memcpy(auth1_getarray_type(auth), authtype_str, 8);
@@ -347,8 +345,8 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
     const uint8_t *cid_ed = (server ? their_ed_id : my_ed_id)->pubkey;
     const uint8_t *sid_ed = (server ? my_ed_id : their_ed_id)->pubkey;
 
-    memcpy(auth->u1_cid_ed, cid_ed, ED25519_PUBKEY_LEN);
-    memcpy(auth->u1_sid_ed, sid_ed, ED25519_PUBKEY_LEN);
+    memcpy(auth->cid_ed, cid_ed, ED25519_PUBKEY_LEN);
+    memcpy(auth->sid_ed, sid_ed, ED25519_PUBKEY_LEN);
   }
 
   {
@@ -409,7 +407,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
    * checks it.  That's followed by 16 bytes of nonce. */
   crypto_rand((char*)auth->rand, 24);
 
-  ssize_t maxlen = auth1_encoded_len(auth, ctx);
+  ssize_t maxlen = auth1_encoded_len(auth);
   if (ed_signing_key) {
     maxlen += ED25519_SIG_LEN;
   }
@@ -423,7 +421,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   result->command = CELL_AUTHENTICATE;
   set_uint16(result->payload, htons(authtype));
 
-  if ((len = auth1_encode(out, outlen, auth, ctx)) < 0) {
+  if ((len = auth1_encode(out, outlen, auth)) < 0) {
     /* LCOV_EXCL_START */
     log_warn(LD_BUG, "Unable to encode signed part of AUTH1 data.");
     goto err;
@@ -432,7 +430,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
 
   if (server) {
     auth1_t *tmp = NULL;
-    ssize_t len2 = auth1_parse(&tmp, out, len, ctx);
+    ssize_t len2 = auth1_parse(&tmp, out, len);
     if (!tmp) {
       /* LCOV_EXCL_START */
       log_warn(LD_BUG, "Unable to parse signed part of AUTH1 data that "
@@ -464,7 +462,7 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
     memcpy(auth1_getarray_sig(auth), sig.sig, ED25519_SIG_LEN);
   }
 
-  len = auth1_encode(out, outlen, auth, ctx);
+  len = auth1_encode(out, outlen, auth);
   if (len < 0) {
     /* LCOV_EXCL_START */
     log_warn(LD_BUG, "Unable to encode signed AUTH1 data.");
@@ -482,7 +480,6 @@ connection_or_compute_authenticate_cell_body(or_connection_t *conn,
   result = NULL;
  done:
   auth1_free(auth);
-  auth_ctx_free(ctx);
   return result;
 }
 

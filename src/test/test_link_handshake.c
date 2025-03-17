@@ -1301,11 +1301,9 @@ test_link_handshake_auth_cell(void *arg)
             d->cell->payload_len - 4);
 
   /* Check it out for plausibility... */
-  auth_ctx_t ctx;
-  ctx.is_ed = 1;
   tt_int_op(d->cell->payload_len-4, OP_EQ, auth1_parse(&auth1,
                                              d->cell->payload+4,
-                                             d->cell->payload_len - 4, &ctx));
+                                             d->cell->payload_len - 4));
   tt_assert(auth1);
 
   tt_mem_op(auth1->type, OP_EQ, "AUTH0003", 8);
