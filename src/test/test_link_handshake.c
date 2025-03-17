@@ -943,25 +943,15 @@ test_link_handshake_send_authchallenge(void *arg)
   cell1 = mock_got_var_cell;
   tt_int_op(0, OP_EQ, connection_or_send_auth_challenge_cell(c1));
   cell2 = mock_got_var_cell;
-#ifdef HAVE_WORKING_TOR_TLS_GET_TLSSECRETS
-  tt_int_op(38, OP_EQ, cell1->payload_len);
-  tt_int_op(38, OP_EQ, cell2->payload_len);
-#else
   tt_int_op(36, OP_EQ, cell1->payload_len);
   tt_int_op(36, OP_EQ, cell2->payload_len);
-#endif /* defined(HAVE_WORKING_TOR_TLS_GET_TLSSECRETS) */
   tt_int_op(0, OP_EQ, cell1->circ_id);
   tt_int_op(0, OP_EQ, cell2->circ_id);
   tt_int_op(CELL_AUTH_CHALLENGE, OP_EQ, cell1->command);
   tt_int_op(CELL_AUTH_CHALLENGE, OP_EQ, cell2->command);
 
-#ifdef HAVE_WORKING_TOR_TLS_GET_TLSSECRETS
-  tt_mem_op("\x00\x02\x00\x01\x00\x03", OP_EQ, cell1->payload + 32, 6);
-  tt_mem_op("\x00\x02\x00\x01\x00\x03", OP_EQ, cell2->payload + 32, 6);
-#else
   tt_mem_op("\x00\x01\x00\x03", OP_EQ, cell1->payload + 32, 4);
   tt_mem_op("\x00\x01\x00\x03", OP_EQ, cell2->payload + 32, 4);
-#endif /* defined(HAVE_WORKING_TOR_TLS_GET_TLSSECRETS) */
   tt_mem_op(cell1->payload, OP_NE, cell2->payload, 32);
 
  done:
