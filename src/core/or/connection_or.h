@@ -129,8 +129,4 @@ STATIC void note_or_connect_failed(const or_connection_t *or_conn);
 MOCK_DECL(void, connection_or_change_state,
           (or_connection_t *conn, uint8_t state));
 
-#ifdef TOR_UNIT_TESTS
-extern int testing__connection_or_pretend_TLSSECRET_is_supported;
-#endif
-
 #endif /* !defined(TOR_CONNECTION_OR_H) */

@@ -183,27 +183,17 @@ connection_or_send_certs_cell(or_connection_t *conn)
   return 0;
 }
 
-#ifdef TOR_UNIT_TESTS
-int testing__connection_or_pretend_TLSSECRET_is_supported = 0;
-#else
-#define testing__connection_or_pretend_TLSSECRET_is_supported 0
-#endif
-
 /** Return true iff <b>challenge_type</b> is an AUTHCHALLENGE type that
  * we can send and receive. */
 int
 authchallenge_type_is_supported(uint16_t challenge_type)
 {
   switch (challenge_type) {
-     case AUTHTYPE_RSA_SHA256_TLSSECRET:
-#ifdef HAVE_WORKING_TOR_TLS_GET_TLSSECRETS
-       return 1;
-#else
-       return testing__connection_or_pretend_TLSSECRET_is_supported;
-#endif
      case AUTHTYPE_ED25519_SHA256_RFC5705:
        return 1;
-     case AUTHTYPE_RSA_SHA256_RFC5705:
+
+     case AUTHTYPE_RSA_SHA256_TLSSECRET: // obsolete.
+     case AUTHTYPE_RSA_SHA256_RFC5705: // never implemented.
      default:
        return 0;
   }
