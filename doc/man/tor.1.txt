@@ -2498,6 +2498,9 @@ is non-zero):
     But for now, relay families should configure
     both this option _and_ MyFamily, so older clients
     will still recognize the relays' family membership.
+      +
+    (Note that if the seccomp2 Sandbox feature is enabled,
+    it is not possible to change the key filenames while Tor is running.)
 
 [[Nickname]] **Nickname** __name__::
     Set the server's nickname to \'name'. Nicknames must be between 1 and 19
