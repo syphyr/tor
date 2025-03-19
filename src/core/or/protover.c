@@ -396,11 +396,7 @@ protocol_list_supports_protocol_or_later(const char *list,
 #define PR_HSINTRO_V   "4-5"
 #define PR_HSREND_V    "1-2"
 #define PR_LINK_V      "1-5"
-#ifdef HAVE_WORKING_TOR_TLS_GET_TLSSECRETS
-#define PR_LINKAUTH_V  "1,3"
-#else
 #define PR_LINKAUTH_V  "3"
-#endif
 #define PR_MICRODESC_V "1-3"
 #define PR_PADDING_V   "2"
 #define PR_RELAY_V     "2-4"

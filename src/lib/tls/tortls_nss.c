@@ -789,17 +789,6 @@ tor_tls_cert_matches_key,(const tor_tls_t *tls,
 }
 
 MOCK_IMPL(int,
-tor_tls_get_tlssecrets,(tor_tls_t *tls, uint8_t *secrets_out))
-{
-  tor_assert(tls);
-  tor_assert(secrets_out);
-
-  /* There's no way to get this information out of NSS. */
-
-  return -1;
-}
-
-MOCK_IMPL(int,
 tor_tls_export_key_material,(tor_tls_t *tls, uint8_t *secrets_out,
                              const uint8_t *context,
                              size_t context_len,

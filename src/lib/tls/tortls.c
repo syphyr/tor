@@ -93,19 +93,6 @@ tor_tls_get_my_certs(int server,
   return rv;
 }
 
-/**
- * Return the authentication key that we use to authenticate ourselves as a
- * client in the V3 in-protocol handshake.
- */
-crypto_pk_t *
-tor_tls_get_my_client_auth_key(void)
-{
-  tor_tls_context_t *context = tor_tls_context_get(0);
-  if (! context)
-    return NULL;
-  return context->auth_key;
-}
-
 /** Increase the reference count of <b>ctx</b>. */
 void
 tor_tls_context_incref(tor_tls_context_t *ctx)
@@ -413,7 +400,8 @@ tor_tls_free_(tor_tls_t *tls)
  * 0.  Else, return -1 and log complaints with log-level <b>severity</b>.
  */
 int
-tor_tls_verify(int severity, tor_tls_t *tls, crypto_pk_t **identity)
+tor_tls_verify(int severity, tor_tls_t *tls, time_t now,
+               crypto_pk_t **identity)
 {
   tor_x509_cert_impl_t *cert = NULL, *id_cert = NULL;
   tor_x509_cert_t *peer_x509 = NULL, *id_x509 = NULL;
@@ -432,7 +420,7 @@ tor_tls_verify(int severity, tor_tls_t *tls, crypto_pk_t **identity)
   id_x509 = tor_x509_cert_new(id_cert);
   cert = id_cert = NULL; /* Prevent double-free */
 
-  if (! tor_tls_cert_is_valid(severity, peer_x509, id_x509, time(NULL), 0)) {
+  if (! tor_tls_cert_is_valid(severity, peer_x509, id_x509, now, 0)) {
     goto done;
   }
 
