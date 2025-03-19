@@ -730,6 +730,68 @@ family_key_is_present(const ed25519_public_key_t *id)
  */
 #define FAMILY_KEY_FILE_TAG "fmly-id"
 
+/** Return a list of all the possible family-key files in `keydir`.
+ * Return NULL on error.
+ *
+ * (Unlike list_family_key_files, this function does not use a cached
+ * list when the seccomp2 sandbox is enabled.) */
+static smartlist_t *
+list_family_key_files_impl(const char *keydir)
+{
+  smartlist_t *files = tor_listdir(keydir);
+  smartlist_t *result = smartlist_new();
+
+  if (!files) {
+    log_warn(LD_OR, "Unable to list contents of directory %s", keydir);
+    goto err;
+  }
+
+  SMARTLIST_FOREACH_BEGIN(files, const char *, fn) {
+    if (!is_family_key_fname(fn))
+      continue;
+
+    smartlist_add_asprintf(result, "%s%s%s", keydir, PATH_SEPARATOR, fn);
+  } SMARTLIST_FOREACH_END(fn);
+
+  goto done;
+ err:
+  SMARTLIST_FOREACH(result, char *, cp, tor_free(cp));
+  smartlist_free(result); // sets result to NULL.
+ done:
+  SMARTLIST_FOREACH(files, char *, cp, tor_free(cp));
+  smartlist_free(files);
+
+  return result;
+}
+
+/**
+ * A list of files returned by list_family_key_files_impl.
+ * Used when the seccomp2 sandbox is enabled.
+ */
+static smartlist_t *cached_family_key_file_list = NULL;
+
+/** Return a list of all the possible family-key files in `keydir`.
+ * Return NULL on error.
+ */
+smartlist_t *
+list_family_key_files(const or_options_t *options,
+                      const char *keydir)
+{
+  if (options->Sandbox) {
+    if (!cached_family_key_file_list)
+      cached_family_key_file_list = list_family_key_files_impl(keydir);
+    if (!cached_family_key_file_list)
+      return NULL;
+
+    smartlist_t *result = smartlist_new();
+    SMARTLIST_FOREACH(cached_family_key_file_list, char *, fn,
+                      smartlist_add_strdup(result, fn));
+    return result;
+  }
+
+  return list_family_key_files_impl(keydir);
+}
+
 /**
  * Look for all the family keys in `keydir`, load them into
  * family_id_keys.
@@ -741,38 +803,31 @@ load_family_id_keys_impl(const or_options_t *options,
   if (BUG(!options) || BUG(!keydir))
     return -1;
 
-  smartlist_t *files = tor_listdir(keydir);
+  smartlist_t *key_files = list_family_key_files(options, keydir);
   smartlist_t *new_keys = NULL;
   ed25519_keypair_t *kp_tmp = NULL;
-  char *fn_tmp = NULL;
   char *tag_tmp = NULL;
   int r = -1;
 
-  if (files == NULL) {
-    log_warn(LD_OR, "Unable to list contents of directory %s", keydir);
-    goto end;
+  if (key_files == NULL) {
+    goto end; // already warned.
   }
 
   new_keys = smartlist_new();
-  SMARTLIST_FOREACH_BEGIN(files, const char *, fn) {
-    if (!is_family_key_fname(fn))
-      continue;
-
-    tor_asprintf(&fn_tmp, "%s%s%s", keydir, PATH_SEPARATOR, fn);
-
+  SMARTLIST_FOREACH_BEGIN(key_files, const char *, fn) {
     kp_tmp = tor_malloc_zero(sizeof(*kp_tmp));
     // TODO: If we ever allow cert provisioning here,
     // use ed_key_init_from_file() instead.
-    if (ed25519_seckey_read_from_file(&kp_tmp->seckey, &tag_tmp, fn_tmp) < 0) {
-      log_warn(LD_OR, "%s was not an ed25519 secret key.", fn_tmp);
+    if (ed25519_seckey_read_from_file(&kp_tmp->seckey, &tag_tmp, fn) < 0) {
+      log_warn(LD_OR, "%s was not an ed25519 secret key.", fn);
       goto end;
     }
     if (0 != strcmp(tag_tmp, FAMILY_KEY_FILE_TAG)) {
-      log_warn(LD_OR, "%s was not a family ID key.", fn_tmp);
+      log_warn(LD_OR, "%s was not a family ID key.", fn);
       goto end;
     }
     if (ed25519_public_key_generate(&kp_tmp->pubkey, &kp_tmp->seckey) < 0) {
-      log_warn(LD_OR, "Unable to generate public key for %s", fn_tmp);
+      log_warn(LD_OR, "Unable to generate public key for %s", fn);
       goto end;
     }
 
@@ -782,10 +837,9 @@ load_family_id_keys_impl(const or_options_t *options,
     } else {
       log_warn(LD_OR, "Found secret family key in %s "
                "with unexpected FamilyID %s",
-               fn_tmp, ed25519_fmt(&kp_tmp->pubkey));
+               fn, ed25519_fmt(&kp_tmp->pubkey));
     }
 
-    tor_free(fn_tmp);
     tor_free(tag_tmp);
   } SMARTLIST_FOREACH_END(fn);
 
@@ -793,16 +847,15 @@ load_family_id_keys_impl(const or_options_t *options,
   new_keys = NULL; // prevent double-free
   r = 0;
  end:
-  if (files) {
-    SMARTLIST_FOREACH(files, char *, cp, tor_free(cp));
-    smartlist_free(files);
+  if (key_files) {
+    SMARTLIST_FOREACH(key_files, char *, cp, tor_free(cp));
+    smartlist_free(key_files);
   }
   if (new_keys) {
     SMARTLIST_FOREACH(new_keys, ed25519_keypair_t *, kp,
                       ed25519_keypair_free(kp));
     smartlist_free(new_keys);
   }
-  tor_free(fn_tmp);
   tor_free(tag_tmp);
   ed25519_keypair_free(kp_tmp);
   return r;
@@ -1029,6 +1082,11 @@ routerkeys_free_all(void)
   tor_cert_free(link_cert_cert);
   tor_cert_free(auth_key_cert);
   tor_free(rsa_ed_crosscert);
+
+  if (cached_family_key_file_list) {
+    SMARTLIST_FOREACH(cached_family_key_file_list, char *, cp, tor_free(cp));
+    smartlist_free(cached_family_key_file_list);
+  }
 
   master_identity_key = master_signing_key = NULL;
   current_auth_key = NULL;

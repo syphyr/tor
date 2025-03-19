@@ -957,6 +957,17 @@ sandbox_init_filter(void)
   OPEN("/etc/hosts");
   OPEN("/proc/meminfo");
 
+  {
+    smartlist_t *family_id_files =
+      list_family_key_files(options, options->KeyDirectory);
+
+    SMARTLIST_FOREACH(family_id_files, const char *, fn,
+                      OPEN(fn));
+
+    SMARTLIST_FOREACH(family_id_files, char *, cp, tor_free(cp));
+    smartlist_free(family_id_files);
+  }
+
   if (options->BridgeAuthoritativeDir)
     OPEN_DATADIR_SUFFIX("networkstatus-bridges", ".tmp");
 
