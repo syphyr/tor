@@ -60,7 +60,6 @@ connection_or_compute_authenticate_cell_body(
 {
   (void)conn;
   (void)authtype;
-  (void)signing_key;
   (void)ed_signing_key;
   (void)server;
   tor_assert_nonfatal_unreached();
