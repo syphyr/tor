@@ -840,6 +840,7 @@ load_family_id_keys_impl(const or_options_t *options,
                fn, ed25519_fmt(&kp_tmp->pubkey));
     }
 
+    ed25519_keypair_free(kp_tmp);
     tor_free(tag_tmp);
   } SMARTLIST_FOREACH_END(fn);
 
