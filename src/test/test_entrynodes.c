@@ -2341,7 +2341,7 @@ test_entry_guard_select_for_circuit_exit_family_restriction(void *arg)
   oc->build_state = tor_malloc_zero(sizeof(cpath_build_state_t));
 
   /* First pick the exit and pin it on the build_state */
-  retval = onion_pick_cpath_exit(oc, NULL, 0);
+  retval = onion_pick_cpath_exit(oc, NULL);
   tt_int_op(retval, OP_EQ, 0);
 
   /* Then pick a guard */
