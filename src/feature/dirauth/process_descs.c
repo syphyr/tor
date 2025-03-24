@@ -228,7 +228,7 @@ dirserv_load_fingerprint_file(void)
         add_status = RTR_INVALID;
     }  else if (!strcasecmp(nickname, "!middleonly")) {
         add_status = RTR_MIDDLEONLY;
-    } else if (!strcasecmp(nickname, "!stripexit")) {
+    } else if (!strcasecmp(nickname, "!stripguard")) {
         add_status = RTR_STRIPGUARD;
     } else if (!strcasecmp(nickname, "!striphsdir")) {
         add_status = RTR_STRIPHSDIR;
