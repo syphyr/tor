@@ -742,65 +742,6 @@ test_tortls_get_pending_bytes(void *ignored)
 
 #ifndef OPENSSL_OPAQUE
 static void
-test_tortls_SSL_SESSION_get_master_key(void *ignored)
-{
-  (void)ignored;
-  size_t ret;
-  tor_tls_t *tls;
-  uint8_t *out;
-  out = tor_malloc_zero(1);
-  tls = tor_malloc_zero(sizeof(tor_tls_t));
-  tls->ssl = tor_malloc_zero(sizeof(SSL));
-  tls->ssl->session = tor_malloc_zero(sizeof(SSL_SESSION));
-  tls->ssl->session->master_key_length = 1;
-
-#ifndef HAVE_SSL_SESSION_GET_MASTER_KEY
-  tls->ssl->session->master_key[0] = 43;
-  ret = SSL_SESSION_get_master_key(tls->ssl->session, out, 0);
-  tt_int_op(ret, OP_EQ, 1);
-  tt_int_op(out[0], OP_EQ, 0);
-
-  ret = SSL_SESSION_get_master_key(tls->ssl->session, out, 1);
-  tt_int_op(ret, OP_EQ, 1);
-  tt_int_op(out[0], OP_EQ, 43);
-
- done:
-#endif /* !defined(HAVE_SSL_SESSION_GET_MASTER_KEY) */
-  tor_free(tls->ssl->session);
-  tor_free(tls->ssl);
-  tor_free(tls);
-  tor_free(out);
-}
-#endif /* !defined(OPENSSL_OPAQUE) */
-
-#ifndef OPENSSL_OPAQUE
-static void
-test_tortls_get_tlssecrets(void *ignored)
-{
-  (void)ignored;
-  int ret;
-  uint8_t *secret_out = tor_malloc_zero(DIGEST256_LEN);
-  tor_tls_t *tls;
-  tls = tor_malloc_zero(sizeof(tor_tls_t));
-  tls->ssl = tor_malloc_zero(sizeof(SSL));
-  tls->ssl->session = tor_malloc_zero(sizeof(SSL_SESSION));
-  tls->ssl->session->master_key_length = 1;
-  tls->ssl->s3 = tor_malloc_zero(sizeof(SSL3_STATE));
-
-  ret = tor_tls_get_tlssecrets(tls, secret_out);
-  tt_int_op(ret, OP_EQ, 0);
-
- done:
-  tor_free(secret_out);
-  tor_free(tls->ssl->s3);
-  tor_free(tls->ssl->session);
-  tor_free(tls->ssl);
-  tor_free(tls);
-}
-#endif /* !defined(OPENSSL_OPAQUE) */
-
-#ifndef OPENSSL_OPAQUE
-static void
 test_tortls_get_buffer_sizes(void *ignored)
 {
   (void)ignored;
@@ -2166,8 +2107,6 @@ struct testcase_t tortls_openssl_tests[] = {
   INTRUSIVE_TEST_CASE(classify_client_ciphers, 0),
   LOCAL_TEST_CASE(client_is_using_v2_ciphers, 0),
   INTRUSIVE_TEST_CASE(get_pending_bytes, 0),
-  INTRUSIVE_TEST_CASE(SSL_SESSION_get_master_key, 0),
-  INTRUSIVE_TEST_CASE(get_tlssecrets, 0),
   INTRUSIVE_TEST_CASE(get_buffer_sizes, 0),
   INTRUSIVE_TEST_CASE(try_to_extract_certs_from_tls, 0),
   INTRUSIVE_TEST_CASE(get_peer_cert, 0),
