@@ -1,0 +1,18 @@
+  o Minor features (required protocols):
+    - Directory authorities now vote to require relays to support certain
+      protocols, all of which have been implemented since 0.4.7.4-alpha or
+      earlier.
+      These include improved support for connecting to relays on IPv6,
+      NtorV3, running as a rate-limited introduction point,
+      authenticated SENDMEs, and congestion control.
+      Part of ticket 40836.
+    - Directory authorities now vote to require clients to support the
+      authenticated SENDME feature, which was introduced in 0.4.1.1-alpha.
+      Part of ticket 40836.
+
+  o Minor features (recommended protocols):
+    - Directory authorities now vote to recommend that clients
+      support certain protocols beyond those that are required.
+      These include improved support for connecting to relays on IPv6,
+      NtorV3, and congestion control.
+      Part of ticket 40836.
