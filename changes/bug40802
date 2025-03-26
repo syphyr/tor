@@ -1,0 +1,9 @@
+  o Minor bugfixes (directory authorities):
+    - After we added layer-two vanguards, directory authorities wouldn't
+      think any of their vanguards were suitable for circuits, leading
+      to a "Failed to find node for hop #2 of our path. Discarding
+      this circuit." log message once per second from startup until
+      they made a fresh consensus. Now they look to their existing
+      consensus on startup, letting them build circuits properly from
+      the beginning. Fixes bug 40802; bugfix on 0.4.7.1-alpha.
+
