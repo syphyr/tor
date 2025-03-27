@@ -1,0 +1,3 @@
+  o Minor bugfix (conflux):
+    - Avoid a non fatal assert when describing a conflux circuit on the control
+      port after being prepped to be freed. Fixes bug 41037; bugfix on 0.4.8.15.

@@ -1,0 +1,4 @@
+  o Minor bugfixes (threads, memory):
+    - Rework start and exit of worker threads.
+    - Improvements in cleanup of resources used by threads.
+      Fixes bug 40991; bugfix on 0.4.8.13-dev.
