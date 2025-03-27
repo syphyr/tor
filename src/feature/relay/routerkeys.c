@@ -908,7 +908,7 @@ load_family_id_keys(const or_options_t *options,
                     const networkstatus_t *ns)
 {
   if (options->FamilyIds) {
-    if (load_family_id_keys_impl(options, options->KeyDirectory) < 0)
+    if (load_family_id_keys_impl(options, options->FamilyKeyDirectory) < 0)
       return -1;
 
     bool any_missing = false;

@@ -89,6 +89,10 @@ struct or_options_t {
   char *KeyDirectory; /**< Where to store keys data, as modified. */
   int KeyDirectoryGroupReadable; /**< Boolean: Is the KeyDirectory g+r? */
 
+  char *FamilyKeyDirectory_option; /**< Where to look for family ID keys,
+                                    * as configured by the user. */
+  char *FamilyKeyDirectory; /**< Where to look for family ID keys. */
+
   char *CacheDirectory_option; /**< Where to store cached data, as
                                * configured by the user. */
   char *CacheDirectory; /**< Where to store cached data, as modified. */
