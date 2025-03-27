@@ -2502,6 +2502,14 @@ is non-zero):
     (Note that if the seccomp2 Sandbox feature is enabled,
     it is not possible to change the key filenames while Tor is running.)
 
+[[FamilyIdStar]] **FamilyId** ** * **::
+    Configure this relay to be part of _every_ family
+    identified by any family ID key found in the family key directory.
+    Specifying family IDs in this way makes it unnecessary to adjust the
+    configuration file if the family key is rotated,
+    but it increases the likelihood of accidentally using a different
+    set of family keys than the ones you had expected.
+
 [[FamilyKeyDirectory]] **FamilyKeyDirectory** __directory__:
     Configure a directory to use, in place of the key directory,
     when searching for family ID keys.

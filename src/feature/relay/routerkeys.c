@@ -704,6 +704,9 @@ static bool
 family_key_id_is_expected(const or_options_t *options,
                           const ed25519_public_key_t *id)
 {
+  if (options->AllFamilyIdsExpected)
+    return true;
+
   SMARTLIST_FOREACH(options->FamilyIds, const ed25519_public_key_t *, k, {
       if (ed25519_pubkey_eq(k, id))
         return true;
