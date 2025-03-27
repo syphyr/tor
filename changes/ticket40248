@@ -1,0 +1,4 @@
+  o Minor bugfix (client DNS):
+    - Handle empty DNS reply without sending back an error and instead send back
+      NOERROR (RFC1035 error code 0x0). Fixes bug 40248; bugfix on
+      0.3.5.1-alpha.
