@@ -1,0 +1,3 @@
+  o Major bugfix (control-events, bw-cache):
+    - Fixes spikes occurring in bandwidth cache on control connection.
+      Fixes bug 31524; bugfix on 0.4.8.12-dev.
