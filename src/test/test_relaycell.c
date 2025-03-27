@@ -988,7 +988,7 @@ test_relaycell_resolved(void *arg)
   tt_int_op(r, OP_EQ, 0);
   ASSERT_MARK_CALLED(END_STREAM_REASON_DONE|
                      END_STREAM_REASON_FLAG_ALREADY_SOCKS_REPLIED);
-  ASSERT_RESOLVED_CALLED(RESOLVED_TYPE_ERROR, NULL, -1, -1);
+  ASSERT_RESOLVED_CALLED(RESOLVED_TYPE_NOERROR, NULL, -1, -1);
 
   /* If we wanted hostnames, we report nothing, since we only had IPs. */
   MOCK_RESET();
