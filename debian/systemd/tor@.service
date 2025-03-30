@@ -1,6 +1,8 @@
 [Unit]
 Description=Anonymizing overlay network for TCP (instance %i)
-After=network.target nss-lookup.target
+After=network.target
+Before=nss-lookup.target
+Wants=nss-lookup.target
 PartOf=tor.service
 ReloadPropagatedFrom=tor.service
 
