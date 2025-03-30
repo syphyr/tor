@@ -1,3 +1,9 @@
+tor (0.4.8.16-1b) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- syphyr <syphyr@google.com>  Sun, 30 Mar 2025 21:02:45 +0200
+
 tor (0.4.8.15-1b) unstable; urgency=medium
 
   * New upstream version.
