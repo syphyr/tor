@@ -2485,7 +2485,8 @@ is non-zero):
 [[FamilyId]] **FamilyId** __ident__::
     Configure this relay to be part of a family
     identified by a shared secret family key with the given key identity.
-    A corresponding family key must be stored in the relay's key directory.
+    A corresponding family key must be stored in the relay's key directory,
+    with a filename ending with ".secret\_family\_key".
     This option can appear multiple times.
     Family keys are generated with "--keygen-family";
     this also generates the value you should use in the __ident__ field
@@ -2501,6 +2502,19 @@ is non-zero):
       +
     (Note that if the seccomp2 Sandbox feature is enabled,
     it is not possible to change the key filenames while Tor is running.)
+
+[[FamilyIdStar]] **FamilyId** ** * **::
+    Configure this relay to be part of _every_ family
+    identified by any family ID key found in the family key directory.
+    Only filenames ending with ".secret\_family\_key" are considered.
+    Specifying family IDs in this way makes it unnecessary to adjust the
+    configuration file if the family key is rotated,
+    but it increases the likelihood of accidentally using a different
+    set of family keys than the ones you had expected.
+
+[[FamilyKeyDirectory]] **FamilyKeyDirectory** __directory__:
+    Configure a directory to use, in place of the key directory,
+    when searching for family ID keys.
 
 [[Nickname]] **Nickname** __name__::
     Set the server's nickname to \'name'. Nicknames must be between 1 and 19

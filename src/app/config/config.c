@@ -471,6 +471,8 @@ static const config_var_t option_vars_[] = {
 
   OBSOLETE("FallbackNetworkstatusFile"),
   VAR("FamilyId",                LINELIST, FamilyId_lines,   NULL),
+  VAR_IMMUTABLE("FamilyKeyDirectory",
+                FILENAME, FamilyKeyDirectory_option, NULL),
   V(FascistFirewall,             BOOL,     "0"),
   V(FirewallPorts,               CSV,      ""),
   OBSOLETE("FastFirstHopPK"),
@@ -1045,6 +1047,7 @@ options_clear_cb(const config_mgr_t *mgr, void *opts)
   }
   tor_free(options->DataDirectory);
   tor_free(options->CacheDirectory);
+  tor_free(options->FamilyKeyDirectory);
   tor_free(options->KeyDirectory);
   tor_free(options->BridgePassword_AuthDigest_);
   tor_free(options->command_arg);
@@ -6987,6 +6990,17 @@ validate_data_directories(or_options_t *options)
   } else {
     /* Default to the data directory. */
     options->CacheDirectory = tor_strdup(options->DataDirectory);
+  }
+
+  tor_free(options->FamilyKeyDirectory);
+  if (options->FamilyKeyDirectory_option) {
+    options->FamilyKeyDirectory =
+      get_data_directory(options->FamilyKeyDirectory_option);
+    if (!options->FamilyKeyDirectory)
+      return -1;
+  } else {
+    /* Default to the key directory. */
+    options->FamilyKeyDirectory = tor_strdup(options->KeyDirectory);
   }
 
   return 0;

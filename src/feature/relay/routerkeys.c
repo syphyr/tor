@@ -704,6 +704,9 @@ static bool
 family_key_id_is_expected(const or_options_t *options,
                           const ed25519_public_key_t *id)
 {
+  if (options->AllFamilyIdsExpected)
+    return true;
+
   SMARTLIST_FOREACH(options->FamilyIds, const ed25519_public_key_t *, k, {
       if (ed25519_pubkey_eq(k, id))
         return true;
@@ -908,7 +911,7 @@ load_family_id_keys(const or_options_t *options,
                     const networkstatus_t *ns)
 {
   if (options->FamilyIds) {
-    if (load_family_id_keys_impl(options, options->KeyDirectory) < 0)
+    if (load_family_id_keys_impl(options, options->FamilyKeyDirectory) < 0)
       return -1;
 
     bool any_missing = false;

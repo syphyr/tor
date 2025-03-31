@@ -89,6 +89,10 @@ struct or_options_t {
   char *KeyDirectory; /**< Where to store keys data, as modified. */
   int KeyDirectoryGroupReadable; /**< Boolean: Is the KeyDirectory g+r? */
 
+  char *FamilyKeyDirectory_option; /**< Where to look for family ID keys,
+                                    * as configured by the user. */
+  char *FamilyKeyDirectory; /**< Where to look for family ID keys. */
+
   char *CacheDirectory_option; /**< Where to store cached data, as
                                * configured by the user. */
   char *CacheDirectory; /**< Where to store cached data, as modified. */
@@ -497,6 +501,9 @@ struct or_options_t {
                       * to certify this OR's membership. */
   struct smartlist_t *FamilyIds; /**< FamilyIds, parsed and converted
                                   * to a list of ed25519_public_key_t */
+  bool AllFamilyIdsExpected; /**< If true, we should accept all the
+                              * FamilyIds in the FamilyKeyDirectory. */
+
   struct config_line_t *NodeFamilies; /**< List of config lines for
                                 * node families */
   /** List of parsed NodeFamilies values. */

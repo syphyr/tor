@@ -960,7 +960,7 @@ sandbox_init_filter(void)
 #ifdef HAVE_MODULE_RELAY
   {
     smartlist_t *family_id_files =
-      list_family_key_files(options, options->KeyDirectory);
+      list_family_key_files(options, options->FamilyKeyDirectory);
 
     SMARTLIST_FOREACH(family_id_files, const char *, fn,
                       OPEN(fn));
