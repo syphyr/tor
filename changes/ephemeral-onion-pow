@@ -1,7 +1,0 @@
-  o Minor feature (onion service, control port):
-    - Add 3 more keywords to the ADD_ONION control command: PoWDefensesEnabled,
-      PoWQueueRate and PoWQueueBurst which correspond to
-      HiddenServicePoWDefensesEnabled, HiddenServicePoWQueueRate and
-      HiddenServicePoWQueueBurst from torrc.
-
-

@@ -1,3 +1,141 @@
+Changes in version 0.4.9.2-alpha - 2025-04-02
+  This is the second alpha of the 0.4.9.x series. We have several new minor
+  features and a big one, the happy families that was long awaited by relay
+  operators. This release also fixes a number of bugs including major ones.
+
+  o Major feature (happy families):
+    - Clients and relays now support "happy families", a system to
+      simplify relay family operation and improve directory performance.
+      With "happy families", relays in a family shares a secret "family
+      key", which they use to prove their membership in the family.
+      Implements proposal 321; closes ticket 41009. Note that until
+      enough clients are upgraded, relay operators will still need to
+      configure MyFamily lists. But once clients no longer depend on
+      those lists, we will be able to remove them entirely, thereby
+      simplifying family operation, and making microdescriptor downloads
+      approximately 80% smaller. For more information, see
+      https://community.torproject.org/relay/setup/post-install/family-ids/
+
+  o Major features (client):
+    - Clients now respect "happy families" per proposal 321. This
+      feature will eventually allow a much more compact representation
+      for relay families, for a significant savings in directory
+      download size.
+
+  o Minor feature (onion service, control port):
+    - Add 3 more keywords to the ADD_ONION control command:
+      PoWDefensesEnabled, PoWQueueRate and PoWQueueBurst which correspond
+      to HiddenServicePoWDefensesEnabled, HiddenServicePoWQueueRate and
+      HiddenServicePoWQueueBurst from torrc.
+
+  o Minor feature (testing, CI):
+    - Use a fixed version of chutney (be881a1e) instead of its current
+      HEAD. This version should also be preferred when testing locally.
+
+  o Minor features (compilation):
+    - Fix a warning when compiling with GCC 14.2. Closes 41032.
+
+  o Minor features (continuous integration):
+    - Upgrade CI runners to use Debian Bookworm instead of Bullseye.
+      Closes ticket 41029.
+
+  o Minor features (fallbackdir):
+    - Regenerate fallback directories generated on February 05, 2025.
+    - Regenerate fallback directories generated on March 20, 2025.
+
+  o Minor features (geoip data):
+    - Update the geoip files to match the IPFire Location Database, as
+      retrieved on 2025/02/05.
+    - Update the geoip files to match the IPFire Location Database, as
+      retrieved on 2025/03/20.
+    - Update the geoip files to match the IPFire Location Database, as
+      retrieved on 2025/03/24.
+
+  o Minor features (recommended protocols):
+    - Directory authorities now vote to recommend that clients support
+      certain protocols beyond those that are required. These include
+      improved support for connecting to relays on IPv6, NtorV3, and
+      congestion control. Part of ticket 40836.
+
+  o Minor features (required protocols):
+    - Directory authorities now vote to require clients to support the
+      authenticated SENDME feature, which was introduced in
+      0.4.1.1-alpha. Part of ticket 40836.
+    - Directory authorities now vote to require relays to support
+      certain protocols, all of which have been implemented since
+      0.4.7.4-alpha or earlier. These include improved support for
+      connecting to relays on IPv6, NtorV3, running as a rate-limited
+      introduction point, authenticated SENDMEs, and congestion control.
+      Part of ticket 40836.
+
+  o Major bugfix (control-events, bw-cache):
+    - Fixes spikes occurring in bandwidth cache on control connection.
+      Fixes bug 31524; bugfix on 0.4.8.12-dev.
+
+  o Major bugfixes (conflux):
+    - Ensure conflux guards obey family and subnet restrictions. Fixes
+      bug 40976; bugfix on 0.4.8.13.
+
+  o Major bugfixes (onion service directory cache):
+    - When the OOM killer kicks in, cleanup the descriptor cache of an
+      HSDir by looking at the lowest downloaded count instead of time in
+      cache. Fixes bug 40996; bugfix on 0.3.5.1-alpha.
+
+  o Minor bugfix (client DNS):
+    - Handle empty DNS reply without sending back an error and instead
+      send back NOERROR (RFC1035 error code 0x0). Fixes bug 40248;
+      bugfix on 0.3.5.1-alpha.
+
+  o Minor bugfix (conflux):
+    - Avoid a non fatal assert when describing a conflux circuit on the
+      control port after being prepped to be freed. Fixes bug 41037;
+      bugfix on 0.4.8.15.
+
+  o Minor bugfix (dirauth):
+    - Fix typo in flag assignment approved-routers file. Fixes bug
+      41035; bugfix on 0.4.8.15
+
+  o Minor bugfixes (control port):
+    - Correctly report conflux pair information to controller fields
+      Fixes bug 40872; bugfix on 0.4.8.1-alpha
+
+  o Minor bugfixes (directory authorities):
+    - After we added layer-two vanguards, directory authorities wouldn't
+      think any of their vanguards were suitable for circuits, leading
+      to a "Failed to find node for hop #2 of our path. Discarding this
+      circuit." log message once per second from startup until they made
+      a fresh consensus. Now they look to their existing consensus on
+      startup, letting them build circuits properly from the beginning.
+      Fixes bug 40802; bugfix on 0.4.7.1-alpha.
+
+  o Minor bugfixes (relay flag usage):
+    - Fix client usage of the MiddleOnly flag so that MiddleOnly relays
+      are not used as HS IP or RP by clients or services. Additionally,
+      give dirauths the ability to remove specific flags, as an
+      alternative to MiddleOnly. Fixes bug 41023; bugfix on 0.4.7.2-alpha
+
+  o Minor bugfixes (sandbox, bwauth):
+    - Fix sandbox to work for bandwidth authority. Fixes bug 40933;
+      bugfix on 0.2.2.1-alpha
+
+  o Minor bugfixes (tests):
+    - Fix a test failure with OpenSSL builds running at security level 1
+      or greater, which does not permit SHA-1 certificates. (Fixes bug
+      41021; bugfix on 0.2.8.1-alpha.)
+
+  o Minor bugfixes (threads, memory):
+    - Improvements in cleanup of resources used by threads. Fixes bug
+      40991; bugfix on 0.4.8.13-dev.
+    - Rework start and exit of worker threads.
+
+  o Removed features:
+    - Relays no longer support the obsolete "RSA-SHA256-TLSSecret"
+      authentication method, which used a dangerously short RSA key, and
+      which required access TLS session internals. The current method
+      ("Ed25519-SHA256-RFC5705") has been supported since 0.3.0.1-alpha.
+      Closes ticket 41020.
+
+
 Changes in version 0.4.9.1-alpha - 2024-12-03
   This is the first alpha of the 0.4.9.x series. This release mostly consists
   of bugfixes including some major ones. There are several minor features in

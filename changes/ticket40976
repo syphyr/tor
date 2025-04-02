@@ -1,4 +1,0 @@
-  o Major bugfixes (conflux):
-    - Ensure conflux guards obey family and subnet restrictions. Fixes bug
-      40976; bugfix on 0.4.8.13.
-
