@@ -33,12 +33,12 @@ static void
 test_cfmt_relay_header(void *arg)
 {
   relay_header_t rh;
-  const uint8_t hdr_1[RELAY_HEADER_SIZE] =
+  const uint8_t hdr_1[RELAY_HEADER_SIZE_V0] =
     "\x03" "\x00\x00" "\x21\x22" "ABCD" "\x01\x03";
-  uint8_t hdr_out[RELAY_HEADER_SIZE];
+  uint8_t hdr_out[RELAY_HEADER_SIZE_V0];
   (void)arg;
 
-  tt_int_op(sizeof(hdr_1), OP_EQ, RELAY_HEADER_SIZE);
+  tt_int_op(sizeof(hdr_1), OP_EQ, RELAY_HEADER_SIZE_V0);
   relay_header_unpack(&rh, hdr_1);
   tt_int_op(rh.command, OP_EQ, 3);
   tt_int_op(rh.recognized, OP_EQ, 0);
@@ -47,7 +47,7 @@ test_cfmt_relay_header(void *arg)
   tt_int_op(rh.length, OP_EQ, 0x103);
 
   relay_header_pack(hdr_out, &rh);
-  tt_mem_op(hdr_out, OP_EQ, hdr_1, RELAY_HEADER_SIZE);
+  tt_mem_op(hdr_out, OP_EQ, hdr_1, RELAY_HEADER_SIZE_V0);
 
  done:
   ;

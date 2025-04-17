@@ -553,9 +553,8 @@ static inline int get_circ_id_size(int wide_circ_ids)
 /* TODO #41051: It would be better if these went away. */
 /** Number of bytes in a relay cell's header (not including general cell
  * header). */
-#define RELAY_HEADER_SIZE (1+2+2+4+2)
 /** Largest number of bytes that can fit in a relay cell payload. */
-#define RELAY_PAYLOAD_SIZE (CELL_PAYLOAD_SIZE-RELAY_HEADER_SIZE)
+#define RELAY_PAYLOAD_SIZE (CELL_PAYLOAD_SIZE-(1+2+2+4+2))
 
 /** Number of bytes used for a relay cell's header, in the v0 format. */
 #define RELAY_HEADER_SIZE_V0 (1+2+2+4+2)
