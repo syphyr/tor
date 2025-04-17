@@ -17,6 +17,13 @@
 void relay_msg_free_(relay_msg_t *msg);
 void relay_msg_clear(relay_msg_t *msg);
 
+int relay_msg_encode_cell(relay_cell_fmt_t format,
+                          const relay_msg_t *msg,
+                          cell_t *cell_out) ATTR_WUR;
+relay_msg_t *relay_msg_decode_cell(
+                          relay_cell_fmt_t format,
+                          const cell_t *cell) ATTR_WUR;
+
 #define relay_msg_free(msg) \
   FREE_AND_NULL(relay_msg_t, relay_msg_free_, (msg))
 

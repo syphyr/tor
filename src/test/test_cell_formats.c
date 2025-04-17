@@ -17,9 +17,11 @@
 #include "core/crypto/onion_fast.h"
 #include "core/crypto/onion_ntor.h"
 #include "core/or/relay.h"
+#include "core/or/relay_msg.h"
 
 #include "core/or/cell_st.h"
 #include "core/or/cell_queue_st.h"
+#include "core/or/relay_msg_st.h"
 #include "core/or/var_cell_st.h"
 
 #include "test/test.h"
@@ -1200,6 +1202,411 @@ test_cfmt_is_destroy(void *arg)
   tor_free(chan);
 }
 
+static void
+test_cfmt_relay_msg_encoding_simple(void *arg)
+{
+  (void)arg;
+  relay_msg_t *msg1 = NULL;
+  cell_t cell;
+  char *mem_op_hex_tmp = NULL;
+  int r;
+
+  /* Simple message: Data, fits easily in cell. */
+  msg1 = tor_malloc_zero(sizeof(relay_msg_t));
+  msg1->command = RELAY_COMMAND_DATA;
+  msg1->stream_id = 0x250;
+  msg1->length = 11;
+  msg1->body = tor_memdup("hello world", 11);
+
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V0, msg1, &cell);
+  tt_int_op(r, OP_EQ, 0);
+  tt_int_op(cell.command, OP_EQ, CELL_RELAY);
+  tt_int_op(cell.circ_id, OP_EQ, 0);
+  // command, recognized, streamid, digest, len, payload, zero-padding.
+  test_memeq_hex(cell.payload,
+                 "02" "0000" "0250" "00000000" "000B"
+                 "68656c6c6f20776f726c64" "00000000");
+  // random padding
+  size_t used = RELAY_HEADER_SIZE_V0 + 11 + 4;
+  tt_assert(!fast_mem_is_zero((char*)cell.payload + used,
+                              CELL_PAYLOAD_SIZE - used));
+
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V1, msg1, &cell);
+  tt_int_op(r, OP_EQ, 0);
+  tt_int_op(cell.command, OP_EQ, CELL_RELAY);
+  tt_int_op(cell.circ_id, OP_EQ, 0);
+  // tag, command, len, optional streamid, payload, zero-padding
+  test_memeq_hex(cell.payload,
+                 "00000000000000000000000000000000"
+                 "02" "000B" "0250"
+                 "68656c6c6f20776f726c64" "00000000");
+  // random padding.
+  used = RELAY_HEADER_SIZE_V1_WITH_STREAM_ID + 11 + 4;
+  tt_assert(!fast_mem_is_zero((char*)cell.payload + used,
+                              CELL_PAYLOAD_SIZE - used));
+
+  /* Message without stream ID: SENDME, fits easily in cell. */
+  relay_msg_clear(msg1);
+  msg1->command = RELAY_COMMAND_SENDME;
+  msg1->stream_id = 0;
+  msg1->length = 20;
+  msg1->body = tor_memdup("hello i am a tag....", 20);
+
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V0, msg1, &cell);
+  tt_int_op(r, OP_EQ, 0);
+  tt_int_op(cell.command, OP_EQ, CELL_RELAY);
+  tt_int_op(cell.circ_id, OP_EQ, 0);
+  // command, recognized, streamid, digest, len, payload, zero-padding.
+  test_memeq_hex(cell.payload,
+                 "05" "0000" "0000" "00000000" "0014"
+                 "68656c6c6f206920616d2061207461672e2e2e2e" "00000000");
+  // random padding
+  used = RELAY_HEADER_SIZE_V0 + 20 + 4;
+  tt_assert(!fast_mem_is_zero((char*)cell.payload + used,
+                              CELL_PAYLOAD_SIZE - used));
+
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V1, msg1, &cell);
+  tt_int_op(r, OP_EQ, 0);
+  tt_int_op(cell.command, OP_EQ, CELL_RELAY);
+  tt_int_op(cell.circ_id, OP_EQ, 0);
+  // tag, command, len, optional streamid, payload, zero-padding
+  test_memeq_hex(cell.payload,
+                 "00000000000000000000000000000000"
+                 "05" "0014"
+                 "68656c6c6f206920616d2061207461672e2e2e2e" "00000000");
+  // random padding.
+  used = RELAY_HEADER_SIZE_V1_NO_STREAM_ID + 20 + 4;
+  tt_assert(!fast_mem_is_zero((char*)cell.payload + used,
+                              CELL_PAYLOAD_SIZE - used));
+
+ done:
+  relay_msg_free(msg1);
+  tor_free(mem_op_hex_tmp);
+}
+
+/** Helper for test_cfmt_relay_cell_padding.
+ * Requires that that the body of 'msg' ends with 'pre_padding_byte',
+ * and that  when encoded, the zero-padding (if any) will appear at
+ * offset 'zeros_begin_at' in the message.
+ */
+static void
+msg_encoder_padding_test(const relay_msg_t *msg,
+                         relay_cell_fmt_t fmt,
+                         uint8_t pre_padding_byte,
+                         size_t zeros_begin_at)
+{
+  cell_t cell;
+  int n = 16, i;
+  /* We set this to 0 as soon as we find that the first byte of
+   * random padding has been set. */
+  bool padded_first = false;
+  /* We set this to true as soon as we find that the last byte of
+   * random padding has been set */
+  bool padded_last = false;
+
+  tt_int_op(zeros_begin_at, OP_LE, CELL_PAYLOAD_SIZE);
+
+  size_t expect_n_zeros = MIN(4, CELL_PAYLOAD_SIZE - zeros_begin_at);
+  ssize_t first_random_at = -1;
+  if (CELL_PAYLOAD_SIZE - zeros_begin_at > 4) {
+    first_random_at = CELL_PAYLOAD_SIZE - zeros_begin_at + 4;
+  }
+
+  for (i = 0; i < n; ++i) {
+    memset(&cell, 0, sizeof(cell));
+    tt_int_op(0, OP_EQ,
+              relay_msg_encode_cell(fmt, msg, &cell));
+
+    const uint8_t *body = cell.payload;
+    tt_int_op(body[zeros_begin_at - 1], OP_EQ, pre_padding_byte);
+
+    if (expect_n_zeros) {
+      tt_assert(fast_mem_is_zero((char*)body + zeros_begin_at,
+                                 expect_n_zeros));
+    }
+    if (first_random_at >= 0) {
+      if (body[first_random_at])
+        padded_first = true;
+      if (body[CELL_PAYLOAD_SIZE-1])
+        padded_last = true;
+    }
+  }
+
+  if (first_random_at >= 0)  {
+    tt_assert(padded_first);
+    tt_assert(padded_last);
+  }
+
+ done:
+  ;
+}
+
+static void
+test_cfmt_relay_cell_padding(void *arg)
+{
+  (void)arg;
+  relay_msg_t *msg1 = NULL;
+
+  /* Simple message; we'll adjust the length and encode it. */
+  msg1 = tor_malloc_zero(sizeof(relay_msg_t));
+  msg1->command = RELAY_COMMAND_DATA;
+  msg1->stream_id = 0x250;
+  msg1->body = tor_malloc(500); // Longer than it needs to be.
+  memset(msg1->body, 0xff, 500);
+
+  // Empty message
+  msg1->length = 0;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V0, 0x00,
+                           RELAY_HEADER_SIZE_V0);
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0x50,
+                            RELAY_HEADER_SIZE_V1_WITH_STREAM_ID);
+
+  // Short message
+  msg1->length = 10;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V0, 0xff,
+                            RELAY_HEADER_SIZE_V0 + 10);
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                            RELAY_HEADER_SIZE_V1_WITH_STREAM_ID + 10);
+
+  // Message where zeros extend exactly up to the end of the cell.
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0 - 4;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V0, 0xff,
+                           RELAY_HEADER_SIZE_V0 + msg1->length);
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID - 4;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                           RELAY_HEADER_SIZE_V1_WITH_STREAM_ID + msg1->length);
+
+  // Message where zeros would intersect with the end of the cell.
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0 - 3;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V0, 0xff,
+                           RELAY_HEADER_SIZE_V0 + msg1->length);
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID - 3;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                           RELAY_HEADER_SIZE_V1_WITH_STREAM_ID + msg1->length);
+
+  // Message with no room for zeros
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V0, 0xff,
+                           RELAY_HEADER_SIZE_V0 + msg1->length);
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                           RELAY_HEADER_SIZE_V1_WITH_STREAM_ID + msg1->length);
+
+  ///////////////
+  // V1 cases with no stream ID.
+  msg1->stream_id = 0;
+  msg1->command = RELAY_COMMAND_EXTENDED;
+
+  msg1->length = 0;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0x00,
+                            RELAY_HEADER_SIZE_V1_NO_STREAM_ID);
+  msg1->length = 10;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                            RELAY_HEADER_SIZE_V1_NO_STREAM_ID + 10);
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_NO_STREAM_ID - 4;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                           RELAY_HEADER_SIZE_V1_NO_STREAM_ID + msg1->length);
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_NO_STREAM_ID - 3;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                           RELAY_HEADER_SIZE_V1_NO_STREAM_ID + msg1->length);
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_NO_STREAM_ID;
+  msg_encoder_padding_test(msg1, RELAY_CELL_FORMAT_V1, 0xff,
+                           RELAY_HEADER_SIZE_V1_NO_STREAM_ID + msg1->length);
+
+  relay_msg_free(msg1);
+}
+
+static void
+test_cfmt_relay_msg_encoding_error(void *arg)
+{
+  (void)arg;
+  relay_msg_t *msg1 = NULL;
+  int r;
+  cell_t cell;
+
+  msg1 = tor_malloc_zero(sizeof(relay_msg_t));
+  msg1->command = RELAY_COMMAND_DATA;
+  msg1->stream_id = 0x250;
+  msg1->body = tor_malloc(500); // Longer than it needs to be.
+  memset(msg1->body, 0xff, 500);
+
+  tor_capture_bugs_(5);
+  // Too long for v0.
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0 + 1;
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V0, msg1, &cell);
+  tt_int_op(r, OP_EQ, -1);
+
+  // Too long for v1, with stream ID.
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID + 1;
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V1, msg1, &cell);
+  tt_int_op(r, OP_EQ, -1);
+
+  // Too long for v1 with no stream ID.
+  msg1->command = RELAY_COMMAND_EXTENDED;
+  msg1->stream_id = 0;
+  msg1->length = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_NO_STREAM_ID + 1;
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V1, msg1, &cell);
+  tt_int_op(r, OP_EQ, -1);
+
+  // Invalid (present) stream ID for V1.
+  msg1->stream_id = 10;
+  msg1->length = 20;
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V1, msg1, &cell);
+  tt_int_op(r, OP_EQ, -1);
+
+  // Invalid (absent) stream ID for V1.
+  msg1->stream_id = 0;
+  msg1->command = RELAY_COMMAND_DATA;
+  r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V1, msg1, &cell);
+  tt_int_op(r, OP_EQ, -1);
+
+ done:
+  tor_end_capture_bugs_();
+  relay_msg_free(msg1);
+}
+
+static void
+test_cfmt_relay_msg_decoding_simple(void *arg)
+{
+  (void) arg;
+  cell_t cell;
+  relay_msg_t *msg1 = NULL;
+  const char *s;
+
+  memset(&cell, 0, sizeof(cell));
+  cell.command = CELL_RELAY;
+
+  // V0 decoding, short message.
+  s = "02" "0000" "0250" "00000000" "000B"
+      "68656c6c6f20776f726c64" "00000000";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  cell.relay_cell_proto = RELAY_CELL_FORMAT_V0;
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V0, &cell);
+  tt_assert(msg1);
+
+  tt_int_op(msg1->command, OP_EQ, RELAY_COMMAND_DATA);
+  tt_int_op(msg1->stream_id, OP_EQ, 0x250);
+  tt_int_op(msg1->length, OP_EQ, 11);
+  tt_mem_op(msg1->body, OP_EQ, "hello world", 11);
+  relay_msg_free(msg1);
+
+  // V0 decoding, message up to length of cell.
+  memset(cell.payload, 0, sizeof(cell.payload));
+  s = "02" "0000" "0250" "00000000" "01F2";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V0, &cell);
+  tt_assert(msg1);
+
+  tt_int_op(msg1->command, OP_EQ, RELAY_COMMAND_DATA);
+  tt_int_op(msg1->stream_id, OP_EQ, 0x250);
+  tt_int_op(msg1->length, OP_EQ, 498);
+  tt_assert(fast_mem_is_zero((char*)msg1->body, 498));
+  relay_msg_free(msg1);
+
+  // V1 decoding, short message, no stream ID.
+  s = "00000000000000000000000000000000"
+      "05" "0014"
+      "68656c6c6f206920616d2061207461672e2e2e2e" "00000000";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  cell.relay_cell_proto = RELAY_CELL_FORMAT_V1;
+
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_assert(msg1);
+  tt_int_op(msg1->command, OP_EQ, RELAY_COMMAND_SENDME);
+  tt_int_op(msg1->stream_id, OP_EQ, 0);
+  tt_int_op(msg1->length, OP_EQ, 20);
+  tt_mem_op(msg1->body, OP_EQ, "hello i am a tag....", 20);
+  relay_msg_free(msg1);
+
+  // V1 decoding, up to length of cell, no stream ID.
+  memset(cell.payload, 0, sizeof(cell.payload));
+  s = "00000000000000000000000000000000"
+      "05" "01EA";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_assert(msg1);
+  tt_int_op(msg1->command, OP_EQ, RELAY_COMMAND_SENDME);
+  tt_int_op(msg1->stream_id, OP_EQ, 0);
+  tt_int_op(msg1->length, OP_EQ, 490);
+  tt_assert(fast_mem_is_zero((char*)msg1->body, 490));
+  relay_msg_free(msg1);
+
+  // V1 decoding, short message, with stream ID.
+  s = "00000000000000000000000000000000"
+      "02" "000B" "0250"
+      "68656c6c6f20776f726c64" "00000000";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_assert(msg1);
+  tt_int_op(msg1->command, OP_EQ, RELAY_COMMAND_DATA);
+  tt_int_op(msg1->stream_id, OP_EQ, 0x250);
+  tt_int_op(msg1->length, OP_EQ, 11);
+  tt_mem_op(msg1->body, OP_EQ, "hello world", 11);
+  relay_msg_free(msg1);
+
+  // V1 decoding, up to length of cell, with stream ID.
+  memset(cell.payload, 0, sizeof(cell.payload));
+  s = "00000000000000000000000000000000"
+      "02" "01E8" "0250";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_assert(msg1);
+  tt_int_op(msg1->command, OP_EQ, RELAY_COMMAND_DATA);
+  tt_int_op(msg1->stream_id, OP_EQ, 0x250);
+  tt_int_op(msg1->length, OP_EQ, 488);
+  tt_assert(fast_mem_is_zero((char*)msg1->body, 488));
+  relay_msg_free(msg1);
+
+ done:
+  relay_msg_free(msg1);
+}
+
+static void
+test_cfmt_relay_msg_decoding_error(void *arg)
+{
+  (void) arg;
+  relay_msg_t *msg1 = NULL;
+  cell_t cell;
+  const char *s;
+  memset(&cell, 0, sizeof(cell));
+
+  // V0, too long.
+  cell.command = CELL_RELAY;
+  cell.relay_cell_proto = RELAY_CELL_FORMAT_V0;
+  s = "02" "0000" "0250" "00000000" "01F3";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V0, &cell);
+  tt_ptr_op(msg1, OP_EQ, NULL);
+
+  // V1, command unrecognized.
+  cell.relay_cell_proto = RELAY_CELL_FORMAT_V1;
+  s = "00000000000000000000000000000000"
+      "F0" "000C" "0250";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_ptr_op(msg1, OP_EQ, NULL);
+
+  // V1, too long (with stream ID)
+  s = "00000000000000000000000000000000"
+      "02" "01E9" "0250";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_ptr_op(msg1, OP_EQ, NULL);
+
+  // V1, too long (without stream ID)
+  s = "00000000000000000000000000000000"
+      "05" "01EB";
+  base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
+  msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
+  tt_ptr_op(msg1, OP_EQ, NULL);
+
+ done:
+  relay_msg_free(msg1);
+}
+
 #define TEST(name, flags)                                               \
   { #name, test_cfmt_ ## name, flags, 0, NULL }
 
@@ -1213,5 +1620,10 @@ struct testcase_t cell_format_tests[] = {
   TEST(extended_cells, 0),
   TEST(resolved_cells, 0),
   TEST(is_destroy, 0),
+  TEST(relay_msg_encoding_simple, 0),
+  TEST(relay_cell_padding, 0),
+  TEST(relay_msg_encoding_error, 0),
+  TEST(relay_msg_decoding_simple, 0),
+  TEST(relay_msg_decoding_error, 0),
   END_OF_TESTCASES
 };

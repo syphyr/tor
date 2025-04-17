@@ -13,11 +13,6 @@
 
 #include "core/or/cell_st.h"
 
-/** When padding a cell with randomness, leave this many zeros after the
- * payload. Historically, it has paid off to keep unused bytes after the
- * payload for the future of our C-tor maze and protocol. */
-#define RELAY_CELL_PADDING_GAP 4
-
 /* TODO #41051: Most of these functions no longer make sense under CGO,
  * and we are only going to use the new proto format with CGO. */
 
@@ -27,52 +22,58 @@ uint8_t *relay_cell_get_digest(cell_t *cell);
 size_t relay_cell_get_digest_len(const cell_t *cell);
 
 /* Setters. */
-void relay_cell_set_payload(cell_t *cell, const uint8_t *payload,
-                            size_t payload_len);
 void relay_cell_set_digest(cell_t *cell, uint8_t *cell_digest);
-void relay_cell_pad_payload(cell_t *cell, size_t payload_len);
+void relay_cell_pad_payload(cell_t *cell, size_t data_len);
 
 /*
  * NOTE: The following are inlined for performance reasons. These values are
  * accessed everywhere and so, even if not expensive, we avoid a function call.
  */
 
-/** Return the size of the relay cell header for the given relay cell
- * protocol version. */
-static inline size_t
-relay_cell_get_header_size(uint8_t relay_cell_proto)
+/** Return true iff 'cmd' uses a stream ID when using
+ * the v1 relay message format. */
+static bool
+relay_cmd_expects_streamid_in_v1(uint8_t relay_command)
 {
-  /* Specified in tor-spec.txt. */
-  switch (relay_cell_proto) {
-  case 0: return (1 + 2 + 2 + 4 + 2); // 11
-  // TODO #41051: This doesn't really make sense, for two reasons.
-  // First, we're not going to do this protocol without CGO,
-  // so we no longer have separate "recognized" and "digest" fields.
-  // Second, the 16-byte tag under CGO does not include
-  // the length and command fields,
-  // which are counted above.
-  case 1: return (2 + 14); // 16
-  default:
-    tor_fragile_assert();
-    return 0;
+  switch (relay_command) {
+    case RELAY_COMMAND_BEGIN:
+    case RELAY_COMMAND_BEGIN_DIR:
+    case RELAY_COMMAND_CONNECTED:
+    case RELAY_COMMAND_DATA:
+    case RELAY_COMMAND_END:
+    case RELAY_COMMAND_RESOLVE:
+    case RELAY_COMMAND_RESOLVED:
+    case RELAY_COMMAND_XOFF:
+    case RELAY_COMMAND_XON:
+      return true;
+    default:
+      return false;
   }
 }
 
-/** Return the size of the relay cell payload for the given relay cell
- * protocol version. */
-/* TODO #41051: This depends on the command too, since the stream ID is
-   conditional */
-/* TODO #41051: This is a _maximum_. */
+/** Return the size of the relay cell payload for the given relay
+ * cell format. */
 static inline size_t
-relay_cell_get_payload_size(uint8_t relay_cell_proto)
+relay_cell_max_payload_size(relay_cell_fmt_t format,
+                            uint8_t relay_command)
 {
-  return CELL_PAYLOAD_SIZE - relay_cell_get_header_size(relay_cell_proto);
+  switch (format) {
+    case RELAY_CELL_FORMAT_V0:
+      return CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0;
+    case RELAY_CELL_FORMAT_V1: {
+      if (relay_cmd_expects_streamid_in_v1(relay_command)) {
+        return CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID;
+      } else {
+        return CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_NO_STREAM_ID;
+      }
+    }
+    default:
+      tor_fragile_assert();
+      return 0;
+  }
 }
 
 #ifdef RELAY_CELL_PRIVATE
-
-STATIC size_t get_pad_cell_offset(size_t payload_len,
-                                  uint8_t relay_cell_proto);
 
 #endif /* RELAY_CELL_PRIVATE */
 

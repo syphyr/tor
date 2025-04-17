@@ -47,58 +47,18 @@
 #define DIGEST_OFFSET_V0 (5)
 #define DIGEST_OFFSET_V1 (2)
 
-/** Return the offset where the padding should start. The <b>data_len</b> is
- * the relay payload length expected to be put in the cell. It can not be
- * bigger than the relay payload size else this function assert().
+/**
+ * TODO #41051: Remove this entirely.
  *
- * Value will always be smaller than CELL_PAYLOAD_SIZE because this offset is
- * for the entire cell length not just the data payload length. Zero is
- * returned if there is no room for padding.
- *
- * This function always skips the first 4 bytes after the payload because
- * having some unused zero bytes has saved us a lot of times in the past. */
-STATIC size_t
-get_pad_cell_offset(size_t data_len, uint8_t relay_cell_proto)
-{
-  /* This is never supposed to happen but in case it does, stop right away
-   * because if tor is tricked somehow into not adding random bytes to the
-   * payload with this function returning 0 for a bad data_len, the entire
-   * authenticated SENDME design can be bypassed leading to bad denial of
-   * service attacks. */
-  tor_assert(data_len <= relay_cell_get_payload_size(relay_cell_proto));
-
-  /* If the offset is larger than the cell payload size, we return an offset
-   * of zero indicating that no padding needs to be added. */
-  size_t offset = relay_cell_get_header_size(relay_cell_proto) + data_len +
-                  RELAY_CELL_PADDING_GAP;
-  if (offset >= CELL_PAYLOAD_SIZE) {
-    return 0;
-  }
-  return offset;
-}
-
-/* Add random bytes to the unused portion of the payload, to foil attacks
- * where the other side can predict all of the bytes in the payload and thus
- * compute the authenticated SENDME cells without seeing the traffic. See
- * proposal 289. */
+ * I've moved this functionality into relay_msg.c, where it lives
+ * more happily.  This function shouldn't have any callsites left
+ * at the end of this branch.
+ **/
 void
 relay_cell_pad_payload(cell_t *cell, size_t data_len)
 {
-  size_t pad_offset, pad_len;
-
-  tor_assert(cell);
-
-  pad_offset = get_pad_cell_offset(data_len, cell->relay_cell_proto);
-  if (pad_offset == 0) {
-    /* We can't add padding so we are done. */
-    return;
-  }
-
-  /* Remember here that the cell_payload is the length of the header and
-   * payload size so we offset it using the full length of the cell. */
-  pad_len = CELL_PAYLOAD_SIZE - pad_offset;
-  crypto_fast_rng_getbytes(get_thread_fast_rng(),
-                           cell->payload + pad_offset, pad_len);
+  (void)cell;
+  (void)data_len;
 }
 
 /** Return true iff the given cell recognized field is zero. */
@@ -166,20 +126,4 @@ relay_cell_set_digest(cell_t *cell, uint8_t *new_cell_digest)
   size_t cell_digest_len = relay_cell_get_digest_len(cell);
 
   memcpy(cell_digest_ptr, new_cell_digest, cell_digest_len);
-}
-
-/** Set the payload in the given cell for the given relay cell protocol
- * version. This also takes care of the padding.
- *
- * This is part of the fast path. No memory allocation. */
-void
-relay_cell_set_payload(cell_t *cell, const uint8_t *payload,
-                       size_t payload_len)
-{
-  if (payload_len) {
-    memcpy(cell->payload + relay_cell_get_header_size(cell->relay_cell_proto),
-           payload, payload_len);
-  }
-  /* Add random padding to the cell if we can. */
-  relay_cell_pad_payload(cell, payload_len);
 }

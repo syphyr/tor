@@ -557,6 +557,15 @@ static inline int get_circ_id_size(int wide_circ_ids)
 /** Largest number of bytes that can fit in a relay cell payload. */
 #define RELAY_PAYLOAD_SIZE (CELL_PAYLOAD_SIZE-RELAY_HEADER_SIZE)
 
+/** Number of bytes used for a relay cell's header, in the v0 format. */
+#define RELAY_HEADER_SIZE_V0 (1+2+2+4+2)
+/** Number of bytes used for a relay cell's header, in the v1 format,
+ * if no StreamID is used. */
+#define RELAY_HEADER_SIZE_V1_NO_STREAM_ID (16+1+2)
+/** Number of bytes used for a relay cell's header, in the v1 format,
+ * if a StreamID is used. */
+#define RELAY_HEADER_SIZE_V1_WITH_STREAM_ID (16+1+2+2)
+
 /** Identifies a circuit on an or_connection */
 typedef uint32_t circid_t;
 /** Identifies a stream on a circuit */

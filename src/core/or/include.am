@@ -31,6 +31,7 @@ LIBTOR_APP_A_SOURCES += 				\
 	src/core/or/reasons.c			\
 	src/core/or/relay.c			\
 	src/core/or/relay_cell.c		\
+        src/core/or/relay_msg.c                 \
 	src/core/or/scheduler.c			\
 	src/core/or/scheduler_kist.c		\
 	src/core/or/scheduler_vanilla.c		\
