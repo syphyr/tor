@@ -3540,3 +3540,32 @@ circuit_queue_streams_are_blocked(circuit_t *circ)
     return circ->circuit_blocked_on_p_chan;
   }
 }
+
+/** Return the format to use.
+ *
+ * NULL can be passed but not for both. */
+relay_cell_fmt_t
+circuit_get_relay_format(const circuit_t *circ, const crypt_path_t *cpath)
+{
+  if (circ && CIRCUIT_IS_ORCIRC(circ)) {
+    return CONST_TO_OR_CIRCUIT(circ)->relay_cell_format;
+  } else if (cpath) {
+    return cpath->relay_cell_format;
+  } else {
+    /* We end up here when both params are NULL, which is not allowed, or when
+     * only an origin circuit is given (which again is not allowed). */
+    tor_assert_unreached();
+  }
+}
+
+/**
+ * Return the maximum relay payload that can be sent to the chosen
+ * point, with the specified command.
+ */
+size_t
+circuit_max_relay_payload(const circuit_t *circ, const crypt_path_t *cpath,
+                              uint8_t relay_command)
+{
+  relay_cell_fmt_t fmt = circuit_get_relay_format(circ, cpath);
+  return relay_cell_max_payload_size(fmt, relay_command);
+}

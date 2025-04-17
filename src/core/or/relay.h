@@ -113,6 +113,12 @@ void circuit_clear_cell_queue(circuit_t *circ, channel_t *chan);
 circid_t packed_cell_get_circid(const packed_cell_t *cell, int wide_circ_ids);
 uint8_t packed_cell_get_command(const packed_cell_t *cell, int wide_circ_ids);
 
+relay_cell_fmt_t circuit_get_relay_format(const circuit_t *circ,
+                                          const crypt_path_t *cpath);
+size_t circuit_max_relay_payload(const circuit_t *circ,
+                                 const crypt_path_t *cpath,
+                                 uint8_t relay_command);
+
 #ifdef RELAY_PRIVATE
 STATIC int
 handle_relay_msg(const relay_msg_t *msg, circuit_t *circ,

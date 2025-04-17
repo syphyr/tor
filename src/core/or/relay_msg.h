@@ -32,11 +32,6 @@ relay_msg_t *relay_msg_decode_cell(
   FREE_AND_NULL(relay_msg_t, relay_msg_free_, (msg))
 
 /* Getters */
-relay_cell_fmt_t circuit_get_relay_format(const circuit_t *circ,
-                                          const crypt_path_t *cpath);
-size_t circuit_get_max_relay_payload(const circuit_t *circ,
-                              const crypt_path_t *cpath,
-                              uint8_t relay_command);
 
 /*
  * NOTE: The following are inlined for performance reasons. These values are
