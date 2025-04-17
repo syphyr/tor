@@ -472,6 +472,14 @@ typedef enum {
 /** Maximum length of a header on a variable-length cell. */
 #define VAR_CELL_MAX_HEADER_SIZE 7
 
+/** Which format should we use for relay cells? */
+typedef enum relay_cell_fmt_t {
+  /** Our original format, with 2 byte recognized field and a 4-byte digest */
+  RELAY_CELL_FORMAT_V0,
+  /** New format introduced for CGO, with 16 byte tag. */
+  RELAY_CELL_FORMAT_V1,
+} relay_cell_fmt_t;
+
 static int get_cell_network_size(int wide_circ_ids);
 static inline int get_cell_network_size(int wide_circ_ids)
 {

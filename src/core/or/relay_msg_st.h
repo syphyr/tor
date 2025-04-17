@@ -20,10 +20,10 @@
  * This CAN NOT be made opaque so to avoid heap allocation in the fast path. */
 typedef struct relay_msg_t {
   /* Relay cell protocol version of this message. */
-  uint8_t relay_cell_proto;
+  relay_cell_fmt_t relay_cell_proto;
   /* Relay command of a message. */
   uint8_t command;
-  /* Length of payload. */
+  /* Length of the message body. */
   uint16_t length;
   /* Optional routing header: stream ID of a message or 0. */
   streamid_t stream_id;
