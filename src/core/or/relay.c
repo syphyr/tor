@@ -623,8 +623,16 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
   {
     relay_cell_fmt_t cell_format = relay_msg_get_format(circ, cpath_layer);
     relay_msg_t msg;
-    tor_assert(payload_len <=
-               relay_cell_max_payload_size(cell_format, relay_command));
+    if (payload_len >
+        relay_cell_max_payload_size(cell_format, relay_command)) {
+      // TODO CGO: Rate-limit this?
+      log_warn(LD_BUG, "Tried to send a command %d of length %d in "
+               "a v%d cell, from %s:%d",
+               (int)relay_command, (int)payload_len, (int)cell_format,
+               filename, lineno);
+      circuit_mark_for_close(circ, END_CIRC_REASON_INTERNAL);
+      return -1;
+    }
 
     msg.relay_cell_proto = cell_format;
     msg.command = relay_command;
@@ -637,7 +645,8 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
     msg_body_len = msg.length;
 
     if (relay_msg_encode_cell(cell_format, &msg, &cell) < 0) {
-      // This already gave a BUG warning, so no need to log.
+      // We already called IF_BUG_ONCE in relay_msg_encode_cell.
+      circuit_mark_for_close(circ, END_CIRC_REASON_INTERNAL);
       return -1;
     }
   }
