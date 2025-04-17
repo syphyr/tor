@@ -87,6 +87,9 @@ struct crypt_path_t {
   /** Congestion control info */
   struct congestion_control_t *ccontrol;
 
+  /** Format to use when exchanging relay cells with this relay. */
+  relay_cell_fmt_t relay_cell_format;
+
   /*********************** Private members ****************************/
 
   /** Private member: Cryptographic state used for encrypting and

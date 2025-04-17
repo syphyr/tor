@@ -451,6 +451,9 @@ cpuworker_onion_handshake_replyfn(void *work_)
     }
   }
 
+  // TODO CGO: Initialize this from a real handshake.
+  circ->relay_cell_format = RELAY_CELL_FORMAT_V0;
+
   if (onionskin_answer(circ,
                        &rpl.created_cell,
                        (const char*)rpl.keys, sizeof(rpl.keys),

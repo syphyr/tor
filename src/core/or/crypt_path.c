@@ -71,6 +71,9 @@ cpath_append_hop(crypt_path_t **head_ptr, extend_info_t *choice)
   hop->package_window = circuit_initial_package_window();
   hop->deliver_window = CIRCWINDOW_START;
 
+  // TODO CGO: Initialize this from a real decision.
+  hop->relay_cell_format = RELAY_CELL_FORMAT_V0;
+
   return 0;
 }
 
