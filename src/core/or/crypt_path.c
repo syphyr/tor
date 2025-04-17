@@ -201,7 +201,7 @@ cpath_get_incoming_digest(const crypt_path_t *cpath)
 void
 cpath_set_cell_forward_digest(crypt_path_t *cpath, cell_t *cell)
 {
-  relay_set_digest(cpath->pvt_crypto.f_digest, cell);
+  relay_set_digest_v0(cpath->pvt_crypto.f_digest, cell);
 }
 
 /************ cpath sendme API ***************************/

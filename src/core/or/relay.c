@@ -506,6 +506,7 @@ relay_lookup_conn(circuit_t *circ, const relay_msg_t *msg,
   return NULL; /* probably a begin relay cell */
 }
 
+#ifdef TOR_UNIT_TESTS
 /** Pack the relay_header_t host-order structure <b>src</b> into
  * network-order in the buffer <b>dest</b>. See tor-spec.txt for details
  * about the wire format.
@@ -532,6 +533,7 @@ relay_header_unpack(relay_header_t *dest, const uint8_t *src)
   memcpy(dest->integrity, src+5, 4);
   dest->length = ntohs(get_uint16(src+9));
 }
+#endif
 
 /** Convert the relay <b>command</b> into a human-readable string. */
 const char *
@@ -593,7 +595,6 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
                                const char *filename, int lineno))
 {
   cell_t cell;
-  relay_header_t rh;
   cell_direction_t cell_direction;
   circuit_t *circ = orig_circ;
 
@@ -619,6 +620,7 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
 
   tor_assert(circ);
 
+  size_t msg_body_len;
   {
     relay_cell_fmt_t cell_format = relay_msg_get_format(circ, cpath_layer);
     relay_msg_t msg;
@@ -633,6 +635,7 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
     // There is no need to copy the payload here, so long as we don't
     // free it.
     msg.body = (uint8_t *) payload;
+    msg_body_len = msg.length;
 
     if (relay_msg_encode_cell(cell_format, &msg, &cell) < 0) {
       // This already gave a BUG warning, so no need to log.
@@ -709,7 +712,7 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
 
     /* Let's assume we're well-behaved: Anything that we decide to send is
      * valid, delivered data. */
-    circuit_sent_valid_data(origin_circ, rh.length);
+    circuit_sent_valid_data(origin_circ, msg_body_len);
   }
 
   int ret = circuit_package_relay_cell(&cell, circ, cell_direction,

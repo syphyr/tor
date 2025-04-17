@@ -13,17 +13,7 @@
 
 #include "core/or/cell_st.h"
 
-/* TODO #41051: Most of these functions no longer make sense under CGO,
- * and we are only going to use the new proto format with CGO. */
-
-/* Getters. */
-bool relay_cell_is_recognized(const cell_t *cell);
-uint8_t *relay_cell_get_digest(cell_t *cell);
-size_t relay_cell_get_digest_len(const cell_t *cell);
-
-/* Setters. */
-void relay_cell_set_digest(cell_t *cell, uint8_t *cell_digest);
-void relay_cell_pad_payload(cell_t *cell, size_t data_len);
+/* TODO #41051: Fold this file into relay_msg.h */
 
 /*
  * NOTE: The following are inlined for performance reasons. These values are

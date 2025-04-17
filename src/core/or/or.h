@@ -595,6 +595,11 @@ typedef struct destroy_cell_t destroy_cell_t;
 typedef struct destroy_cell_queue_t destroy_cell_queue_t;
 typedef struct ext_or_cmd_t ext_or_cmd_t;
 
+#ifdef TOR_UNIT_TESTS
+/* This is a vestigial type used only for testing.
+ * All current code should instead use relay_msg_t and related accessors.
+ */
+
 /** Beginning of a RELAY cell payload. */
 typedef struct {
   uint8_t command; /**< The end-to-end relay command. */
@@ -603,6 +608,7 @@ typedef struct {
   char integrity[4]; /**< Used to tell whether cell is corrupted. */
   uint16_t length; /**< How long is the payload body? */
 } relay_header_t;
+#endif
 
 typedef struct socks_request_t socks_request_t;
 typedef struct entry_port_cfg_t entry_port_cfg_t;
