@@ -34,7 +34,6 @@
 #include "feature/client/entrynodes.h"
 #include "feature/nodelist/networkstatus.h"
 #include "core/or/relay.h"
-#include "core/or/relay_cell.h"
 #include "core/or/relay_msg.h"
 #include "lib/math/fp.h"
 #include "lib/math/laplace.h"

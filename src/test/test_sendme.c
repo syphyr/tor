@@ -14,7 +14,6 @@
 #include "core/or/origin_circuit_st.h"
 #include "core/or/circuitlist.h"
 #include "core/or/relay.h"
-#include "core/or/relay_cell.h"
 #include "core/or/sendme.h"
 
 #include "feature/nodelist/networkstatus.h"

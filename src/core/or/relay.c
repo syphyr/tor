@@ -85,7 +85,6 @@
 #include "core/or/scheduler.h"
 #include "feature/hs/hs_metrics.h"
 #include "feature/stats/rephist.h"
-#include "core/or/relay_cell.h"
 #include "core/or/relay_msg.h"
 
 #include "core/or/cell_st.h"

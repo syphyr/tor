@@ -13,9 +13,7 @@
 #include "core/or/cell_st.h"
 #include "core/or/circuitlist.h"
 #include "core/or/relay.h"
-#include "core/or/relay_cell.h"
 #include "core/or/relay_msg.h"
-#include "core/or/relay_cell.h"
 #include "lib/crypt_ops/crypto_rand.h"
 
 #include "core/or/cell_st.h"
