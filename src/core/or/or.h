@@ -454,13 +454,20 @@ typedef enum {
 #define SOCKS4_NETWORK_LEN 8
 
 /*
- * Relay payload:
+ * Relay cell body (V0):
  *         Relay command           [1 byte]
  *         Recognized              [2 bytes]
  *         Stream ID               [2 bytes]
  *         Partial SHA-1           [4 bytes]
  *         Length                  [2 bytes]
  *         Relay payload           [498 bytes]
+ *
+ * Relay cell body (V1):
+ *         Tag                     [16 bytes]
+ *         Command                 [1 byte]
+ *         Length                  [2 bytes]
+ *         Stream ID               [2 bytes, Optional, depends on command]
+ *         Relay payload           [488 bytes _or_ 490 bytes]
  */
 
 /** Number of bytes in a cell, minus cell header. */
