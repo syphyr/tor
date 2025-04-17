@@ -18,6 +18,9 @@
  * payload for the future of our C-tor maze and protocol. */
 #define RELAY_CELL_PADDING_GAP 4
 
+/* TODO #41051: Most of these functions no longer make sense under CGO,
+ * and we are only going to use the new proto format with CGO. */
+
 /* Getters. */
 bool relay_cell_is_recognized(const cell_t *cell);
 uint8_t *relay_cell_get_digest(cell_t *cell);
@@ -42,6 +45,12 @@ relay_cell_get_header_size(uint8_t relay_cell_proto)
   /* Specified in tor-spec.txt. */
   switch (relay_cell_proto) {
   case 0: return (1 + 2 + 2 + 4 + 2); // 11
+  // TODO #41051: This doesn't really make sense, for two reasons.
+  // First, we're not going to do this protocol without CGO,
+  // so we no longer have separate "recognized" and "digest" fields.
+  // Second, the 16-byte tag under CGO does not include
+  // the length and command fields,
+  // which are counted above.
   case 1: return (2 + 14); // 16
   default:
     tor_fragile_assert();
@@ -51,6 +60,9 @@ relay_cell_get_header_size(uint8_t relay_cell_proto)
 
 /** Return the size of the relay cell payload for the given relay cell
  * protocol version. */
+/* TODO #41051: This depends on the command too, since the stream ID is
+   conditional */
+/* TODO #41051: This is a _maximum_. */
 static inline size_t
 relay_cell_get_payload_size(uint8_t relay_cell_proto)
 {
@@ -65,4 +77,3 @@ STATIC size_t get_pad_cell_offset(size_t payload_len,
 #endif /* RELAY_CELL_PRIVATE */
 
 #endif /* TOR_RELAY_CELL_H */
-

@@ -489,6 +489,7 @@ static inline int get_circ_id_size(int wide_circ_ids)
   return wide_circ_ids ? 4 : 2;
 }
 
+/* TODO #41051: It would be better if these went away. */
 /** Number of bytes in a relay cell's header (not including general cell
  * header). */
 #define RELAY_HEADER_SIZE (1+2+2+4+2)
