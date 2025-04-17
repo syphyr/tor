@@ -287,9 +287,8 @@ relay_msg_decode_cell(relay_cell_fmt_t format,
 /** Return the format to use.
  *
  * NULL can be passed but not for both. */
-/* TODO #41051: Rename this. */
 relay_cell_fmt_t
-relay_msg_get_format(const circuit_t *circ, const crypt_path_t *cpath)
+circuit_get_relay_format(const circuit_t *circ, const crypt_path_t *cpath)
 {
   if (circ && CIRCUIT_IS_ORCIRC(circ)) {
     return CONST_TO_OR_CIRCUIT(circ)->relay_cell_format;

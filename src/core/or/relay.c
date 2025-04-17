@@ -259,7 +259,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
 
   if (recognized) {
     edge_connection_t *conn = NULL;
-    relay_cell_fmt_t format = relay_msg_get_format(circ, layer_hint);
+    relay_cell_fmt_t format = circuit_get_relay_format(circ, layer_hint);
 
     /* Recognized cell, the cell digest has been updated, we'll record it for
      * the SENDME if need be. */
@@ -621,7 +621,7 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
 
   size_t msg_body_len;
   {
-    relay_cell_fmt_t cell_format = relay_msg_get_format(circ, cpath_layer);
+    relay_cell_fmt_t cell_format = circuit_get_relay_format(circ, cpath_layer);
     relay_msg_t msg;
     if (payload_len >
         relay_cell_max_payload_size(cell_format, relay_command)) {
@@ -2231,7 +2231,7 @@ connection_edge_get_inbuf_bytes_to_package(size_t n_available,
     (on_circuit->send_randomness_after_n_cells == 0) &&
     (! on_circuit->have_sent_sufficiently_random_cell);
 
-  relay_cell_fmt_t cell_format = relay_msg_get_format(on_circuit, cpath);
+  relay_cell_fmt_t cell_format = circuit_get_relay_format(on_circuit, cpath);
   size_t target_length =
     relay_cell_max_payload_size(cell_format, RELAY_COMMAND_DATA);
 
