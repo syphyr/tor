@@ -300,3 +300,15 @@ circuit_get_relay_format(const circuit_t *circ, const crypt_path_t *cpath)
     tor_assert_unreached();
   }
 }
+
+/**
+ * Return the maximum relay payload that can be sent to the chosen
+ * point, with the specified command.
+ */
+size_t
+circuit_get_max_relay_payload(const circuit_t *circ, const crypt_path_t *cpath,
+                              uint8_t relay_command)
+{
+  relay_cell_fmt_t fmt = circuit_get_relay_format(circ, cpath);
+  return relay_cell_max_payload_size(fmt, relay_command);
+}
