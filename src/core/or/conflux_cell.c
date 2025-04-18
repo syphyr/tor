@@ -311,37 +311,34 @@ bool
 conflux_send_switch_command(circuit_t *send_circ, uint64_t relative_seq)
 {
   trn_cell_conflux_switch_t *switch_cell = trn_cell_conflux_switch_new();
-  cell_t cell;
+  uint8_t payload[RELAY_PAYLOAD_SIZE_MAX] = {0};
   bool ret = true;
 
   tor_assert(send_circ);
   tor_assert(relative_seq < UINT32_MAX);
 
-  memset(&cell, 0, sizeof(cell));
-
   trn_cell_conflux_switch_set_seqnum(switch_cell, (uint32_t)relative_seq);
 
-  if (trn_cell_conflux_switch_encode(cell.payload, RELAY_PAYLOAD_SIZE_MAX,
-                                     switch_cell) < 0) {
+  ssize_t len = trn_cell_conflux_switch_encode(
+                                payload, RELAY_PAYLOAD_SIZE_MAX,
+                                switch_cell);
+  if (len < 0) {
     log_warn(LD_BUG, "Failed to encode conflux switch cell");
     ret = false;
     goto end;
   }
 
   /* Send the switch command to the new hop */
-  // TODO CGO XXXXX Fix bug #41056.
   if (CIRCUIT_IS_ORIGIN(send_circ)) {
     relay_send_command_from_edge(0, send_circ,
                                RELAY_COMMAND_CONFLUX_SWITCH,
-                               (const char*)cell.payload,
-                               RELAY_PAYLOAD_SIZE_MAX,
+                               (const char*)payload, len,
                                TO_ORIGIN_CIRCUIT(send_circ)->cpath->prev);
   } else {
     relay_send_command_from_edge(0, send_circ,
                                RELAY_COMMAND_CONFLUX_SWITCH,
-                               (const char*)cell.payload,
-                                 RELAY_PAYLOAD_SIZE_MAX,
-                                 NULL);
+                               (const char*)payload, len,
+                               NULL);
   }
 
 end:
