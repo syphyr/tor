@@ -3,7 +3,7 @@
 
 /**
  * \file relay_msg.c
- * \brief XXX: Write a brief introduction to this module.
+ * \brief Encoding relay messages into cells.
  **/
 
 #define RELAY_MSG_PRIVATE
