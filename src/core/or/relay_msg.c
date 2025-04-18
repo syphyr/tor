@@ -80,7 +80,7 @@ relay_msg_set(const uint8_t relay_cell_proto, const uint8_t cmd,
               const uint16_t payload_len, relay_msg_t *msg)
 {
   // TODO #41051: Should this free msg->body?
-  msg->relay_cell_proto = relay_cell_proto;
+  (void) relay_cell_proto;
   msg->command = cmd;
   msg->stream_id = stream_id;
 
@@ -244,7 +244,6 @@ relay_msg_encode_cell(relay_cell_fmt_t format,
                       cell_t *cell_out)
 {
   memset(cell_out, 0, sizeof(cell_t));
-  cell_out->relay_cell_proto = format;
   cell_out->command = msg->is_relay_early ?
     CELL_RELAY_EARLY : CELL_RELAY;
 
@@ -269,10 +268,6 @@ relay_msg_t *
 relay_msg_decode_cell(relay_cell_fmt_t format,
                       const cell_t *cell)
 {
-  // TODO #41051: Either remove the format argument here,
-  // or the format field in cell_t.
-  tor_assert(cell->relay_cell_proto == format);
-
   switch (format) {
     case RELAY_CELL_FORMAT_V0:
       return decode_v0_cell(cell);

@@ -1459,7 +1459,6 @@ test_cfmt_relay_msg_decoding_simple(void *arg)
   s = "02" "0000" "0250" "00000000" "000B"
       "68656c6c6f20776f726c64" "00000000";
   base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
-  cell.relay_cell_proto = RELAY_CELL_FORMAT_V0;
   msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V0, &cell);
   tt_assert(msg1);
 
@@ -1487,7 +1486,6 @@ test_cfmt_relay_msg_decoding_simple(void *arg)
       "05" "0014"
       "68656c6c6f206920616d2061207461672e2e2e2e" "00000000";
   base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
-  cell.relay_cell_proto = RELAY_CELL_FORMAT_V1;
 
   msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V1, &cell);
   tt_assert(msg1);
@@ -1554,14 +1552,12 @@ test_cfmt_relay_msg_decoding_error(void *arg)
 
   // V0, too long.
   cell.command = CELL_RELAY;
-  cell.relay_cell_proto = RELAY_CELL_FORMAT_V0;
   s = "02" "0000" "0250" "00000000" "01F3";
   base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));
   msg1 = relay_msg_decode_cell(RELAY_CELL_FORMAT_V0, &cell);
   tt_ptr_op(msg1, OP_EQ, NULL);
 
   // V1, command unrecognized.
-  cell.relay_cell_proto = RELAY_CELL_FORMAT_V1;
   s = "00000000000000000000000000000000"
       "F0" "000C" "0250";
   base16_decode((char*)cell.payload, sizeof(cell.payload), s, strlen(s));

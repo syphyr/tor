@@ -265,7 +265,6 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
      * the SENDME if need be. */
     sendme_record_received_cell_digest(circ, layer_hint);
 
-    cell->relay_cell_proto = format; // ????? TODO #41051.
     // TODO #41051: This also doesn't need to copy!
     relay_msg_t *msg = relay_msg_decode_cell(format, cell);
 
@@ -634,7 +633,6 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
       return -1;
     }
 
-    msg.relay_cell_proto = cell_format;
     msg.command = relay_command;
     msg.stream_id = stream_id;
     msg.length = payload_len;
