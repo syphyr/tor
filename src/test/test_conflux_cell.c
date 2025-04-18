@@ -24,6 +24,8 @@ test_link(void *arg)
   conflux_cell_link_t link;
   conflux_cell_link_t *decoded_link = NULL;
   relay_msg_t msg;
+  uint8_t buf0[RELAY_PAYLOAD_SIZE_MAX];
+  uint8_t buf1[RELAY_PAYLOAD_SIZE_MAX];
 
   (void) arg;
 
@@ -36,16 +38,15 @@ test_link(void *arg)
 
   crypto_rand((char *) link.nonce, sizeof(link.nonce));
 
-  msg.body = tor_malloc(500);
-  ssize_t cell_len = build_link_cell(&link, msg.body);
+  ssize_t cell_len = build_link_cell(&link, buf0);
   tt_int_op(cell_len, OP_GT, 0);
   msg.length = cell_len;
+  msg.body = buf0;
 
   decoded_link = conflux_cell_parse_link(&msg);
   tt_assert(decoded_link);
 
-  uint8_t buf[RELAY_PAYLOAD_SIZE];
-  ssize_t enc_cell_len = build_link_cell(decoded_link, buf);
+  ssize_t enc_cell_len = build_link_cell(decoded_link, buf1);
   tt_int_op(cell_len, OP_EQ, enc_cell_len);
 
   /* Validate the original link object with the decoded one. */

@@ -265,14 +265,13 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
      * the SENDME if need be. */
     sendme_record_received_cell_digest(circ, layer_hint);
 
-    // TODO #41051: This also doesn't need to copy!
-    relay_msg_t *msg = relay_msg_decode_cell(format, cell);
-
-    if (msg == NULL) {
+    relay_msg_t msg_buf;
+    if (relay_msg_decode_cell_in_place(format, cell, &msg_buf) < 0) {
       log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
              "Received undecodable relay cell");
       return -END_CIRC_REASON_TORPROTOCOL;
     }
+    const relay_msg_t *msg = &msg_buf;
 
     if (circ->purpose == CIRCUIT_PURPOSE_PATH_BIAS_TESTING) {
       if (pathbias_check_probe_response(circ, msg) == -1) {
@@ -281,7 +280,6 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
 
       /* We need to drop this cell no matter what to avoid code that expects
        * a certain purpose (such as the hidserv code). */
-      relay_msg_free(msg);
       return 0;
     }
 
@@ -294,7 +292,6 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
         log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
                "connection_edge_process_relay_cell (away from origin) "
                "failed.");
-        relay_msg_free(msg);
         return reason;
       }
     }
@@ -311,11 +308,9 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
           log_warn(LD_OR,
                    "connection_edge_process_relay_cell (at origin) failed.");
         }
-        relay_msg_free(msg);
         return reason;
       }
     }
-    relay_msg_free(msg);
     return 0;
   }
 
@@ -636,10 +631,7 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
     msg.command = relay_command;
     msg.stream_id = stream_id;
     msg.length = payload_len;
-    // This cast is mildly naughty, but ultimately harmless:
-    // There is no need to copy the payload here, so long as we don't
-    // free it.
-    msg.body = (uint8_t *) payload;
+    msg.body = (const uint8_t *) payload;
     msg_body_len = msg.length;
 
     if (relay_msg_encode_cell(cell_format, &msg, &cell) < 0) {

@@ -24,6 +24,9 @@ void relay_msg_set(const uint8_t relay_cell_proto, const uint8_t cmd,
 int relay_msg_encode_cell(relay_cell_fmt_t format,
                           const relay_msg_t *msg,
                           cell_t *cell_out) ATTR_WUR;
+int relay_msg_decode_cell_in_place(relay_cell_fmt_t format,
+                                   const cell_t *cell,
+                                   relay_msg_t *msg_out) ATTR_WUR;
 relay_msg_t *relay_msg_decode_cell(
                           relay_cell_fmt_t format,
                           const cell_t *cell) ATTR_WUR;

@@ -1189,13 +1189,15 @@ test_cfmt_relay_msg_encoding_simple(void *arg)
   cell_t cell;
   char *mem_op_hex_tmp = NULL;
   int r;
+  uint8_t body[100];
 
   /* Simple message: Data, fits easily in cell. */
   msg1 = tor_malloc_zero(sizeof(relay_msg_t));
   msg1->command = RELAY_COMMAND_DATA;
   msg1->stream_id = 0x250;
   msg1->length = 11;
-  msg1->body = tor_memdup("hello world", 11);
+  msg1->body = body;
+  strlcpy((char*)body, "hello world", sizeof(body));
 
   r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V0, msg1, &cell);
   tt_int_op(r, OP_EQ, 0);
@@ -1229,7 +1231,8 @@ test_cfmt_relay_msg_encoding_simple(void *arg)
   msg1->command = RELAY_COMMAND_SENDME;
   msg1->stream_id = 0;
   msg1->length = 20;
-  msg1->body = tor_memdup("hello i am a tag....", 20);
+  msg1->body = body;
+  strlcpy((char *)body, "hello i am a tag....", sizeof(body));
 
   r = relay_msg_encode_cell(RELAY_CELL_FORMAT_V0, msg1, &cell);
   tt_int_op(r, OP_EQ, 0);
@@ -1325,13 +1328,14 @@ test_cfmt_relay_cell_padding(void *arg)
 {
   (void)arg;
   relay_msg_t *msg1 = NULL;
+  uint8_t buf[500]; // Longer than it needs to be.
+  memset(buf, 0xff, sizeof(buf));
 
   /* Simple message; we'll adjust the length and encode it. */
   msg1 = tor_malloc_zero(sizeof(relay_msg_t));
   msg1->command = RELAY_COMMAND_DATA;
   msg1->stream_id = 0x250;
-  msg1->body = tor_malloc(500); // Longer than it needs to be.
-  memset(msg1->body, 0xff, 500);
+  msg1->body = buf;
 
   // Empty message
   msg1->length = 0;
@@ -1402,12 +1406,13 @@ test_cfmt_relay_msg_encoding_error(void *arg)
   relay_msg_t *msg1 = NULL;
   int r;
   cell_t cell;
+  uint8_t buf[500]; // Longer than it needs to be.
+  memset(buf, 0xff, sizeof(buf));
 
   msg1 = tor_malloc_zero(sizeof(relay_msg_t));
   msg1->command = RELAY_COMMAND_DATA;
   msg1->stream_id = 0x250;
-  msg1->body = tor_malloc(500); // Longer than it needs to be.
-  memset(msg1->body, 0xff, 500);
+  msg1->body = buf;
 
   tor_capture_bugs_(5);
   // Too long for v0.

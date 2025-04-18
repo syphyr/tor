@@ -1349,8 +1349,9 @@ test_circuitpadding_wronghop(void *arg)
 
   /* 3. Garbled negotiated cell */
   memset(&msg, 0, sizeof(msg));
-  msg.body = tor_malloc_zero(99);
-  memset(msg.body, 0xff, 99);
+  uint8_t buf[99];
+  memset(buf, 0xff, 99);
+  msg.body = buf;
   ret = circpad_handle_padding_negotiated(client_side, &msg,
           TO_ORIGIN_CIRCUIT(client_side)->cpath->next);
   tt_int_op(ret, OP_EQ, -1);

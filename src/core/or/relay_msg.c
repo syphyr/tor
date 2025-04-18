@@ -32,7 +32,6 @@ relay_msg_free_(relay_msg_t *msg)
   if (!msg) {
     return;
   }
-  tor_free(msg->body);
   tor_free(msg);
 }
 
@@ -42,7 +41,6 @@ void
 relay_msg_clear(relay_msg_t *msg)
 {
   tor_assert(msg);
-  tor_free(msg->body);
   memset(msg, 0, sizeof(*msg));
 }
 
@@ -59,34 +57,41 @@ relay_msg_clear(relay_msg_t *msg)
 #define V1_PAYLOAD_OFFSET_NO_STREAM_ID 19
 #define V1_PAYLOAD_OFFSET_WITH_STREAM_ID 21
 
-/** Allocate a new relay message and copy the content of the given message. */
+/** Allocate a new relay message and copy the content of the given message.
+ *
+ * This message allocation _will_ own its body, even if the original did not.
+ **/
 relay_msg_t *
 relay_msg_copy(const relay_msg_t *msg)
 {
-  relay_msg_t *new = tor_malloc_zero(sizeof(*msg));
+  void *alloc = tor_malloc_zero(sizeof(relay_msg_t) + msg->length);
+  relay_msg_t *new_msg = alloc;
+  uint8_t *body = ((uint8_t*)alloc) + sizeof(relay_msg_t);
 
-  memcpy(new, msg, sizeof(*msg));
-  new->body = tor_memdup_nulterm(msg->body, msg->length);
-  memcpy(new->body, msg->body, new->length);
+  memcpy(new_msg, msg, sizeof(*msg));
+  new_msg->body = body;
+  memcpy(body, msg->body, msg->length);
 
-  return new;
+  return new_msg;
 }
 
 /** Set a relay message data into the given message. Useful for stack allocated
- * messages. */
+ * messages.
+ *
+ * Note that the resulting relay_msg will have a reference to
+ * 'payload', which must not be changed while this message is in use.
+ **/
 void
 relay_msg_set(const uint8_t relay_cell_proto, const uint8_t cmd,
               const streamid_t stream_id, const uint8_t *payload,
               const uint16_t payload_len, relay_msg_t *msg)
 {
-  // TODO #41051: Should this free msg->body?
   (void) relay_cell_proto;
   msg->command = cmd;
   msg->stream_id = stream_id;
 
   msg->length = payload_len;
-  msg->body = tor_malloc_zero(msg->length);
-  memcpy(msg->body, payload, msg->length);
+  msg->body = payload;
 }
 
 /* Add random bytes to the unused portion of the payload, to foil attacks
@@ -170,14 +175,14 @@ encode_v1_cell(const relay_msg_t *msg,
   return 0;
 }
 
-/** Try to decode 'cell' into a newly allocated V0 relay message.
+/** Try to decode 'cell' into a V0 relay message.
  *
- * Return NULL on error.
+ * Return 0 on success, -1 on error.
  */
-static relay_msg_t *
-decode_v0_cell(const cell_t *cell)
+static int
+decode_v0_cell(const cell_t *cell, relay_msg_t *out)
 {
-  relay_msg_t *out = tor_malloc_zero(sizeof(relay_msg_t));
+  memset(out, 0, sizeof(relay_msg_t));
   out->is_relay_early = (cell->command == CELL_RELAY_EARLY);
 
   const uint8_t *body = cell->payload;
@@ -186,30 +191,28 @@ decode_v0_cell(const cell_t *cell)
   out->length = ntohs(get_uint16(body + V0_LEN_OFFSET));
 
   if (out->length > CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0) {
-    goto err;
+    return -1;
   }
-  out->body = tor_memdup_nulterm(body + V0_PAYLOAD_OFFSET, out->length);
+  out->body = body + V0_PAYLOAD_OFFSET;
 
-  return out;
- err:
-  relay_msg_free(out);
-  return NULL;
+  return 0;
 }
 
-/** Try to decode 'cell' into a newly allocated V0 relay message.
+/** Try to decode 'cell' into a V1 relay message.
  *
- * Return NULL on error.
+ * Return 0 on success, -1 on error.=
  */
-static relay_msg_t *
-decode_v1_cell(const cell_t *cell)
+static int
+decode_v1_cell(const cell_t *cell, relay_msg_t *out)
 {
-  relay_msg_t *out = tor_malloc_zero(sizeof(relay_msg_t));
+  memset(out, 0, sizeof(relay_msg_t));
   out->is_relay_early = (cell->command == CELL_RELAY_EARLY);
 
   const uint8_t *body = cell->payload;
   out->command = get_uint8(body + V1_CMD_OFFSET);
   if (! is_known_relay_command(out->command))
-    goto err;
+    return -1;
+
   out->length = ntohs(get_uint16(body + V1_LEN_OFFSET));
   size_t payload_offset;
   if (relay_cmd_expects_streamid_in_v1(out->command)) {
@@ -220,13 +223,10 @@ decode_v1_cell(const cell_t *cell)
   }
 
   if (out->length > CELL_PAYLOAD_SIZE - payload_offset)
-    goto err;
-  out->body = tor_memdup_nulterm(body + payload_offset, out->length);
+    return -1;
+  out->body = body + payload_offset;
 
-  return out;
- err:
-  relay_msg_free(out);
-  return NULL;
+  return 0;
 }
 /**
  * Encode 'msg' into 'cell' according to the rules of 'format'.
@@ -262,19 +262,42 @@ relay_msg_encode_cell(relay_cell_fmt_t format,
  * Decode 'cell' (which must be RELAY or RELAY_EARLY) into a newly allocated
  * 'relay_msg_t'.
  *
+ * Note that the resulting relay_msg_t will have a reference to 'cell'.
+ * Do not change 'cell' while the resulting message is still in use!
+ *
+ * Return -1 on error, and 0 on success.
+ */
+int
+relay_msg_decode_cell_in_place(relay_cell_fmt_t format,
+                               const cell_t *cell,
+                               relay_msg_t *msg_out)
+{
+  switch (format) {
+    case RELAY_CELL_FORMAT_V0:
+      return decode_v0_cell(cell, msg_out);
+    case RELAY_CELL_FORMAT_V1:
+      return decode_v1_cell(cell, msg_out);
+    default:
+      tor_fragile_assert();
+      return -1;
+  }
+}
+
+/**
+ * As relay_msg_decode_cell_in_place, but allocate a new relay_msg_t
+ * on success.
+ *
  * Return NULL on error.
  */
 relay_msg_t *
 relay_msg_decode_cell(relay_cell_fmt_t format,
                       const cell_t *cell)
 {
-  switch (format) {
-    case RELAY_CELL_FORMAT_V0:
-      return decode_v0_cell(cell);
-    case RELAY_CELL_FORMAT_V1:
-      return decode_v1_cell(cell);
-    default:
-      tor_fragile_assert();
-      return NULL;
+  relay_msg_t *msg = tor_malloc(sizeof(relay_msg_t));
+  if (relay_msg_decode_cell_in_place(format, cell, msg) < 0) {
+    relay_msg_free(msg);
+    return NULL;
+  } else {
+    return msg;
   }
 }

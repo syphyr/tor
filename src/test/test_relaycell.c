@@ -173,15 +173,15 @@ fake_entry_conn(origin_circuit_t *oncirc, streamid_t id)
   return entryconn;
 }
 
-#define PACK_CELL(id, cmd, body_s) do {                                  \
+#define PACK_CELL(id, cmd, body_s) do {                                 \
     len_tmp = sizeof(body_s)-1;                                         \
     relay_msg_free(msg);                                                \
     msg = tor_malloc_zero(sizeof(relay_msg_t));                         \
     msg->command = (cmd);                                               \
     msg->stream_id = (id);                                              \
-    msg->body = tor_malloc(len_tmp);                                    \
+    msg->body = cell_buf;                                               \
     msg->length = len_tmp;                                              \
-    memcpy(msg->body, (body_s), len_tmp);                               \
+    memcpy(cell_buf, (body_s), len_tmp);                                \
   } while (0)
 #define ASSERT_COUNTED_BW() do { \
     tt_int_op(circ->n_delivered_read_circ_bw, OP_EQ, delivered+msg->length); \
@@ -206,6 +206,7 @@ subtest_circbw_halfclosed(origin_circuit_t *circ, streamid_t init_id)
   entry_connection_t *entryconn4=NULL;
   int delivered = circ->n_delivered_read_circ_bw;
   int overhead = circ->n_overhead_read_circ_bw;
+  uint8_t cell_buf[RELAY_PAYLOAD_SIZE_MAX];
 
   /* Make new entryconns */
   entryconn2 = fake_entry_conn(circ, init_id);
@@ -678,6 +679,7 @@ test_circbw_relay(void *arg)
   origin_circuit_t *circ;
   int delivered = 0;
   int overhead = 0;
+  uint8_t cell_buf[RELAY_PAYLOAD_SIZE_MAX];
 
   (void)arg;
 
@@ -708,10 +710,8 @@ test_circbw_relay(void *arg)
 
   /* Properly formatted connect cell: counted */
   PACK_CELL(1, RELAY_COMMAND_CONNECTED, "Data1234");
-  tor_free(msg->body);
-  msg->body = tor_malloc(500);
   tor_addr_parse(&addr, "30.40.50.60");
-  msg->length = connected_cell_format_payload(msg->body,
+  msg->length = connected_cell_format_payload(cell_buf,
                                               &addr, 1024);
   connection_edge_process_relay_cell(msg, TO_CIRCUIT(circ), edgeconn,
                                      circ->cpath);
@@ -882,14 +882,15 @@ test_relaycell_resolved(void *arg)
   int r;
   or_options_t *options = get_options_mutable();
   size_t len_tmp;
+  uint8_t cell_buf[RELAY_PAYLOAD_SIZE_MAX];
 
 #define SET_CELL(s) do {                                                \
     relay_msg_free(msg);                                                \
     msg = tor_malloc_zero(sizeof(relay_msg_t));                         \
     len_tmp = sizeof(s) - 1;                                            \
-    msg->body = tor_malloc_zero(len_tmp);                               \
+    msg->body = cell_buf;                                               \
     msg->length = len_tmp;                                              \
-    memcpy(msg->body, s, len_tmp);                                      \
+    memcpy(cell_buf, s, len_tmp);                                      \
   } while (0)
 #define MOCK_RESET() do {                       \
     srm_ncalls = mum_ncalls = 0;                \

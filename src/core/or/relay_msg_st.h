@@ -27,11 +27,11 @@ typedef struct relay_msg_t {
   streamid_t stream_id;
   /* Indicate if this is a message from a relay early cell. */
   bool is_relay_early;
-  /* Message body of a relay message. */
-  // TODO #41051: This is an owned copy of the body.
-  // It might be better to turn this into a non-owned pointer into
-  // the cell body, if we can, to save a copy.
-  uint8_t *body;
+  /* Message body of a relay message.
+   *
+   * NOTE that this struct does not own the body; instead, this is a pointer
+   * into a different object. */
+  const uint8_t *body;
 } relay_msg_t;
 
 #endif /* !defined(TOR_RELAY_MSG_ST_H) */
