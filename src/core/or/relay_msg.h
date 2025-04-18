@@ -17,9 +17,6 @@
 void relay_msg_free_(relay_msg_t *msg);
 void relay_msg_clear(relay_msg_t *msg);
 relay_msg_t *relay_msg_copy(const relay_msg_t *msg);
-void relay_msg_set(const uint8_t relay_cell_proto, const uint8_t cmd,
-                   const streamid_t streamd_id, const uint8_t *payload,
-                   const uint16_t payload_len, relay_msg_t *msg);
 
 int relay_msg_encode_cell(relay_cell_fmt_t format,
                           const relay_msg_t *msg,

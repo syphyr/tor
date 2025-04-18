@@ -75,25 +75,6 @@ relay_msg_copy(const relay_msg_t *msg)
   return new_msg;
 }
 
-/** Set a relay message data into the given message. Useful for stack allocated
- * messages.
- *
- * Note that the resulting relay_msg will have a reference to
- * 'payload', which must not be changed while this message is in use.
- **/
-void
-relay_msg_set(const uint8_t relay_cell_proto, const uint8_t cmd,
-              const streamid_t stream_id, const uint8_t *payload,
-              const uint16_t payload_len, relay_msg_t *msg)
-{
-  (void) relay_cell_proto;
-  msg->command = cmd;
-  msg->stream_id = stream_id;
-
-  msg->length = payload_len;
-  msg->body = payload;
-}
-
 /* Add random bytes to the unused portion of the payload, to foil attacks
  * where the other side can predict all of the bytes in the payload and thus
  * compute the authenticated SENDME cells without seeing the traffic. See
