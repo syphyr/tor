@@ -513,7 +513,7 @@ clip_dns_fuzzy_ttl(uint32_t ttl)
 int
 connection_edge_end(edge_connection_t *conn, uint8_t reason)
 {
-  char payload[RELAY_PAYLOAD_SIZE];
+  char payload[RELAY_PAYLOAD_SIZE_MAX];
   size_t payload_len=1;
   circuit_t *circ;
   uint8_t control_reason = reason;
@@ -3238,8 +3238,8 @@ connection_ap_get_begincell_flags(entry_connection_t *ap_conn)
 MOCK_IMPL(int,
 connection_ap_handshake_send_begin,(entry_connection_t *ap_conn))
 {
-  char payload[CELL_PAYLOAD_SIZE];
-  int payload_len;
+  char payload[RELAY_PAYLOAD_SIZE_MAX];
+  size_t payload_len;
   int begin_type;
   const or_options_t *options = get_options();
   origin_circuit_t *circ;
@@ -3264,17 +3264,20 @@ connection_ap_handshake_send_begin,(entry_connection_t *ap_conn))
     return -1;
   }
 
+  size_t payload_max = circuit_max_relay_payload(
+                edge_conn->on_circuit, edge_conn->cpath_layer,
+                RELAY_COMMAND_BEGIN);
   /* Set up begin cell flags. */
   edge_conn->begincell_flags = connection_ap_get_begincell_flags(ap_conn);
 
-  tor_snprintf(payload,RELAY_PAYLOAD_SIZE, "%s:%d",
+  tor_snprintf(payload,payload_max, "%s:%d",
                (circ->base_.purpose == CIRCUIT_PURPOSE_C_GENERAL ||
                 circ->base_.purpose == CIRCUIT_PURPOSE_CONFLUX_LINKED ||
                 circ->base_.purpose == CIRCUIT_PURPOSE_CONTROLLER) ?
                  ap_conn->socks_request->address : "",
                ap_conn->socks_request->port);
-  payload_len = (int)strlen(payload)+1;
-  if (payload_len <= RELAY_PAYLOAD_SIZE - 4 && edge_conn->begincell_flags) {
+  payload_len = strlen(payload)+1;
+  if (payload_len <= payload_max - 4 && edge_conn->begincell_flags) {
     set_uint32(payload + payload_len, htonl(edge_conn->begincell_flags));
     payload_len += 4;
   }

@@ -798,7 +798,7 @@ static int
 pathbias_send_usable_probe(circuit_t *circ)
 {
   /* Based on connection_ap_handshake_send_begin() */
-  char payload[CELL_PAYLOAD_SIZE];
+  char payload[RELAY_PAYLOAD_SIZE_MAX];
   int payload_len;
   origin_circuit_t *ocirc = TO_ORIGIN_CIRCUIT(circ);
   crypt_path_t *cpath_layer = NULL;
@@ -853,7 +853,7 @@ pathbias_send_usable_probe(circuit_t *circ)
     return -1;
   }
 
-  tor_snprintf(payload,RELAY_PAYLOAD_SIZE, "%s:25", probe_nonce);
+  tor_snprintf(payload,RELAY_PAYLOAD_SIZE_MAX, "%s:25", probe_nonce);
   payload_len = (int)strlen(payload)+1;
 
   // XXX: need this? Can we assume ipv4 will always be supported?

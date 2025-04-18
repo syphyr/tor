@@ -495,11 +495,11 @@ test_cfmt_created_cells(void *arg)
   memset(b, 0, sizeof(b));
   crypto_rand((char*)b, 496);
   cell.command = CELL_CREATED2;
-  memcpy(cell.payload, "\x01\xF1", 2);
+  memcpy(cell.payload, "\x02\xFF", 2);
   tt_int_op(-1, OP_EQ, created_cell_parse(&cc, &cell));
 
   /* Unformattable CREATED2 cell: too long! */
-  cc.handshake_len = 497;
+  cc.handshake_len = 508;
   tt_int_op(-1, OP_EQ, created_cell_format(&cell2, &cc));
 
  done:

@@ -3481,7 +3481,7 @@ connection_bucket_get_share(int base, int priority,
 static ssize_t
 connection_bucket_read_limit(connection_t *conn, time_t now)
 {
-  int base = RELAY_PAYLOAD_SIZE;
+  int base = RELAY_PAYLOAD_SIZE_MAX;
   int priority = conn->type != CONN_TYPE_DIR;
   ssize_t conn_bucket = -1;
   size_t global_bucket_val = token_bucket_rw_get_read(&global_bucket);
@@ -3535,7 +3535,7 @@ connection_bucket_read_limit(connection_t *conn, time_t now)
 ssize_t
 connection_bucket_write_limit(connection_t *conn, time_t now)
 {
-  int base = RELAY_PAYLOAD_SIZE;
+  int base = RELAY_PAYLOAD_SIZE_MAX;
   int priority = conn->type != CONN_TYPE_DIR;
   size_t conn_bucket = buf_datalen(conn->outbuf);
   size_t global_bucket_val = token_bucket_rw_get_write(&global_bucket);

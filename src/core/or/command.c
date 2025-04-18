@@ -456,7 +456,7 @@ command_process_created_cell(cell_t *cell, channel_t *chan)
   } else { /* pack it into an extended relay cell, and send it. */
     uint8_t command=0;
     uint16_t len=0;
-    uint8_t payload[RELAY_PAYLOAD_SIZE];
+    uint8_t payload[RELAY_PAYLOAD_SIZE_MAX];
     log_debug(LD_OR,
               "Converting created cell to extended relay cell, sending.");
     memset(payload, 0, sizeof(payload));
@@ -466,6 +466,11 @@ command_process_created_cell(cell_t *cell, channel_t *chan)
       extended_cell.cell_type = RELAY_COMMAND_EXTENDED;
     if (extended_cell_format(&command, &len, payload, &extended_cell) < 0) {
       log_fn(LOG_PROTOCOL_WARN, LD_OR, "Can't format extended cell.");
+      circuit_mark_for_close(circ, END_CIRC_REASON_TORPROTOCOL);
+      return;
+    }
+    if (len > circuit_max_relay_payload(circ, NULL, command)) {
+      log_fn(LOG_PROTOCOL_WARN, LD_OR, "Created cell too big to package.");
       circuit_mark_for_close(circ, END_CIRC_REASON_TORPROTOCOL);
       return;
     }

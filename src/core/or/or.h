@@ -550,12 +550,6 @@ static inline int get_circ_id_size(int wide_circ_ids)
   return wide_circ_ids ? 4 : 2;
 }
 
-/* TODO #41051: It would be better if these went away. */
-/** Number of bytes in a relay cell's header (not including general cell
- * header). */
-/** Largest number of bytes that can fit in a relay cell payload. */
-#define RELAY_PAYLOAD_SIZE (CELL_PAYLOAD_SIZE-(1+2+2+4+2))
-
 /** Number of bytes used for a relay cell's header, in the v0 format. */
 #define RELAY_HEADER_SIZE_V0 (1+2+2+4+2)
 /** Number of bytes used for a relay cell's header, in the v1 format,
@@ -564,6 +558,22 @@ static inline int get_circ_id_size(int wide_circ_ids)
 /** Number of bytes used for a relay cell's header, in the v1 format,
  * if a StreamID is used. */
 #define RELAY_HEADER_SIZE_V1_WITH_STREAM_ID (16+1+2+2)
+
+/** Largest number of bytes that can fit in any relay cell payload.
+ *
+ * Note that the actual maximum may be smaller if the V1 cell format
+ * is in use; see relay_cell_max_payload_size() for the real maximum.
+ */
+#define RELAY_PAYLOAD_SIZE_MAX (CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0)
+
+/** Smallest capacity of any relay cell payload. */
+#define RELAY_PAYLOAD_SIZE_MIN \
+  (CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID)
+
+#ifdef TOR_UNIT_TESTS
+// This name is for testing only.
+#define RELAY_PAYLOAD_SIZE RELAY_PAYLOAD_SIZE_MAX
+#endif
 
 /** Identifies a circuit on an or_connection */
 typedef uint32_t circid_t;

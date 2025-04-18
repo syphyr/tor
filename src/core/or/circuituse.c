@@ -3181,15 +3181,16 @@ circuit_sent_valid_data(origin_circuit_t *circ, uint16_t relay_body_len)
 {
   if (!circ) return;
 
-  tor_assertf_nonfatal(relay_body_len <= RELAY_PAYLOAD_SIZE,
+  tor_assertf_nonfatal(relay_body_len <= RELAY_PAYLOAD_SIZE_MAX,
                        "Wrong relay_body_len: %d (should be at most %d)",
-                       relay_body_len, RELAY_PAYLOAD_SIZE);
+                       relay_body_len, RELAY_PAYLOAD_SIZE_MAX);
 
   circ->n_delivered_written_circ_bw =
       tor_add_u32_nowrap(circ->n_delivered_written_circ_bw, relay_body_len);
+  // TODO CGO: I think this may now be somewhat incorrect.
   circ->n_overhead_written_circ_bw =
       tor_add_u32_nowrap(circ->n_overhead_written_circ_bw,
-                         RELAY_PAYLOAD_SIZE-relay_body_len);
+                         RELAY_PAYLOAD_SIZE_MAX-relay_body_len);
 }
 
 /**
@@ -3202,11 +3203,12 @@ circuit_read_valid_data(origin_circuit_t *circ, uint16_t relay_body_len)
 {
   if (!circ) return;
 
-  tor_assert_nonfatal(relay_body_len <= RELAY_PAYLOAD_SIZE);
+  tor_assert_nonfatal(relay_body_len <= RELAY_PAYLOAD_SIZE_MAX);
 
   circ->n_delivered_read_circ_bw =
       tor_add_u32_nowrap(circ->n_delivered_read_circ_bw, relay_body_len);
+  // TODO CGO: I think this may now be somewhat incorrect.
   circ->n_overhead_read_circ_bw =
       tor_add_u32_nowrap(circ->n_overhead_read_circ_bw,
-                         RELAY_PAYLOAD_SIZE-relay_body_len);
+                         RELAY_PAYLOAD_SIZE_MAX-relay_body_len);
 }

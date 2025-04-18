@@ -229,7 +229,7 @@ sendme_is_valid(const circuit_t *circ, const uint8_t *cell_payload,
 }
 
 /* Build and encode a version 1 SENDME cell into payload, which must be at
- * least of RELAY_PAYLOAD_SIZE bytes, using the digest for the cell data.
+ * least of RELAY_PAYLOAD_SIZE_MAX bytes, using the digest for the cell data.
  *
  * Return the size in bytes of the encoded cell in payload. A negative value
  * is returned on encoding failure. */
@@ -254,7 +254,7 @@ build_cell_payload_v1(const uint8_t *cell_digest, uint8_t *payload)
          sendme_cell_get_data_len(cell));
 
   /* Finally, encode the cell into the payload. */
-  len = sendme_cell_encode(payload, RELAY_PAYLOAD_SIZE, cell);
+  len = sendme_cell_encode(payload, RELAY_PAYLOAD_SIZE_MAX, cell);
 
   sendme_cell_free(cell);
   return len;
@@ -270,7 +270,7 @@ send_circuit_level_sendme(circuit_t *circ, crypt_path_t *layer_hint,
                           const uint8_t *cell_digest)
 {
   uint8_t emit_version;
-  uint8_t payload[RELAY_PAYLOAD_SIZE];
+  uint8_t payload[RELAY_PAYLOAD_SIZE_MAX];
   ssize_t payload_len;
 
   tor_assert(circ);

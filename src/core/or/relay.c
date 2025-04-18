@@ -1178,7 +1178,7 @@ resolved_cell_parse(const relay_msg_t *msg, smartlist_t *addresses_out,
 
   *errcode_out = 0;
 
-  if (msg->length > RELAY_PAYLOAD_SIZE)
+  if (msg->length > RELAY_PAYLOAD_SIZE_MAX)
     return -1;
 
   addrs = smartlist_new();

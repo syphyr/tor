@@ -377,6 +377,7 @@ dumpstats(int severity)
   channel_dumpstats(severity);
   channel_listener_dumpstats(severity);
 
+  // TODO CGO: Use of RELAY_PAYLOAD_SIZE_MAX may make this a bit wrong.
   tor_log(severity, LD_NET,
       "Cells processed: %"PRIu64" padding\n"
       "                 %"PRIu64" create\n"
@@ -395,11 +396,11 @@ dumpstats(int severity)
   if (stats_n_data_cells_packaged)
     tor_log(severity,LD_NET,"Average packaged cell fullness: %2.3f%%",
         100*(((double)stats_n_data_bytes_packaged) /
-             ((double)stats_n_data_cells_packaged*RELAY_PAYLOAD_SIZE)) );
+             ((double)stats_n_data_cells_packaged*RELAY_PAYLOAD_SIZE_MAX)) );
   if (stats_n_data_cells_received)
     tor_log(severity,LD_NET,"Average delivered cell fullness: %2.3f%%",
         100*(((double)stats_n_data_bytes_received) /
-             ((double)stats_n_data_cells_received*RELAY_PAYLOAD_SIZE)) );
+             ((double)stats_n_data_cells_received*RELAY_PAYLOAD_SIZE_MAX)) );
 
   cpuworker_log_onionskin_overhead(severity, ONION_HANDSHAKE_TYPE_TAP, "TAP");
   cpuworker_log_onionskin_overhead(severity, ONION_HANDSHAKE_TYPE_NTOR,"ntor");
