@@ -12,13 +12,38 @@
 #include "orconfig.h"
 #include "lib/cc/torint.h"
 
+/* Decide which implementation to use. */
+#if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) \
+  || defined(_M_X64) || defined(_M_IX86) || defined(__i486)       \
+  || defined(__i386__)
+/* Use intel intrinsics for carryless multiply.
+ *
+ * TODO: In theory we should detect whether we have the relevant instructions,
+ * but they are all at least 15 years old.
+ */
 #define PV_USE_PCLMUL
+#elif SIZEOF_VOID_P >= 8
+/* It's a 64-bit architecture; use the generic 64-bit constant-time
+ * implementation.
+ */
+#define PV_USE_CTMUL64
+#elif SIZEOF_VOID_P == 4
+/* It's a 64-bit architecture; use the generic 32-bit constant-time
+ * implementation.
+ */
+#define PV_USE_CTMUL
+#else
+#error "sizeof(void*) is implausibly weird."
+#endif
 
+/**
+ * Declare a 128 bit integer type.
+ # The exact representation will depend on which implementation we've chosen.
+ */
 #ifdef PV_USE_PCLMUL
 #include <emmintrin.h>
 typedef __m128i pv_u128_;
 #elif defined(PV_USE_CTMUL64)
-/** A 128-bit integer represented as its low and high portion. */
 typedef struct pv_u128_ {
   uint64_t lo;
   uint64_t hi;
