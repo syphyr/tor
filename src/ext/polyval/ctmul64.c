@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
  *
- * Permission is hereby granted, free of charge, to any person obtaining 
+ * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
  * without limitation the rights to use, copy, modify, merge, publish,
@@ -9,20 +9,18 @@
  * permit persons to whom the Software is furnished to do so, subject to
  * the following conditions:
  *
- * The above copyright notice and this permission notice shall be 
+ * The above copyright notice and this permission notice shall be
  * included in all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
  * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
  * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
  * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
-#include "inner.h"
 
 /*
  * This is the 64-bit variant of br_ghash_ctmul32(), with 64-bit operands
@@ -73,45 +71,27 @@ rev64(uint64_t x)
 #undef RMS
 }
 
-/* see bearssl_ghash.h */
-void
-br_ghash_ctmul64(void *y, const void *h, const void *data, size_t len)
+
+static void
+pv_mul_y_h(polyval_t *pv)
 {
-	const unsigned char *buf, *hb;
-	unsigned char *yb;
 	uint64_t y0, y1;
 	uint64_t h0, h1, h2, h0r, h1r, h2r;
 
-	buf = data;
-	yb = y;
-	hb = h;
-	y1 = br_dec64be(yb);
-	y0 = br_dec64be(yb + 8);
-	h1 = br_dec64be(hb);
-	h0 = br_dec64be(hb + 8);
-	h0r = rev64(h0);
-	h1r = rev64(h1);
+	y0 = pv->y.lo;
+	y1 = pv->y.hi;
+	h0 = pv->h.lo;
+	h1 = pv->h.hi;
+	// TODO(nm) does it actually make sense for us to precompute this?
+	h0r = pv->hr.lo;
+	h1r = pv->hr.hi;
+
 	h2 = h0 ^ h1;
 	h2r = h0r ^ h1r;
-	while (len > 0) {
-		const unsigned char *src;
-		unsigned char tmp[16];
+	{
 		uint64_t y0r, y1r, y2, y2r;
 		uint64_t z0, z1, z2, z0h, z1h, z2h;
 		uint64_t v0, v1, v2, v3;
-
-		if (len >= 16) {
-			src = buf;
-			buf += 16;
-			len -= 16;
-		} else {
-			memcpy(tmp, buf, len);
-			memset(tmp + len, 0, (sizeof tmp) - len);
-			src = tmp;
-			len = 0;
-		}
-		y1 ^= br_dec64be(src);
-		y0 ^= br_dec64be(src + 8);
 
 		y0r = rev64(y0);
 		y1r = rev64(y1);
@@ -135,20 +115,20 @@ br_ghash_ctmul64(void *y, const void *h, const void *data, size_t len)
 		v2 = z1 ^ z2h;
 		v3 = z1h;
 
+#if 0
+		// This step is GHASH only.
 		v3 = (v3 << 1) | (v2 >> 63);
 		v2 = (v2 << 1) | (v1 >> 63);
 		v1 = (v1 << 1) | (v0 >> 63);
 		v0 = (v0 << 1);
+#endif
 
 		v2 ^= v0 ^ (v0 >> 1) ^ (v0 >> 2) ^ (v0 >> 7);
 		v1 ^= (v0 << 63) ^ (v0 << 62) ^ (v0 << 57);
 		v3 ^= v1 ^ (v1 >> 1) ^ (v1 >> 2) ^ (v1 >> 7);
 		v2 ^= (v1 << 63) ^ (v1 << 62) ^ (v1 << 57);
 
-		y0 = v2;
-		y1 = v3;
+		pv->y.lo = v2;
+		pv->y.hi = v3;
 	}
-
-	br_enc64be(yb, y1);
-	br_enc64be(yb + 8, y0);
 }

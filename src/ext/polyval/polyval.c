@@ -20,7 +20,11 @@ static inline void pv_xor(polyval_t *, u128);
 static inline void pv_init_extra(polyval_t *pv);
 
 /* Functions which we expect our multiply implementation to declare. */
-static inline void pv_mul_y_h(polyval_t *);
+/**
+ * Within the polyval struct, perform "y *= h".
+ */
+static
+void pv_mul_y_h(polyval_t *);
 
 #ifdef WORDS_BIG_ENDIAN
 #ifdef __GNUC__
@@ -48,6 +52,9 @@ static inline uint64_t bswap64(uint64_t v)
 #endif
 
 #ifdef PV_USE_CTMUL64
+
+#include "ext/polyval/ctmul64.c"
+
 static inline u128
 u128_from_bytes(const uint8_t *bytes)
 {
@@ -75,16 +82,10 @@ pv_xor(polyval_t *pv, u128 val)
 static inline void
 pv_init_extra(polyval_t *pv)
 {
-
+  pv->hr.lo = rev64(pv->h.lo);
+  pv->hr.hi = rev64(pv->h.hi);
 }
-static inline void pv_mul_y_h(polyval_t *pv)
-{
-
-}
-
-// #include "ext/polyval/ctmul64.c"
 #endif
-
 
 void
 polyval_init(polyval_t *pv, const uint8_t *key)
