@@ -12,10 +12,10 @@
 
 #include <string.h>
 
-typedef struct pv_u128_ u128;
+typedef pv_u128_ u128;
 
 static inline u128 u128_from_bytes(const uint8_t *bytes);
-static inline void u128_to_bytes(u128 u128, uint8_t *bytes_out);
+static inline void u128_to_bytes(u128, uint8_t *bytes_out);
 static inline void pv_xor(polyval_t *, u128);
 static inline void pv_init_extra(polyval_t *pv);
 
@@ -23,8 +23,7 @@ static inline void pv_init_extra(polyval_t *pv);
 /**
  * Within the polyval struct, perform "y *= h".
  */
-static
-void pv_mul_y_h(polyval_t *);
+static void pv_mul_y_h(polyval_t *);
 
 #ifdef WORDS_BIG_ENDIAN
 #ifdef __GNUC__
@@ -64,7 +63,32 @@ bswap32(uint64_t v)
 #define convert_byte_order32(x) (x)
 #endif
 
-#ifdef PV_USE_CTMUL64
+
+#ifdef PV_USE_PCLMUL
+
+#include "ext/polyval/pclmul.c"
+
+static inline u128
+u128_from_bytes(const uint8_t *bytes)
+{
+  return _mm_loadu_si128((const u128*)bytes);
+}
+static inline void
+u128_to_bytes(u128 val, uint8_t *bytes_out)
+{
+  _mm_storeu_si128((u128*)bytes_out, val);
+}
+static inline void
+pv_xor(polyval_t *pv, u128 v)
+{
+  pv->y = _mm_xor_si128(pv->y, v);
+}
+static inline void
+pv_init_extra(polyval_t *pv)
+{
+  (void)pv;
+}
+#elif defined(PV_USE_CTMUL64)
 
 #include "ext/polyval/ctmul64.c"
 
