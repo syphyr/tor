@@ -5,8 +5,35 @@
  * \file polyval.h
  * \brief Implementation for polyval universal hash function.
  *
- * XXXX write more.
+ * Polyval, which was first defined for AES-GCM-SIV, is a
+ * universal hash based on multiplication in GF(2^128).
+ * Unlike the more familiar GHASH, it is defined to work on
+ * little-endian inputs, and so is more straightforward and efficient
+ * on little-endian architectures.
+ *
+ * In Tor we use it as part of the Counter Galois Onion relay
+ * encryption format.
  **/
+
+/* Implementation notes:
+ *
+ * Our implementation is based on the GHASH code from BearSSL
+ * by Thomas Pornin.  There are three implementations:
+ *
+ * pclmul.c -- An x86-only version, based on the CLMUL instructions
+ * introduced for westlake processors in 2010.
+ *
+ * ctmul64.c -- A portable contant-time implementation for 64-bit
+ * processors.
+ *
+ * ctmul.c -- A portable constant-time implementation for 32-bit
+ * processors with an efficient 32x32->64 multiply instruction.
+ *
+ * Note that the "ctmul" implementations are only constant-time
+ * if the corresponding CPU multiply and rotate instructions are
+ * also constant-time.  But that's an architectural assumption we
+ * make in Tor.
+ */
 
 #include "ext/polyval/polyval.h"
 
@@ -14,22 +41,52 @@
 
 typedef pv_u128_ u128;
 
+/* ========
+ * We declare these functions, to help implement polyval.
+ *
+ * They have different definitions depending on our representation
+ * of 128-bit integers.
+ */
+/**
+ * Read a u128-bit little-endian integer from 'bytes',
+ * which may not be aligned.
+ */
 static inline u128 u128_from_bytes(const uint8_t *bytes);
+/**
+ * Store a u128-bit little-endian integer to 'bytes_out',
+ * which may not be aligned.
+ */
 static inline void u128_to_bytes(u128, uint8_t *bytes_out);
-static inline void pv_xor(polyval_t *, u128);
+/**
+ * XOR a u128 into the y field of a polyval_t struct.
+ *
+ * (Within the polyval struct, perform "y ^= v").
+ */
+static inline void pv_xor_y(polyval_t *, u128 v);
+/**
+ * Initialize any derived fields in pv.
+ */
 static inline void pv_init_extra(polyval_t *pv);
 
-/* Functions which we expect our multiply implementation to declare. */
+/* ========
+ * The function which we expect our backend to implement.
+ */
 /**
  * Within the polyval struct, perform "y *= h".
+ *
+ * (This is a carryless multiply in the Polyval galois field)
  */
 static void pv_mul_y_h(polyval_t *);
 
+/* =====
+ * Endianness conversion for big-endian platforms
+ */
 #ifdef WORDS_BIG_ENDIAN
 #ifdef __GNUC__
 #define bswap64(x) __builtin_bswap64(x)
 #define bswap32(x) __builtin_bswap32(x)
 #else
+/* The (compiler should optimize these into a decent bswap instruction) */
 static inline uint64_t
 bswap64(uint64_t v)
 {
@@ -63,7 +120,6 @@ bswap32(uint64_t v)
 #define convert_byte_order32(x) (x)
 #endif
 
-
 #ifdef PV_USE_PCLMUL
 
 #include "ext/polyval/pclmul.c"
@@ -79,7 +135,7 @@ u128_to_bytes(u128 val, uint8_t *bytes_out)
   _mm_storeu_si128((u128*)bytes_out, val);
 }
 static inline void
-pv_xor(polyval_t *pv, u128 v)
+pv_xor_y(polyval_t *pv, u128 v)
 {
   pv->y = _mm_xor_si128(pv->y, v);
 }
@@ -111,7 +167,7 @@ u128_to_bytes(u128 val, uint8_t *bytes_out)
   memcpy(bytes_out + 8, &hi, 8);
 }
 static inline void
-pv_xor(polyval_t *pv, u128 val)
+pv_xor_y(polyval_t *pv, u128 val)
 {
   pv->y.lo ^= val.lo;
   pv->y.hi ^= val.hi;
@@ -145,7 +201,7 @@ u128_to_bytes(u128 val, uint8_t *bytes_out)
   memcpy(bytes_out, v, 16);
 }
 static inline void
-pv_xor(polyval_t *pv, u128 val)
+pv_xor_y(polyval_t *pv, u128 val)
 {
   for (int i = 0; i < 4; ++i) {
     pv->y.v[i] ^= val.v[i];
@@ -169,7 +225,7 @@ void
 polyval_add_block(polyval_t *pv, const uint8_t *block)
 {
   u128 b = u128_from_bytes(block);
-  pv_xor(pv, b);
+  pv_xor_y(pv, b);
   pv_mul_y_h(pv);
 }
 void

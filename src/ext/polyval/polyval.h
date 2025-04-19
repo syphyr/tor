@@ -69,19 +69,44 @@ typedef struct polyval_t {
   pv_u128_ y;
 } polyval_t;
 
+/**
+ * Length of a polyval key, in bytes.
+ */
 #define POLYVAL_KEY_LEN 16
+/**
+ * Length of a polyval block, in bytes.
+ */
 #define POLYVAL_BLOCK_LEN 16
+/**
+ * Length of a polyval tag (output), in bytes.
+ */
 #define POLYVAL_TAG_LEN 16
 
+/**
+ * Initialize a polyval instance with a given key.
+ */
 void polyval_init(polyval_t *, const uint8_t *key);
+/**
+ * Update a polyval instance with a new 16-byte block.
+ */
 void polyval_add_block(polyval_t *, const uint8_t *block);
+/**
+ * Update a polyval instance with 'n' bytes from 'data'.
+ * If 'n' is not evenly divisible by 16, pad it at the end with zeros.
+ *
+ * NOTE: This is not a general-purpose padding construction;
+ * it can be insecure if your are using it in context where the input length
+ * is variable.
+ */
 void polyval_add_zpad(polyval_t *, const uint8_t *data, size_t n);
+/**
+ * Copy the 16-byte tag from a polyval instance into 'tag_out'
+ */
 void polyval_get_tag(const polyval_t *, uint8_t *tag_out);
 /**
  * Reset a polyval instance to its original state,
  * retaining its key.
  */
 void polyval_reset(polyval_t *);
-
 
 #endif
