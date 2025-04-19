@@ -9,6 +9,8 @@
  * \brief Use NSS to implement AES_CTR.
  **/
 
+#define USE_AES_RAW
+
 #include "orconfig.h"
 #include "lib/crypt_ops/aes.h"
 #include "lib/crypt_ops/crypto_nss_mgt.h"
@@ -103,4 +105,75 @@ int
 evaluate_ctr_for_aes(void)
 {
   return 0;
+}
+
+aes_raw_t *
+aes_raw_new(const uint8_t *key, int key_bits, bool encrypt)
+{
+  const CK_MECHANISM_TYPE ckm = CKM_AES_ECB;
+  SECItem keyItem = { .type = siBuffer, // ????
+                      .data = (unsigned char *)key,
+                      .len = (key_bits / 8) };
+  SECItem ivItem = { .type = siBuffer,
+                     .data = NULL,
+                     .len = 0 };
+  PK11SlotInfo *slot = NULL;
+  PK11SymKey *keyObj = NULL;
+  SECItem *ivObj = NULL;
+  PK11Context *result = NULL;
+
+  slot = PK11_GetBestSlot(ckm, NULL);
+  if (!slot)
+    goto err;
+
+  CK_ATTRIBUTE_TYPE mode = encrypt ? CKA_ENCRYPT : CKA_DECRYPT;
+
+  keyObj = PK11_ImportSymKey(slot, ckm, PK11_OriginUnwrap,
+                             mode, &keyItem, NULL);
+  if (!keyObj)
+    goto err;
+
+  ivObj = PK11_ParamFromIV(ckm, &ivItem);
+  if (!ivObj)
+    goto err;
+
+  PORT_SetError(SEC_ERROR_IO);
+  result = PK11_CreateContextBySymKey(ckm, mode, keyObj, ivObj);
+
+ err:
+
+  if (ivObj)
+    SECITEM_FreeItem(ivObj, PR_TRUE);
+  if (keyObj)
+    PK11_FreeSymKey(keyObj);
+  if (slot)
+    PK11_FreeSlot(slot);
+
+  tor_assert(result);
+  return (aes_raw_t *)result;
+}
+
+void
+aes_raw_free_(aes_raw_t *cipher_)
+{
+  if (!cipher_)
+    return;
+  PK11Context *ctx = (PK11Context*)cipher_;
+  PK11_DestroyContext(ctx, PR_TRUE);
+}
+void
+aes_raw_encrypt(const aes_raw_t *cipher, uint8_t *block)
+{
+  SECStatus s;
+  PK11Context *ctx = (PK11Context*)cipher;
+  int result_len = 0;
+  s = PK11_CipherOp(ctx, block, &result_len, 16, block, 16);
+  tor_assert(s == SECSuccess);
+  tor_assert(result_len == 16);
+}
+void
+aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block)
+{
+  /* This is the same function call for NSS. */
+  aes_raw_encrypt(cipher, block);
 }

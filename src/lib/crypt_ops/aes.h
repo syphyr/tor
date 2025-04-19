@@ -28,4 +28,15 @@ void aes_crypt_inplace(aes_cnt_cipher_t *cipher, char *data, size_t len);
 int evaluate_evp_for_aes(int force_value);
 int evaluate_ctr_for_aes(void);
 
+#ifdef USE_AES_RAW
+typedef struct aes_raw_t aes_raw_t;
+
+aes_raw_t *aes_raw_new(const uint8_t *key, int key_bits, bool encrypt);
+void aes_raw_free_(aes_raw_t *cipher);
+#define aes_raw_free(cipher) \
+  FREE_AND_NULL(aes_raw_t, aes_raw_free_, (cipher))
+void aes_raw_encrypt(const aes_raw_t *cipher, uint8_t *block);
+void aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block);
+#endif
+
 #endif /* !defined(TOR_AES_H) */

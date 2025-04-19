@@ -6,6 +6,7 @@
 #include "orconfig.h"
 #define CRYPTO_CURVE25519_PRIVATE
 #define CRYPTO_RAND_PRIVATE
+#define USE_AES_RAW
 #include "core/or/or.h"
 #include "test/test.h"
 #include "lib/crypt_ops/aes.h"
@@ -3238,6 +3239,75 @@ test_crypto_polyval(void *arg)
   tor_free(mem_op_hex_tmp);
 }
 
+static void
+test_aes_raw_one(int keybits,
+                 const char *key_hex,
+                 const char *plaintext_hex,
+                 const char *ciphertext_hex)
+{
+  aes_raw_t *enc = NULL;
+  aes_raw_t *dec = NULL;
+  uint8_t key[32]; // max key size.
+  uint8_t pt[16], ct[16], block[16];
+  tt_int_op(keybits, OP_EQ, strlen(key_hex) * 8 / 2);
+  base16_decode((char*)key, sizeof(key), key_hex, strlen(key_hex));
+  base16_decode((char*)pt, sizeof(pt), plaintext_hex, strlen(plaintext_hex));
+  base16_decode((char*)ct, sizeof(ct), ciphertext_hex, strlen(ciphertext_hex));
+
+  enc = aes_raw_new(key, keybits, true);
+  dec = aes_raw_new(key, keybits, false);
+  memcpy(block, pt, sizeof(pt));
+  aes_raw_encrypt(enc, block);
+  tt_mem_op(block, OP_EQ, ct, 16);
+  aes_raw_decrypt(dec, block);
+  tt_mem_op(block, OP_EQ, pt, 16);
+
+ done:
+  aes_raw_free(enc);
+  aes_raw_free(dec);
+}
+
+static void
+test_crypto_aes_raw(void *arg)
+{
+  (void)arg;
+
+#define T test_aes_raw_one
+
+  /* From https://csrc.nist.gov/CSRC/media/Projects/
+     Cryptographic-Algorithm-Validation-Program/documents/aes/AESAVS.pdf */
+  const char *z128 =
+    "00000000000000000000000000000000";
+  const char *z192 =
+    "00000000000000000000000000000000"
+    "0000000000000000";
+  const char *z256 =
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000";
+
+  T(128, z128,
+    "f34481ec3cc627bacd5dc3fb08f273e6",
+    "0336763e966d92595a567cc9ce537f5e");
+  T(192, z192,
+    "1b077a6af4b7f98229de786d7516b639",
+    "275cfc0413d8ccb70513c3859b1d0f72");
+  T(256, z256,
+    "014730f80ac625fe84f026c60bfd547d",
+    "5c9d844ed46f9885085e5d6a4f94c7d7");
+  T(128,
+    "10a58869d74be5a374cf867cfb473859", z128,
+    "6d251e6944b051e04eaa6fb4dbf78465");
+  T(192,
+    "e9f065d7c13573587f7875357dfbb16c53489f6a4bd0f7cd", z128,
+    "0956259c9cd5cfd0181cca53380cde06");
+  T(256,
+    "c47b0294dbbbee0fec4757f22ffeee35"
+    "87ca4730c3d33b691df38bab076bc558", z128,
+    "46f2fb342d6f0ab477476fc501242c5f");
+
+#undef T
+}
+
 #ifndef COCCI
 #define CRYPTO_LEGACY(name)                                            \
   { #name, test_crypto_ ## name , 0, NULL, NULL }
@@ -3306,5 +3376,6 @@ struct testcase_t crypto_tests[] = {
   { "hashx", test_crypto_hashx, 0, NULL, NULL },
   { "failure_modes", test_crypto_failure_modes, TT_FORK, NULL, NULL },
   { "polyval", test_crypto_polyval, 0, NULL, NULL },
+  { "aes_raw", test_crypto_aes_raw, 0, NULL, NULL },
   END_OF_TESTCASES
 };

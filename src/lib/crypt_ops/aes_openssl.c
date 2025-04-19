@@ -9,6 +9,8 @@
  * \brief Use OpenSSL to implement AES_CTR.
  **/
 
+#define USE_AES_RAW
+
 #include "orconfig.h"
 #include "lib/crypt_ops/aes.h"
 #include "lib/crypt_ops/crypto_util.h"
@@ -399,3 +401,79 @@ aes_set_iv(aes_cnt_cipher_t *cipher, const uint8_t *iv)
 }
 
 #endif /* defined(USE_EVP_AES_CTR) */
+
+/* ========
+ * Functions for "raw" (ECB) AES.
+ *
+ * I'm choosing the name "raw" here because ECB is not a mode;
+ * it's a disaster.  The only way to use this safely is
+ * within a real construction.
+ */
+
+/**
+ * Create a new instance of AES using a key of length 'key_bits'
+ * for raw block encryption.
+ *
+ * This is even more low-level than counter-mode, and you should
+ * only use it with extreme caution.
+ */
+aes_raw_t *
+aes_raw_new(const uint8_t *key, int key_bits, bool encrypt)
+{
+  EVP_CIPHER_CTX *cipher = EVP_CIPHER_CTX_new();
+  tor_assert(cipher);
+  const EVP_CIPHER *c = NULL;
+  switch (key_bits) {
+    case 128: c = EVP_aes_128_ecb(); break;
+    case 192: c = EVP_aes_192_ecb(); break;
+    case 256: c = EVP_aes_256_ecb(); break;
+    default: tor_assert_unreached();
+  }
+
+  int r = EVP_CipherInit(cipher, c, key, NULL, encrypt);
+  tor_assert(r == 1);
+  EVP_CIPHER_CTX_set_padding(cipher, 0);
+  return (aes_raw_t *)cipher;
+}
+/**
+ * Release storage held by 'cipher'.
+ */
+void
+aes_raw_free_(aes_raw_t *cipher_)
+{
+  if (!cipher_)
+    return;
+  EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *)cipher_;
+#ifdef OPENSSL_1_1_API
+  EVP_CIPHER_CTX_reset(cipher);
+#else
+  EVP_CIPHER_CTX_cleanup(cipher);
+#endif
+  EVP_CIPHER_CTX_free(cipher);
+}
+#define aes_raw_free(cipher) \
+  FREE_AND_NULL(aes_raw_t, aes_raw_free_, (cipher))
+/**
+ * Encrypt a single 16-byte block with 'cipher',
+ * which must have been initialized for encryption.
+ */
+void
+aes_raw_encrypt(const aes_raw_t *cipher, uint8_t *block)
+{
+  int outl = 16;
+  int r = EVP_EncryptUpdate((EVP_CIPHER_CTX *)cipher, block, &outl, block, 16);
+  tor_assert(r == 1);
+  tor_assert(outl == 16);
+}
+/**
+ * Decrypt a single 16-byte block with 'cipher',
+ * which must have been initialized for decryption.
+ */
+void
+aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block)
+{
+  int outl = 16;
+  int r = EVP_DecryptUpdate((EVP_CIPHER_CTX *)cipher, block, &outl, block, 16);
+  tor_assert(r == 1);
+  tor_assert(outl == 16);
+}
