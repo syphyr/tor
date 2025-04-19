@@ -112,7 +112,8 @@ TOR_CRYPTO_LIBS = \
 	src/lib/libtor-tls.a \
 	src/lib/libtor-crypt-ops.a \
 	$(LIBKECCAK_TINY) \
-	$(LIBDONNA)
+	$(LIBDONNA) \
+        $(LIBPOLYVAL)
 
 if BUILD_MODULE_POW
 TOR_CRYPTO_LIBS += $(EQUIX_LIBS)
@@ -126,6 +127,7 @@ TOR_CRYPTO_TESTING_LIBS = \
 	src/lib/libtor-crypt-ops-testing.a \
 	$(LIBKECCAK_TINY) \
 	$(LIBDONNA) \
+        $(LIBPOLYVAL) \
 	$(EQUIX_LIBS)
 endif
 

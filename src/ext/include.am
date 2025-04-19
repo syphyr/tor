@@ -216,6 +216,21 @@ LIBKECCAK_TINY=src/ext/keccak-tiny/libkeccak-tiny.a
 noinst_LIBRARIES += $(LIBKECCAK_TINY)
 endif
 
+src_ext_polyval_libpolyval_a_CFLAGS=\
+  @CFLAGS_CONSTTIME@
+src_ext_polyval_libpolyval_a_SOURCES= \
+   src/ext/polyval/polyval.c
+
+POLYVAL_HDRS = \
+   src/ext/polyval/polyval.h \
+   src/ext/polyval/pclmul.c \
+   src/ext/polyval/ctmul64.c \
+   src/ext/polyval/ctmul.c
+
+noinst_HEADERS += $(POLYVAL_HDRS)
+LIBPOLYVAL=src/ext/polyval/libpolyval.a
+noinst_LIBRARIES += $(LIBPOLYVAL)
+
 EXTRA_DIST += \
 	src/ext/timeouts/bench/bench-add.lua 		\
 	src/ext/timeouts/bench/bench-aux.lua		\

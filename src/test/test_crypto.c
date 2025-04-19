@@ -21,6 +21,7 @@
 #include "lib/crypt_ops/crypto_init.h"
 #include "ed25519_vectors.inc"
 #include "test/log_test_helpers.h"
+#include "ext/polyval/polyval.h"
 
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
@@ -3188,6 +3189,55 @@ test_crypto_failure_modes(void *arg)
   ;
 }
 
+static void
+test_crypto_polyval(void *arg)
+{
+  (void)arg;
+  polyval_t pv;
+  uint8_t key[16];
+  uint8_t input[48];
+  uint8_t output[16];
+  uint8_t output2[16];
+  char *mem_op_hex_tmp=NULL;
+
+  // From RFC 8452
+  const char *key_hex = "25629347589242761d31f826ba4b757b";
+  const char *input_hex =
+    "4f4f95668c83dfb6401762bb2d01a262"
+    "d1a24ddd2721d006bbe45f20d3c9f362";
+  memset(input, 0, sizeof(input));
+  base16_decode((char*)key,sizeof(key), key_hex, strlen(key_hex));
+  base16_decode((char*)input,sizeof(input), input_hex, strlen(input_hex));
+
+  // Two blocks, directly.
+  polyval_init(&pv, key);
+  polyval_add_block(&pv, input);
+  polyval_add_block(&pv, input+16);
+  polyval_get_tag(&pv, output);
+  test_memeq_hex(output, "f7a3b47b846119fae5b7866cf5e5b77e");
+  // Two blocks, as a string.
+  polyval_reset(&pv);
+  polyval_add_zpad(&pv, input, 32);
+  polyval_get_tag(&pv, output);
+  test_memeq_hex(output, "f7a3b47b846119fae5b7866cf5e5b77e");
+
+  // Now make sure that zero-padding works.
+  input[32] = 77;
+  polyval_reset(&pv);
+  polyval_add_block(&pv, input);
+  polyval_add_block(&pv, input+16);
+  polyval_add_block(&pv, input+32);
+  polyval_get_tag(&pv, output);
+
+  polyval_reset(&pv);
+  polyval_add_zpad(&pv, input, 33);
+  polyval_get_tag(&pv, output2);
+  tt_mem_op(output, OP_EQ, output2, 16);
+
+ done:
+  tor_free(mem_op_hex_tmp);
+}
+
 #ifndef COCCI
 #define CRYPTO_LEGACY(name)                                            \
   { #name, test_crypto_ ## name , 0, NULL, NULL }
@@ -3255,5 +3305,6 @@ struct testcase_t crypto_tests[] = {
   { "blake2b", test_crypto_blake2b, 0, NULL, NULL },
   { "hashx", test_crypto_hashx, 0, NULL, NULL },
   { "failure_modes", test_crypto_failure_modes, TT_FORK, NULL, NULL },
+  { "polyval", test_crypto_polyval, 0, NULL, NULL },
   END_OF_TESTCASES
 };
