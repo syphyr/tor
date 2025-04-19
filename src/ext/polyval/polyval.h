@@ -12,13 +12,17 @@
 #include "orconfig.h"
 #include "lib/cc/torint.h"
 
-#define PV_USE_CTMUL64
+#define PV_USE_CTMUL
 
 #ifdef PV_USE_CTMUL64
 /** A 128-bit integer represented as its low and high portion. */
 struct pv_u128_ {
   uint64_t lo;
   uint64_t hi;
+} pv_u128_;
+#elif defined(PV_USE_CTMUL)
+struct pv_u128_ {
+  uint32_t v[4];
 };
 #endif
 
@@ -28,9 +32,11 @@ struct pv_u128_ {
 typedef struct polyval_t {
   /** The key itself. */
   struct pv_u128_ h;
+#ifdef PV_USE_CTMUL64
   /** The elements of the key in bit-reversed form.
    * (Used as an optimization.) */
   struct pv_u128_ hr;
+#endif
   /** The accumulator */
   struct pv_u128_ y;
 } polyval_t;

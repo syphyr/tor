@@ -29,8 +29,10 @@ void pv_mul_y_h(polyval_t *);
 #ifdef WORDS_BIG_ENDIAN
 #ifdef __GNUC__
 #define bswap64(x) __builtin_bswap64(x)
+#define bswap32(x) __builtin_bswap32(x)
 #else
-static inline uint64_t bswap64(uint64_t v)
+static inline uint64_t
+bswap64(uint64_t v)
 {
   return
     ((value & 0xFF00000000000000) >> 56) |
@@ -42,13 +44,24 @@ static inline uint64_t bswap64(uint64_t v)
     ((value & 0x000000000000FF00) >> 8) |
     ((value & 0x00000000000000FF));
 }
+static inline uint64_t
+bswap32(uint64_t v)
+{
+  return
+    ((value & 0xFF000000) >> 24) |
+    ((value & 0x00FF0000) >> 16) |
+    ((value & 0x0000FF00) >> 8) |
+    ((value & 0x000000FF));
+}
 #endif
 #endif
 
 #ifdef WORDS_BIG_ENDIAN
-#define convert_byte_order(x) bswap64(x)
+#define convert_byte_order64(x) bswap64(x)
+#define convert_byte_order32(x) bswap32(x)
 #else
-#define convert_byte_order(x) (x)
+#define convert_byte_order64(x) (x)
+#define convert_byte_order32(x) (x)
 #endif
 
 #ifdef PV_USE_CTMUL64
@@ -61,15 +74,15 @@ u128_from_bytes(const uint8_t *bytes)
   u128 r;
   memcpy(&r.lo, bytes, 8);
   memcpy(&r.hi, bytes + 8, 8);
-  r.lo = convert_byte_order(r.lo);
-  r.hi = convert_byte_order(r.hi);
+  r.lo = convert_byte_order64(r.lo);
+  r.hi = convert_byte_order64(r.hi);
   return r;
 }
 static inline void
 u128_to_bytes(u128 val, uint8_t *bytes_out)
 {
-  uint64_t lo = convert_byte_order(val.lo);
-  uint64_t hi = convert_byte_order(val.hi);
+  uint64_t lo = convert_byte_order64(val.lo);
+  uint64_t hi = convert_byte_order64(val.hi);
   memcpy(bytes_out, &lo, 8);
   memcpy(bytes_out + 8, &hi, 8);
 }
@@ -84,6 +97,40 @@ pv_init_extra(polyval_t *pv)
 {
   pv->hr.lo = rev64(pv->h.lo);
   pv->hr.hi = rev64(pv->h.hi);
+}
+#elif defined(PV_USE_CTMUL)
+#include "ext/polyval/ctmul.c"
+
+static inline u128
+u128_from_bytes(const uint8_t *bytes)
+{
+  u128 r;
+  memcpy(&r.v, bytes, 16);
+  for (int i = 0; i < 4; ++i) {
+    r.v[i] = convert_byte_order32(r.v[i]);
+  }
+  return r;
+}
+static inline void
+u128_to_bytes(u128 val, uint8_t *bytes_out)
+{
+  uint32_t v[4];
+  for (int i = 0; i < 4; ++i) {
+    v[i] = convert_byte_order32(val.v[i]);
+  }
+  memcpy(bytes_out, v, 16);
+}
+static inline void
+pv_xor(polyval_t *pv, u128 val)
+{
+  for (int i = 0; i < 4; ++i) {
+    pv->y.v[i] ^= val.v[i];
+  }
+}
+static inline void
+pv_init_extra(polyval_t *pv)
+{
+  (void)pv;
 }
 #endif
 

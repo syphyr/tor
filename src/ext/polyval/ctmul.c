@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
  *
- * Permission is hereby granted, free of charge, to any person obtaining 
+ * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
  * without limitation the rights to use, copy, modify, merge, publish,
@@ -9,20 +9,18 @@
  * permit persons to whom the Software is furnished to do so, subject to
  * the following conditions:
  *
- * The above copyright notice and this permission notice shall be 
+ * The above copyright notice and this permission notice shall be
  * included in all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
  * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
  * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
  * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
  * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
-#include "inner.h"
 
 /*
  * We compute "carryless multiplications" through normal integer
@@ -50,7 +48,10 @@
  * multiplications, we use the "fast mul" code by default.
  */
 
-#if BR_SLOW_MUL
+// A 32x32 -> 64 multiply.
+#define MUL(x, y) (((uint64_t)(x)) * ((uint64_t)(y)))
+
+#ifdef BR_SLOW_MUL
 
 /*
  * This implementation uses Karatsuba-like reduction to make fewer
@@ -192,60 +193,20 @@ bmul(uint32_t *hi, uint32_t *lo, uint32_t x, uint32_t y)
 
 #endif
 
-/* see bearssl_hash.h */
-void
-br_ghash_ctmul(void *y, const void *h, const void *data, size_t len)
+static void
+pv_mul_y_h(polyval_t *pv)
 {
-	const unsigned char *buf, *hb;
-	unsigned char *yb;
-	uint32_t yw[4];
-	uint32_t hw[4];
+	uint32_t *yw = pv->y.v;
+	const uint32_t *hw = pv->h.v;
 
 	/*
 	 * Throughout the loop we handle the y and h values as arrays
 	 * of 32-bit words.
 	 */
-	buf = data;
-	yb = y;
-	hb = h;
-	yw[3] = br_dec32be(yb);
-	yw[2] = br_dec32be(yb + 4);
-	yw[1] = br_dec32be(yb + 8);
-	yw[0] = br_dec32be(yb + 12);
-	hw[3] = br_dec32be(hb);
-	hw[2] = br_dec32be(hb + 4);
-	hw[1] = br_dec32be(hb + 8);
-	hw[0] = br_dec32be(hb + 12);
-	while (len > 0) {
-		const unsigned char *src;
-		unsigned char tmp[16];
+	{
 		int i;
 		uint32_t a[9], b[9], zw[8];
 		uint32_t c0, c1, c2, c3, d0, d1, d2, d3, e0, e1, e2, e3;
-
-		/*
-		 * Get the next 16-byte block (using zero-padding if
-		 * necessary).
-		 */
-		if (len >= 16) {
-			src = buf;
-			buf += 16;
-			len -= 16;
-		} else {
-			memcpy(tmp, buf, len);
-			memset(tmp + len, 0, (sizeof tmp) - len);
-			src = tmp;
-			len = 0;
-		}
-
-		/*
-		 * Decode the block. The GHASH standard mandates
-		 * big-endian encoding.
-		 */
-		yw[3] ^= br_dec32be(src);
-		yw[2] ^= br_dec32be(src + 4);
-		yw[1] ^= br_dec32be(src + 8);
-		yw[0] ^= br_dec32be(src + 12);
 
 		/*
 		 * We multiply two 128-bit field elements. We use
@@ -306,6 +267,8 @@ br_ghash_ctmul(void *y, const void *h, const void *data, size_t len)
 		d0 ^= e2;
 		d1 ^= e3;
 
+#if 0
+		// This rotation is GHASH-only.
 		/*
 		 * GHASH specification has the bits "reversed" (most
 		 * significant is in fact least significant), which does
@@ -320,6 +283,16 @@ br_ghash_ctmul(void *y, const void *h, const void *data, size_t len)
 		zw[5] = (d1 << 1) | (d0 >> 31);
 		zw[6] = (d2 << 1) | (d1 >> 31);
 		zw[7] = (d3 << 1) | (d2 >> 31);
+#else
+		zw[0] = c0;
+		zw[1] = c1;
+		zw[2] = c2;
+		zw[3] = c3;
+		zw[4] = d0;
+		zw[5] = d1;
+		zw[6] = d2;
+		zw[7] = d3;
+#endif
 
 		/*
 		 * We now do the reduction modulo the field polynomial
@@ -332,14 +305,7 @@ br_ghash_ctmul(void *y, const void *h, const void *data, size_t len)
 			zw[i + 4] ^= lw ^ (lw >> 1) ^ (lw >> 2) ^ (lw >> 7);
 			zw[i + 3] ^= (lw << 31) ^ (lw << 30) ^ (lw << 25);
 		}
-		memcpy(yw, zw + 4, sizeof yw);
+		memcpy(yw, zw + 4, 16);
 	}
-
-	/*
-	 * Encode back the result.
-	 */
-	br_enc32be(yb, yw[3]);
-	br_enc32be(yb + 4, yw[2]);
-	br_enc32be(yb + 8, yw[1]);
-	br_enc32be(yb + 12, yw[0]);
 }
+#undef MUL
