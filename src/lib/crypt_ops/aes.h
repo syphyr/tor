@@ -33,6 +33,8 @@ int evaluate_ctr_for_aes(void);
 typedef struct aes_raw_t aes_raw_t;
 
 aes_raw_t *aes_raw_new(const uint8_t *key, int key_bits, bool encrypt);
+void aes_raw_set_key(aes_raw_t **cipher, const uint8_t *key,
+                     int key_bits, bool encrypt);
 void aes_raw_free_(aes_raw_t *cipher);
 #define aes_raw_free(cipher) \
   FREE_AND_NULL(aes_raw_t, aes_raw_free_, (cipher))

@@ -162,6 +162,15 @@ aes_raw_free_(aes_raw_t *cipher_)
   PK11_DestroyContext(ctx, PR_TRUE);
 }
 void
+aes_raw_set_key(aes_raw_t **cipher, const uint8_t *key,
+                int key_bits, bool encrypt)
+{
+  // For NSS, I could not find a method to change the key
+  // of an existing context.
+  aes_raw_free(*cipher);
+  *cipher = aes_raw_new(key, key_bits, encrypt);
+}
+void
 aes_raw_encrypt(const aes_raw_t *cipher, uint8_t *block)
 {
   SECStatus s;

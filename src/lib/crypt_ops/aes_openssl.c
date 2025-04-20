@@ -422,6 +422,30 @@ aes_raw_new(const uint8_t *key, int key_bits, bool encrypt)
   return (aes_raw_t *)cipher;
 }
 /**
+ * Replace the key on an existing aes_raw_t.
+ *
+ * This may be faster than freeing and reallocating.
+ */
+void
+aes_raw_set_key(aes_raw_t **cipher_, const uint8_t *key,
+                int key_bits, bool encrypt)
+{
+  const EVP_CIPHER *c = *(EVP_CIPHER**) cipher_;
+  switch (key_bits) {
+    case 128: c = EVP_aes_128_ecb(); break;
+    case 192: c = EVP_aes_192_ecb(); break;
+    case 256: c = EVP_aes_256_ecb(); break;
+    default: tor_assert_unreached();
+  }
+  aes_raw_t *cipherp = *cipher_;
+  EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *)cipherp;
+  EVP_CIPHER_CTX_reset(cipher);
+  int r = EVP_CipherInit(cipher, c, key, NULL, encrypt);
+  tor_assert(r == 1);
+  EVP_CIPHER_CTX_set_padding(cipher, 0);
+}
+
+/**
  * Release storage held by 'cipher'.
  */
 void
