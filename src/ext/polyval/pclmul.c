@@ -156,7 +156,7 @@ void pv_mul_y_h(polyval_t *pv)
 {
 	__m128i yw, h1w, h1x;
 
-        h1w = pv->h;
+        h1w = pv->key.h;
         BK(h1w, h1x);
 
         {

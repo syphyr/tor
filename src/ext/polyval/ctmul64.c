@@ -80,11 +80,11 @@ pv_mul_y_h(polyval_t *pv)
 
 	y0 = pv->y.lo;
 	y1 = pv->y.hi;
-	h0 = pv->h.lo;
-	h1 = pv->h.hi;
+	h0 = pv->key.h.lo;
+	h1 = pv->key.h.hi;
 	// TODO(nm) does it actually make sense for us to precompute this?
-	h0r = pv->hr.lo;
-	h1r = pv->hr.hi;
+	h0r = pv->key.hr.lo;
+	h1r = pv->key.hr.hi;
 
 	h2 = h0 ^ h1;
 	h2r = h0r ^ h1r;

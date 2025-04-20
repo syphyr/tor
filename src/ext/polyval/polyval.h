@@ -54,17 +54,22 @@ typedef struct pv_u128_ {
 } pv_u128_;
 #endif
 
-/**
- * State for an instance of the polyval hash.
- **/
-typedef struct polyval_t {
-  /** The key itself. */
+/** A key for a polyval hash, plus any precomputed key material. */
+typedef struct polyval_key_t {
   pv_u128_ h;
 #ifdef PV_USE_CTMUL64
   /** The elements of the key in bit-reversed form.
    * (Used as an optimization.) */
   pv_u128_ hr;
 #endif
+} polyval_key_t;
+
+/**
+ * State for an instance of the polyval hash.
+ **/
+typedef struct polyval_t {
+  /** The key used for this instance of polyval. */
+  polyval_key_t key;
   /** The accumulator */
   pv_u128_ y;
 } polyval_t;
@@ -82,10 +87,18 @@ typedef struct polyval_t {
  */
 #define POLYVAL_TAG_LEN 16
 
+/** Do any necessary precomputation from a polyval key,
+ * and store it.
+ */
+void polyval_key_init(polyval_key_t *, const uint8_t *key);
 /**
  * Initialize a polyval instance with a given key.
  */
 void polyval_init(polyval_t *, const uint8_t *key);
+/**
+ * Initialize a polyval instance with a preconstructed key.
+ */
+void polyval_init_from_key(polyval_t *, const polyval_key_t *key);
 /**
  * Update a polyval instance with a new 16-byte block.
  */

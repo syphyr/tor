@@ -197,7 +197,7 @@ static void
 pv_mul_y_h(polyval_t *pv)
 {
 	uint32_t *yw = pv->y.v;
-	const uint32_t *hw = pv->h.v;
+	const uint32_t *hw = pv->key.h.v;
 
 	/*
 	 * Throughout the loop we handle the y and h values as arrays

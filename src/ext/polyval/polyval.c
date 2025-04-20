@@ -66,7 +66,7 @@ static inline void pv_xor_y(polyval_t *, u128 v);
 /**
  * Initialize any derived fields in pv.
  */
-static inline void pv_init_extra(polyval_t *pv);
+static inline void pv_init_extra(polyval_key_t *pv);
 
 /* ========
  * The function which we expect our backend to implement.
@@ -140,7 +140,7 @@ pv_xor_y(polyval_t *pv, u128 v)
   pv->y = _mm_xor_si128(pv->y, v);
 }
 static inline void
-pv_init_extra(polyval_t *pv)
+pv_init_extra(polyval_key_t *pv)
 {
   (void)pv;
 }
@@ -173,7 +173,7 @@ pv_xor_y(polyval_t *pv, u128 val)
   pv->y.hi ^= val.hi;
 }
 static inline void
-pv_init_extra(polyval_t *pv)
+pv_init_extra(polyval_key_t *pv)
 {
   pv->hr.lo = rev64(pv->h.lo);
   pv->hr.hi = rev64(pv->h.hi);
@@ -208,18 +208,29 @@ pv_xor_y(polyval_t *pv, u128 val)
   }
 }
 static inline void
-pv_init_extra(polyval_t *pv)
+pv_init_extra(polyval_key_t *pv)
 {
   (void)pv;
 }
 #endif
 
 void
+polyval_key_init(polyval_key_t *pvk, const uint8_t *key)
+{
+  pvk->h = u128_from_bytes(key);
+  pv_init_extra(pvk);
+}
+void
 polyval_init(polyval_t *pv, const uint8_t *key)
 {
-  pv->h = u128_from_bytes(key);
+  polyval_key_init(&pv->key, key);
   memset(&pv->y, 0, sizeof(u128));
-  pv_init_extra(pv);
+}
+void
+polyval_init_from_key(polyval_t *pv, const polyval_key_t *key)
+{
+  memcpy(&pv->key, key, sizeof(polyval_key_t));
+  memset(&pv->y, 0, sizeof(u128));
 }
 void
 polyval_add_block(polyval_t *pv, const uint8_t *block)
