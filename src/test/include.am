@@ -162,6 +162,7 @@ src_test_test_SOURCES += \
 	src/test/test_crypto.c \
 	src/test/test_crypto_ope.c \
 	src/test/test_crypto_rng.c \
+        src/test/test_crypto_cgo.c \
 	src/test/test_data.c \
 	src/test/test_dir.c \
 	src/test/test_dirauth_ports.c \
@@ -382,6 +383,7 @@ noinst_HEADERS+= \
 	src/test/example_extrainfo.inc \
 	src/test/failing_routerdescs.inc \
 	src/test/ed25519_vectors.inc \
+	src/test/cgo_vectors.inc \
 	src/test/test_descriptors.inc \
 	src/test/test_hs_descriptor.inc \
 	src/test/vote_descriptors.inc
