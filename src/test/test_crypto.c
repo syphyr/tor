@@ -7,6 +7,7 @@
 #define CRYPTO_CURVE25519_PRIVATE
 #define CRYPTO_RAND_PRIVATE
 #define USE_AES_RAW
+#define TOR_AES_PRIVATE
 #include "core/or/or.h"
 #include "test/test.h"
 #include "lib/crypt_ops/aes.h"
@@ -3308,6 +3309,105 @@ test_crypto_aes_raw(void *arg)
 #undef T
 }
 
+static void
+test_crypto_aes_raw_ctr_equiv(void *arg)
+{
+  (void) arg;
+  size_t buflen = 65536;
+  uint8_t *buf = tor_malloc_zero(buflen);
+  aes_cnt_cipher_t *c = NULL;
+  aes_raw_t *c_raw = NULL;
+
+  const uint8_t iv[16];
+  const uint8_t key[16];
+
+  // Simple case, IV  with zero offset.
+  for (int i = 0; i < 32; ++i) {
+    crypto_rand((char*)iv, sizeof(iv));
+    crypto_rand((char*)key, sizeof(key));
+    c = aes_new_cipher(key, iv, 128);
+    c_raw = aes_raw_new(key, 128, true);
+
+    aes_crypt_inplace(c, (char*)buf, buflen);
+    aes_raw_counter_xor(c_raw, iv, 0, buf, buflen);
+    tt_assert(fast_mem_is_zero((char*)buf, buflen));
+
+    aes_cipher_free(c);
+    aes_raw_free(c_raw);
+  }
+  // Trickier case, IV with offset == 31.
+  for (int i = 0; i < 32; ++i) {
+    crypto_rand((char*)iv, sizeof(iv));
+    crypto_rand((char*)key, sizeof(key));
+    c = aes_new_cipher(key, iv, 128);
+    c_raw = aes_raw_new(key, 128, true);
+
+    aes_crypt_inplace(c, (char*)buf, buflen);
+    size_t off = 31*16;
+    aes_raw_counter_xor(c_raw, iv, 31, buf + off, buflen - off);
+    tt_assert(fast_mem_is_zero((char*)buf + off, buflen - off));
+
+    aes_cipher_free(c);
+    aes_raw_free(c_raw);
+  }
+
+ done:
+  aes_cipher_free(c);
+  aes_raw_free(c_raw);
+  tor_free(buf);
+}
+
+/* Make sure that our IV addition code is correct.
+ *
+ * We test this function separately to make sure we handle corner cases well;
+ * the corner cases are rare enough that we shouldn't expect to see them in
+ * randomized testing.
+ */
+static void
+test_crypto_aes_cnt_iv_manip(void *arg)
+{
+  (void)arg;
+  uint8_t buf[16];
+  uint8_t expect[16];
+  int n;
+#define T(pre, off, post) STMT_BEGIN {                                  \
+    n = base16_decode((char*)buf, sizeof(buf),                          \
+                  (pre), strlen(pre));                                  \
+    tt_int_op(n, OP_EQ, sizeof(buf));                                   \
+    n = base16_decode((char*)expect, sizeof(expect),                    \
+                  (post), strlen(post));                                \
+    tt_int_op(n, OP_EQ, sizeof(expect));                                \
+    aes_ctr_add_iv_offset(buf, (off));                                  \
+    tt_mem_op(buf, OP_EQ, expect, 16);                                  \
+  } STMT_END
+
+  T("00000000000000000000000000000000", 0x4032,
+    "00000000000000000000000000004032");
+  T("0000000000000000000000000000ffff", 0x4032,
+    "00000000000000000000000000014031");
+  // We focus on "31" here because that's what CGO uses.
+  T("000000000000000000000000ffffffe0", 31,
+    "000000000000000000000000ffffffff");
+  T("000000000000000000000000ffffffe1", 31,
+    "00000000000000000000000100000000");
+  T("0000000100000000ffffffffffffffe0", 31,
+    "0000000100000000ffffffffffffffff");
+  T("0000000100000000ffffffffffffffe1", 31,
+    "00000001000000010000000000000000");
+  T("0000000ffffffffffffffffffffffff0", 31,
+    "0000001000000000000000000000000f");
+  T("ffffffffffffffffffffffffffffffe0", 31,
+    "ffffffffffffffffffffffffffffffff");
+  T("ffffffffffffffffffffffffffffffe1", 31,
+    "00000000000000000000000000000000");
+  T("ffffffffffffffffffffffffffffffe8", 31,
+    "00000000000000000000000000000007");
+
+#undef T
+ done:
+  ;
+}
+
 #ifndef COCCI
 #define CRYPTO_LEGACY(name)                                            \
   { #name, test_crypto_ ## name , 0, NULL, NULL }
@@ -3377,5 +3477,7 @@ struct testcase_t crypto_tests[] = {
   { "failure_modes", test_crypto_failure_modes, TT_FORK, NULL, NULL },
   { "polyval", test_crypto_polyval, 0, NULL, NULL },
   { "aes_raw", test_crypto_aes_raw, 0, NULL, NULL },
+  { "aes_raw_ctr_equiv", test_crypto_aes_raw_ctr_equiv, 0, NULL, NULL },
+  { "aes_cnt_iv_manip", test_crypto_aes_cnt_iv_manip, 0, NULL, NULL },
   END_OF_TESTCASES
 };

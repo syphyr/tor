@@ -10,6 +10,7 @@
  **/
 
 #define USE_AES_RAW
+#define TOR_AES_PRIVATE
 
 #include "orconfig.h"
 #include "lib/crypt_ops/aes.h"
@@ -152,7 +153,6 @@ aes_raw_new(const uint8_t *key, int key_bits, bool encrypt)
   tor_assert(result);
   return (aes_raw_t *)result;
 }
-
 void
 aes_raw_free_(aes_raw_t *cipher_)
 {
@@ -176,4 +176,38 @@ aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block)
 {
   /* This is the same function call for NSS. */
   aes_raw_encrypt(cipher, block);
+}
+
+static inline void
+xor_bytes(uint8_t *outp, const uint8_t *inp, size_t n)
+{
+  for (size_t i = 0; i < n; ++i) {
+    outp[i] ^= inp[i];
+  }
+}
+
+void
+aes_raw_counter_xor(const aes_raw_t *cipher,
+                    const uint8_t *iv, uint32_t iv_offset,
+                    uint8_t *data, size_t n)
+{
+  uint8_t counter[16];
+  uint8_t buf[16];
+
+  memcpy(counter, iv, 16);
+  aes_ctr_add_iv_offset(counter, iv_offset);
+
+  while (n) {
+    memcpy(buf, counter, 16);
+    aes_raw_encrypt(cipher, buf);
+    if (n >= 16) {
+      xor_bytes(data, buf, 16);
+      n -= 16;
+      data += 16;
+    } else {
+      xor_bytes(data, buf, n);
+      break;
+    }
+    aes_ctr_add_iv_offset(counter, 1);
+  }
 }
