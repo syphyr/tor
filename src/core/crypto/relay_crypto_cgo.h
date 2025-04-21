@@ -14,6 +14,46 @@
 
 #include "lib/testsupport/testsupport.h"
 
+/**
+ * State to implement forward _or_ reverse crypto between a client and a single
+ * hop on a circuit.
+ *
+ * (There needs to be one of these for each direction.
+ */
+typedef struct cgo_crypt_t cgo_crypt_t;
+
+typedef enum {
+  CGO_MODE_CLIENT,
+  CGO_MODE_RELAY,
+} cgo_mode_t;
+
+/**
+ * Length of a CGO cell tag.
+ *
+ * This is the value used for authenticated SENDMES.
+ **/
+#define CGO_TAG_LEN 16
+
+struct cell_t;
+
+size_t cgo_key_material_len(int aesbits);
+cgo_crypt_t * cgo_crypt_new(cgo_mode_t mode, int aesbits,
+                      const uint8_t *keys, size_t keylen);
+void cgo_crypt_free_(cgo_crypt_t *cgo);
+#define cgo_crypt_free(cgo) \
+  FREE_AND_NULL(cgo_crypt_t, cgo_crypt_free_, (cgo))
+
+void cgo_crypt_relay_forward(cgo_crypt_t *cgo, struct cell_t *cell,
+                             const uint8_t **recognized_tag_out);
+void cgo_crypt_relay_backward(cgo_crypt_t *cgo, struct cell_t *cell);
+void cgo_crypt_relay_originate(cgo_crypt_t *cgo, struct cell_t *cell,
+                               const uint8_t **tag_out);
+void cgo_crypt_client_forward(cgo_crypt_t *cgo, struct cell_t *cell);
+void cgo_crypt_client_originate(cgo_crypt_t *cgo, struct cell_t *cell,
+                                const uint8_t **tag_out);
+void cgo_crypt_client_backward(cgo_crypt_t *cgo, struct cell_t *cell,
+                               const uint8_t **recognized_tag_out);
+
 #ifdef RELAY_CRYPTO_CGO_PRIVATE
 /* Internal types and definitions for CGO encryption algorithms.
  *
@@ -121,7 +161,6 @@ typedef struct et_tweak_t {
   const uint8_t *x_r;
 } et_tweak_t;
 
-
 /** Length of expected input to the PRF. */
 #define PRF_INPUT_LEN 16
 /** Output length for cgo_prf_xor_t0(). */
@@ -160,6 +199,12 @@ STATIC void cgo_uiv_update(cgo_uiv_t *uiv, int aesbits, bool encrypt,
                            uint8_t *nonce);
 STATIC void cgo_uiv_clear(cgo_uiv_t *uiv);
 
+struct cgo_crypt_t {
+  cgo_uiv_t uiv;
+  uint8_t nonce[CGO_TAG_LEN];
+  uint8_t tprime[CGO_TAG_LEN];
+  uint8_t aes_bytes;
+};
 #endif
 
 #endif /* !defined(TOR_RELAY_CRYPTO_CGO_H) */

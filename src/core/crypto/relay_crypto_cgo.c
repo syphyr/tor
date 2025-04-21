@@ -13,6 +13,7 @@
 #define USE_AES_RAW
 
 #include "orconfig.h"
+#include "core/or/or.h"
 #include "lib/crypt_ops/aes.h"
 #include "ext/polyval/polyval.h"
 #include "lib/crypt_ops/crypto_util.h"
@@ -20,6 +21,7 @@
 #include "lib/arch/bytes.h"
 #include "ext/polyval/polyval.h"
 #include "core/crypto/relay_crypto_cgo.h"
+#include "core/or/cell_st.h"
 
 #if 0
 // XXXX debugging.
@@ -29,6 +31,11 @@
 
 #include <string.h>
 
+static int
+cgo_et_keylen(int aesbits)
+{
+  return (aesbits / 8) + POLYVAL_KEY_LEN;
+}
 
 /** Initialize an instance of the tweakable block cipher,
  * using an 'aesbits'-bit AES key.
@@ -64,7 +71,8 @@ cgo_et_set_key(cgo_et_t *et, int aesbits, bool encrypt,
 
 /** Helper: Compute polyval(KU, H | CMD | X_R). */
 static inline void
-compute_et_mask(polyval_key_t *pvk, const et_tweak_t tweak, uint8_t *t_out) {
+compute_et_mask(polyval_key_t *pvk, const et_tweak_t tweak, uint8_t *t_out)
+{
   // block 0: tweak.h
   // block 1: one byte of command, first 15 bytes of x_r
   // block 2...: remainder of x_r, zero-padded.
@@ -121,6 +129,12 @@ STATIC void
 cgo_et_clear(cgo_et_t *et)
 {
   aes_raw_free(et->kb);
+}
+
+static int
+cgo_prf_keylen(int aesbits)
+{
+  return (aesbits / 8) + POLYVAL_KEY_LEN;
 }
 
 /**
@@ -202,6 +216,12 @@ STATIC void
 cgo_prf_clear(cgo_prf_t *prf)
 {
   aes_raw_free(prf->k);
+}
+
+static int
+cgo_uiv_keylen(int aesbits)
+{
+  return cgo_et_keylen(aesbits) + cgo_prf_keylen(aesbits);
 }
 
 /**
@@ -313,23 +333,238 @@ cgo_uiv_clear(cgo_uiv_t *uiv)
   cgo_prf_clear(&uiv->s);
 }
 
-// XXXX temporarily suppress unused-function warnings
-void temporary(void);
-void temporary(void)
+/* ====================
+ * High level counter galois onion implementations.
+ */
+
+/**
+ * Return the total number of bytes needed to initialize a cgo_crypt_t.
+ */
+size_t
+cgo_key_material_len(int aesbits)
 {
-  (void)cgo_et_init;
-  (void)cgo_et_encrypt;
-  (void)cgo_et_decrypt;
-  (void)cgo_et_clear;
+  tor_assert(aesbits == 128 || aesbits == 192 || aesbits == 256);
+  return (cgo_uiv_keylen(aesbits) + CGO_TAG_LEN);
+}
 
-  (void)cgo_prf_init;
-  (void)cgo_prf_xor_t0;
-  (void)cgo_prf_gen_t1;
-  (void)cgo_prf_clear;
+/**
+ * Instantiate a CGO authenticated encryption object from the provided
+ * 'keylen' bytes in 'keys'.
+ *
+ * 'keylen' must equal 'cgo_key_material_len(aesbits)'.
+ *
+ * The client and relay must have two cgo_crypt_t objects each:
+ * one for the forward direction, and one for the reverse direction.
+ */
+cgo_crypt_t *
+cgo_crypt_new(cgo_mode_t mode, int aesbits, const uint8_t *keys, size_t keylen)
+{
+  tor_assert(keylen == cgo_key_material_len(aesbits));
+  const uint8_t *end_of_keys = keys + keylen;
+  // Relays encrypt; clients decrypt.
+  // Don't reverse this: UIV+ is only non-malleable for _encryption_.
+  bool encrypt = (mode == CGO_MODE_RELAY);
+  int r;
 
-  (void)cgo_uiv_init;
-  (void)cgo_uiv_encrypt;
-  (void)cgo_uiv_decrypt;
-  (void)cgo_uiv_update;
-  (void)cgo_uiv_clear;
+  cgo_crypt_t *cgo = tor_malloc_zero(sizeof(cgo_crypt_t));
+  r = cgo_uiv_init(&cgo->uiv, aesbits, encrypt, keys);
+  tor_assert(r == 0);
+  keys += cgo_uiv_keylen(aesbits);
+  memcpy(cgo->nonce, keys, CGO_TAG_LEN);
+  keys += CGO_TAG_LEN;
+  tor_assert(keys == end_of_keys);
+
+  cgo->aes_bytes = aesbits / 8;
+
+  return cgo;
+}
+/**
+ * Clean up 'cgo' and free it.
+ */
+void
+cgo_crypt_free_(cgo_crypt_t *cgo)
+{
+  if (!cgo)
+    return;
+  cgo_uiv_clear(&cgo->uiv);
+  memwipe(cgo, 0, sizeof(cgo_crypt_t));
+  tor_free(cgo);
+}
+
+/**
+ * Internal: Run the UIV Update operation on our UIV+ instance.
+ */
+static void
+cgo_crypt_update(cgo_crypt_t *cgo, cgo_mode_t mode)
+{
+  bool encrypt = (mode == CGO_MODE_RELAY);
+  cgo_uiv_update(&cgo->uiv, cgo->aes_bytes * 8, encrypt, cgo->nonce);
+}
+
+/**
+ * Forward CGO encryption operation at a relay:
+ * process an outbound cell from the client.
+ *
+ * If the cell is for this relay, set *'recognized_tag_out'
+ * to point to a CGO_TAG_LEN value that should be used
+ * if we want to acknowledge this cell with an authenticated SENDME.
+ *
+ * The value of 'recognized_tag_out' will become invalid
+ * as soon as any change is made to this 'cgo' object,
+ * or to the cell; if you need it, you should copy it immediately.
+ *
+ * If the cell is not for this relay, set *'recognized_tag_out' to NULL.
+ */
+void
+cgo_crypt_relay_forward(cgo_crypt_t *cgo, cell_t *cell,
+                        const uint8_t **recognized_tag_out)
+{
+  uiv_tweak_t h = {
+    .h = cgo->tprime,
+    .cmd = cell->command,
+  };
+  cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
+  memcpy(cgo->tprime, cell->payload, CGO_TAG_LEN);
+  if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
+    cgo_crypt_update(cgo, CGO_MODE_RELAY);
+    // XXXX: Here and in Arti, we've used tprime as the value
+    // of our tag, but the proposal says to use T.  We should
+    // fix that, unless the CGO implementors say it's better!
+    *recognized_tag_out = cgo->tprime;
+  } else {
+    *recognized_tag_out = NULL;
+  }
+}
+
+/**
+ * Backward CGO encryption operation at a relay:
+ * process an inbound cell from another relay, for the client.
+ */
+void
+cgo_crypt_relay_backward(cgo_crypt_t *cgo, cell_t *cell)
+{
+  uiv_tweak_t h = {
+    .h = cgo->tprime,
+    .cmd = cell->command,
+  };
+  cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
+  memcpy(cgo->tprime, cell->payload, CGO_TAG_LEN);
+}
+
+/**
+ * Backward CGO encryption operation at a relay:
+ * encrypt an inbound message that we are originating, for the client.
+ *
+ * The provided cell must have its command value set,
+ * and should have the first CGO_TAG_LEN bytes of its payload unused.
+ *
+ * Set '*tag_out' to a value that we should expect
+ * if we want an authenticated SENDME for this cell.
+ *
+ * The value of 'recognized_tag_out' will become invalid
+ * as soon as any change is made to this 'cgo' object,
+ * or to the cell; if you need it, you should copy it immediately.
+ */
+void
+cgo_crypt_relay_originate(cgo_crypt_t *cgo, cell_t *cell,
+                          const uint8_t **tag_out)
+{
+  uiv_tweak_t h = {
+    .h = cgo->tprime,
+    .cmd = cell->command,
+  };
+  memcpy(cell->payload, cgo->nonce, CGO_TAG_LEN);
+  cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
+  memcpy(&cgo->tprime, cell->payload, CGO_TAG_LEN);
+  memcpy(&cgo->nonce, cell->payload, CGO_TAG_LEN);
+  if (tag_out) {
+    // XXXX: Here and elsewhere, we've used tprime as the value
+    // of our tag, but the proposal says to use T.  We should
+    // fix that, unless the CGO implementors say it's better!
+    *tag_out = cgo->tprime;
+  }
+  cgo_crypt_update(cgo, CGO_MODE_RELAY);
+}
+
+/**
+ * Forward CGO encryption at a client:
+ * process a cell for a non-destination hop.
+ **/
+void
+cgo_crypt_client_forward(cgo_crypt_t *cgo, cell_t *cell)
+{
+  uint8_t tprime_new[CGO_TAG_LEN];
+  memcpy(tprime_new, cell->payload, CGO_TAG_LEN);
+  uiv_tweak_t h = {
+    .h = cgo->tprime,
+    .cmd = cell->command,
+  };
+  cgo_uiv_decrypt(&cgo->uiv, h, cell->payload);
+  memcpy(cgo->tprime, tprime_new, CGO_TAG_LEN);
+}
+
+/**
+ * Forward CGO encryption at a client:
+ * originate a cell for a given target hop.
+ *
+ * The provided cell must have its command value set,
+ * and should have the first CGO_TAG_LEN bytes of its payload unused.
+ *
+ * Set '*tag_out' to a value that we should expect
+ * if we want an authenticated SENDME for this cell.
+ *
+ * The value of 'recognized_tag_out' will become invalid
+ * as soon as any change is made to this 'cgo' object,
+ * or to the cell; if you need it, you should copy it immediately.
+ */
+void
+cgo_crypt_client_originate(cgo_crypt_t *cgo, cell_t *cell,
+                           const uint8_t **tag_out)
+{
+  memcpy(cell->payload, cgo->nonce, CGO_TAG_LEN);
+  cgo_crypt_client_forward(cgo, cell);
+  cgo_crypt_update(cgo, CGO_MODE_CLIENT);
+  // XXXX: Here and elsewhere, we've used tprime as the value
+  // of our tag, but the proposal says to use T.  We should
+  // fix that, unless the CGO implementors say it's better!
+  *tag_out = cgo->tprime;
+}
+
+/**
+ * Backward CGO encryption operation at a rclient.
+ * process an inbound cell from a relay.
+ *
+ * If the cell originated from this this relay, set *'recognized_tag_out'
+ * to point to a CGO_TAG_LEN value that should be used
+ * if we want to acknowledge this cell with an authenticated SENDME.
+ *
+ * The value of 'recognized_tag_out' will become invalid
+ * as soon as any change is made to this 'cgo' object,
+ * or to the cell; if you need it, you should copy it immediately.
+ *
+ * If the cell is not from this relay, set *'recognized_tag_out' to NULL.
+ */
+void
+cgo_crypt_client_backward(cgo_crypt_t *cgo, cell_t *cell,
+                          const uint8_t **recognized_tag_out)
+{
+  uiv_tweak_t h = {
+    .h = cgo->tprime,
+    .cmd = cell->command,
+  };
+  uint8_t t_orig[CGO_TAG_LEN];
+  memcpy(t_orig, cell->payload, CGO_TAG_LEN);
+
+  cgo_uiv_decrypt(&cgo->uiv, h, cell->payload);
+  memcpy(cgo->tprime, t_orig, CGO_TAG_LEN);
+  if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
+    memcpy(cgo->nonce, t_orig, CGO_TAG_LEN);
+    cgo_crypt_update(cgo, CGO_MODE_CLIENT);
+    // XXXX: Here and elsewhere, we've used tprime as the value
+    // of our tag, but the proposal says to use T.  We should
+    // fix that, unless the CGO implementors say it's better!
+    *recognized_tag_out = cgo->tprime;
+  } else {
+    *recognized_tag_out = NULL;
+  }
 }
