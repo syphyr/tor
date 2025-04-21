@@ -917,7 +917,7 @@ conflux_dequeue_relay_msg(conflux_t *cfx)
 
 /** Free a given conflux msg object. */
 void
-conflux_relay_msg_free(conflux_msg_t *msg)
+conflux_relay_msg_free_(conflux_msg_t *msg)
 {
   if (msg) {
     relay_msg_free(msg->msg);
