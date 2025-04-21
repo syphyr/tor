@@ -1403,6 +1403,12 @@ static void
 test_cfmt_relay_msg_encoding_error(void *arg)
 {
   (void)arg;
+#ifdef ALL_BUGS_ARE_FATAL
+  // This test triggers many nonfatal assertions.
+  tt_skip();
+ done:
+  ;
+#else
   relay_msg_t *msg1 = NULL;
   int r;
   cell_t cell;
@@ -1447,6 +1453,7 @@ test_cfmt_relay_msg_encoding_error(void *arg)
  done:
   tor_end_capture_bugs_();
   relay_msg_free(msg1);
+#endif
 }
 
 static void
