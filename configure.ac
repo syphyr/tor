@@ -979,6 +979,23 @@ if test "x$enable_nss" = "xyes"; then
      [have_nss=no; AC_MSG_ERROR([You asked for NSS but I can't find it, $pkg_config_user_action, or set NSS_CFLAGS and NSS_LIBS.])])
   AC_SUBST(NSS_CFLAGS)
   AC_SUBST(NSS_LIBS)
+
+  save_CFLAGS="$CFLAGS"
+  save_LIBS="$LIBS"
+  LIBS="$LIBS $NSS_LIBS"
+  CFLAGS="$CFLAGS $NSS_CFLAGS"
+  AC_MSG_CHECKING([whether NSS defines ssl_kea_ecdh_hybrid(_psk)])
+  AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+    #include <sslt.h>
+    int v = (int) ssl_kea_ecdh_hybrid_psk;
+    int v2 = (int) ssl_kea_ecdh_hybrid;
+    ]], [[]])],
+    [ AC_MSG_RESULT([yes]);
+      AC_DEFINE(NSS_HAS_ECDH_HYBRID, 1, [whether nss defines ecdh_hybrid key exchange.])
+    ],
+    [ AC_MSG_RESULT([no]) ])
+  LIBS="$save_LIBS"
+  CPPFLAGS="$save_CPPFLAGS"
 fi
 
 dnl ------------------------------------------------------
