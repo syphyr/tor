@@ -678,7 +678,14 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
     // Unfortunately, we support back to OpenSSL 3.0, which did not provide
     // any syntax for saying "don't worry if this group isn't supported."
     // Instead, we have to make this preference list of preference lists.
-    static const char *group_lists[] = {
+    static const struct {
+      // Minimal version with which to try this syntax.
+      // We have to restrict, since older versions of openssl
+      // can misunderstand-but nonetheless accept!-syntaxes
+      // supported by newer versions.  See #41058 for one example.
+      long min_version;
+      const char *groups;
+    } group_lists[] = {
       // We do use the ? syntax here, since every version of OpenSSL
       // that supports ML-KEM also supports the ? syntax.
       // We also use the * and / syntaxes:
@@ -688,16 +695,25 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
       //
       // Note that we tell the client to send a P-256 keyshare, since until
       // this commit, our servers didn't accept X25519.
-      "?*X25519MLKEM768 / ?SecP256r1MLKEM768:?X25519 / *P-256:P-224",
-      "P-256:X25519:P-224",
-      "P-256:P-224",
+      {
+        OPENSSL_V_SERIES(3,5,0),
+        "?*X25519MLKEM768 / ?SecP256r1MLKEM768:?X25519 / *P-256:P-224"
+      },
+      { 0, "P-256:X25519:P-224" },
+      { 0, "P-256:P-224" },
     };
     bool success = false;
+    long our_version = tor_OpenSSL_version_num();
     for (unsigned j = 0; j < ARRAY_LENGTH(group_lists); ++j) {
-      const char *list = group_lists[j];
+      const char *list = group_lists[j].groups;
+      if (group_lists[j].min_version > our_version) {
+        log_info(LD_NET, "Not trying groups %s because of OpenSSL version.",
+                 list);
+        continue;
+      }
       int r = (int) SSL_CTX_set1_groups_list(result->ctx, list);
       if (r == 1) {
-        log_info(LD_NET, "Set supported groups to %s", list);
+        log_notice(LD_NET, "Set list of supported TLS groups to: %s", list);
         success = true;
         break;
       }
