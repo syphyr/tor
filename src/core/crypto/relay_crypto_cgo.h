@@ -23,8 +23,10 @@
 typedef struct cgo_crypt_t cgo_crypt_t;
 
 typedef enum {
-  CGO_MODE_CLIENT,
-  CGO_MODE_RELAY,
+  CGO_MODE_CLIENT_FORWARD,
+  CGO_MODE_CLIENT_BACKWARD,
+  CGO_MODE_RELAY_FORWARD,
+  CGO_MODE_RELAY_BACKWARD,
 } cgo_mode_t;
 
 /**
@@ -204,6 +206,8 @@ struct cgo_crypt_t {
   uint8_t nonce[CGO_TAG_LEN];
   uint8_t tprime[CGO_TAG_LEN];
   uint8_t aes_bytes;
+
+  uint8_t last_tag_relay_fwd[CGO_TAG_LEN];
 };
 #endif
 

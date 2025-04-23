@@ -363,7 +363,8 @@ cgo_crypt_new(cgo_mode_t mode, int aesbits, const uint8_t *keys, size_t keylen)
   const uint8_t *end_of_keys = keys + keylen;
   // Relays encrypt; clients decrypt.
   // Don't reverse this: UIV+ is only non-malleable for _encryption_.
-  bool encrypt = (mode == CGO_MODE_RELAY);
+  bool encrypt = (mode == CGO_MODE_RELAY_BACKWARD ||
+                  mode == CGO_MODE_RELAY_FORWARD);
   int r;
 
   cgo_crypt_t *cgo = tor_malloc_zero(sizeof(cgo_crypt_t));
@@ -397,7 +398,8 @@ cgo_crypt_free_(cgo_crypt_t *cgo)
 static void
 cgo_crypt_update(cgo_crypt_t *cgo, cgo_mode_t mode)
 {
-  bool encrypt = (mode == CGO_MODE_RELAY);
+  bool encrypt = (mode == CGO_MODE_RELAY_BACKWARD ||
+                  mode == CGO_MODE_RELAY_FORWARD);
   cgo_uiv_update(&cgo->uiv, cgo->aes_bytes * 8, encrypt, cgo->nonce);
 }
 
@@ -426,7 +428,7 @@ cgo_crypt_relay_forward(cgo_crypt_t *cgo, cell_t *cell,
   cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
   memcpy(cgo->tprime, cell->payload, CGO_TAG_LEN);
   if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
-    cgo_crypt_update(cgo, CGO_MODE_RELAY);
+    cgo_crypt_update(cgo, CGO_MODE_RELAY_FORWARD);
     // XXXX: Here and in Arti, we've used tprime as the value
     // of our tag, but the proposal says to use T.  We should
     // fix that, unless the CGO implementors say it's better!
@@ -483,7 +485,7 @@ cgo_crypt_relay_originate(cgo_crypt_t *cgo, cell_t *cell,
     // fix that, unless the CGO implementors say it's better!
     *tag_out = cgo->tprime;
   }
-  cgo_crypt_update(cgo, CGO_MODE_RELAY);
+  cgo_crypt_update(cgo, CGO_MODE_RELAY_BACKWARD);
 }
 
 /**
@@ -523,7 +525,7 @@ cgo_crypt_client_originate(cgo_crypt_t *cgo, cell_t *cell,
 {
   memcpy(cell->payload, cgo->nonce, CGO_TAG_LEN);
   cgo_crypt_client_forward(cgo, cell);
-  cgo_crypt_update(cgo, CGO_MODE_CLIENT);
+  cgo_crypt_update(cgo, CGO_MODE_CLIENT_FORWARD);
   // XXXX: Here and elsewhere, we've used tprime as the value
   // of our tag, but the proposal says to use T.  We should
   // fix that, unless the CGO implementors say it's better!
@@ -559,7 +561,7 @@ cgo_crypt_client_backward(cgo_crypt_t *cgo, cell_t *cell,
   memcpy(cgo->tprime, t_orig, CGO_TAG_LEN);
   if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
     memcpy(cgo->nonce, t_orig, CGO_TAG_LEN);
-    cgo_crypt_update(cgo, CGO_MODE_CLIENT);
+    cgo_crypt_update(cgo, CGO_MODE_CLIENT_BACKWARD);
     // XXXX: Here and elsewhere, we've used tprime as the value
     // of our tag, but the proposal says to use T.  We should
     // fix that, unless the CGO implementors say it's better!
