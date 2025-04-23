@@ -425,14 +425,12 @@ cgo_crypt_relay_forward(cgo_crypt_t *cgo, cell_t *cell,
     .h = cgo->tprime,
     .cmd = cell->command,
   };
+  memcpy(cgo->last_tag_relay_fwd, cell->payload, CGO_TAG_LEN);
   cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
   memcpy(cgo->tprime, cell->payload, CGO_TAG_LEN);
   if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
     cgo_crypt_update(cgo, CGO_MODE_RELAY_FORWARD);
-    // XXXX: Here and in Arti, we've used tprime as the value
-    // of our tag, but the proposal says to use T.  We should
-    // fix that, unless the CGO implementors say it's better!
-    *recognized_tag_out = cgo->tprime;
+    *recognized_tag_out = cgo->last_tag_relay_fwd;
   } else {
     *recognized_tag_out = NULL;
   }
@@ -480,9 +478,7 @@ cgo_crypt_relay_originate(cgo_crypt_t *cgo, cell_t *cell,
   memcpy(&cgo->tprime, cell->payload, CGO_TAG_LEN);
   memcpy(&cgo->nonce, cell->payload, CGO_TAG_LEN);
   if (tag_out) {
-    // XXXX: Here and elsewhere, we've used tprime as the value
-    // of our tag, but the proposal says to use T.  We should
-    // fix that, unless the CGO implementors say it's better!
+    // tor_assert(tor_memeq(cgo->tprime, cell->payload, CGO_TAG_LEN));
     *tag_out = cgo->tprime;
   }
   cgo_crypt_update(cgo, CGO_MODE_RELAY_BACKWARD);
@@ -526,10 +522,7 @@ cgo_crypt_client_originate(cgo_crypt_t *cgo, cell_t *cell,
   memcpy(cell->payload, cgo->nonce, CGO_TAG_LEN);
   cgo_crypt_client_forward(cgo, cell);
   cgo_crypt_update(cgo, CGO_MODE_CLIENT_FORWARD);
-  // XXXX: Here and elsewhere, we've used tprime as the value
-  // of our tag, but the proposal says to use T.  We should
-  // fix that, unless the CGO implementors say it's better!
-  *tag_out = cgo->tprime;
+  *tag_out = cell->payload;
 }
 
 /**
@@ -562,9 +555,7 @@ cgo_crypt_client_backward(cgo_crypt_t *cgo, cell_t *cell,
   if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
     memcpy(cgo->nonce, t_orig, CGO_TAG_LEN);
     cgo_crypt_update(cgo, CGO_MODE_CLIENT_BACKWARD);
-    // XXXX: Here and elsewhere, we've used tprime as the value
-    // of our tag, but the proposal says to use T.  We should
-    // fix that, unless the CGO implementors say it's better!
+    // tor_assert(tor_memeq(cgo->tprime, t_orig, CGO_TAG_LEN));
     *recognized_tag_out = cgo->tprime;
   } else {
     *recognized_tag_out = NULL;

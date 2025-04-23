@@ -205,9 +205,13 @@ struct cgo_crypt_t {
   cgo_uiv_t uiv;
   uint8_t nonce[CGO_TAG_LEN];
   uint8_t tprime[CGO_TAG_LEN];
-  uint8_t aes_bytes;
-
+  /**
+   * Stored version of the last incoming cell tag.
+   * Only used for cgo_crypt_relay_fwd, where this information is not
+   * otherwise available after encryption.
+   */
   uint8_t last_tag_relay_fwd[CGO_TAG_LEN];
+  uint8_t aes_bytes;
 };
 #endif
 
