@@ -916,7 +916,8 @@ forward slash (/) in the configuration file and on the command line.
     set to 1, all potentially sensitive strings are replaced. If it is set to
     relay, all log messages generated when acting as a relay are sanitized, but
     all messages generated when acting as a client are not.
-    Note: Tor may not heed this option when logging at log levels below Notice.
+    Note: Tor may not heed this option when logging at log levels more
+    verbose than Notice.
     (Default: 1)
 
 [[Sandbox]] **Sandbox** **0**|**1**::
