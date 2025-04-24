@@ -91,24 +91,6 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 /** Set to true iff openssl bug 7712 has been detected. */
 static int openssl_bug_7712_is_present = 0;
 
-/** Return values for tor_tls_classify_client_ciphers.
- *
- * @{
- */
-/** An error occurred when examining the client ciphers */
-#define CIPHERS_ERR -1
-/** The client cipher list indicates that a v1 handshake was in use. */
-#define CIPHERS_V1 1
-/** The client cipher list indicates that the client is using the v2 or the
- * v3 handshake, but that it is (probably!) lying about what ciphers it
- * supports */
-#define CIPHERS_V2 2
-/** The client cipher list indicates that the client is using the v2 or the
- * v3 handshake, and that it is telling the truth about what ciphers it
- * supports */
-#define CIPHERS_UNRESTRICTED 3
-/** @} */
-
 /** The ex_data index in which we store a pointer to an SSL object's
  * corresponding tor_tls_t object. */
 STATIC int tor_tls_object_ex_data_index = -1;
@@ -383,20 +365,6 @@ always_accept_verify_cb(int preverify_ok,
   (void) x509_ctx;
   return 1;
 }
-
-/** List of ciphers that servers should select from when the client might be
- * claiming extra unsupported ciphers in order to avoid fingerprinting.  */
-static const char SERVER_CIPHER_LIST[] =
-#ifdef  TLS1_3_TXT_AES_128_GCM_SHA256
-  /* This one can never actually get selected, since if the client lists it,
-   * we will assume that the client is honest, and not use this list.
-   * Nonetheless we list it if it's available, so that the server doesn't
-   * conclude that it has no valid ciphers if it's running with TLS1.3.
-   */
-  TLS1_3_TXT_AES_128_GCM_SHA256 ":"
-#endif /* defined(TLS1_3_TXT_AES_128_GCM_SHA256) */
-  TLS1_TXT_DHE_RSA_WITH_AES_256_SHA ":"
-  TLS1_TXT_DHE_RSA_WITH_AES_128_SHA;
 
 /** List of ciphers that servers should select from when we actually have
  * our choice of what cipher to use. */
@@ -761,250 +729,6 @@ tor_tls_get_ciphersuite_name(tor_tls_t *tls)
   return SSL_get_cipher(tls->ssl);
 }
 
-/* Here's the old V2 cipher list we sent from 0.2.1.1-alpha up to
- * 0.2.3.17-beta. If a client is using this list, we can't believe the ciphers
- * that it claims to support.  We'll prune this list to remove the ciphers
- * *we* don't recognize. */
-STATIC uint16_t v2_cipher_list[] = {
-  0xc00a, /* TLS1_TXT_ECDHE_ECDSA_WITH_AES_256_CBC_SHA */
-  0xc014, /* TLS1_TXT_ECDHE_RSA_WITH_AES_256_CBC_SHA */
-  0x0039, /* TLS1_TXT_DHE_RSA_WITH_AES_256_SHA */
-  0x0038, /* TLS1_TXT_DHE_DSS_WITH_AES_256_SHA */
-  0xc00f, /* TLS1_TXT_ECDH_RSA_WITH_AES_256_CBC_SHA */
-  0xc005, /* TLS1_TXT_ECDH_ECDSA_WITH_AES_256_CBC_SHA */
-  0x0035, /* TLS1_TXT_RSA_WITH_AES_256_SHA */
-  0xc007, /* TLS1_TXT_ECDHE_ECDSA_WITH_RC4_128_SHA */
-  0xc009, /* TLS1_TXT_ECDHE_ECDSA_WITH_AES_128_CBC_SHA */
-  0xc011, /* TLS1_TXT_ECDHE_RSA_WITH_RC4_128_SHA */
-  0xc013, /* TLS1_TXT_ECDHE_RSA_WITH_AES_128_CBC_SHA */
-  0x0033, /* TLS1_TXT_DHE_RSA_WITH_AES_128_SHA */
-  0x0032, /* TLS1_TXT_DHE_DSS_WITH_AES_128_SHA */
-  0xc00c, /* TLS1_TXT_ECDH_RSA_WITH_RC4_128_SHA */
-  0xc00e, /* TLS1_TXT_ECDH_RSA_WITH_AES_128_CBC_SHA */
-  0xc002, /* TLS1_TXT_ECDH_ECDSA_WITH_RC4_128_SHA */
-  0xc004, /* TLS1_TXT_ECDH_ECDSA_WITH_AES_128_CBC_SHA */
-  0x0004, /* SSL3_TXT_RSA_RC4_128_MD5 */
-  0x0005, /* SSL3_TXT_RSA_RC4_128_SHA */
-  0x002f, /* TLS1_TXT_RSA_WITH_AES_128_SHA */
-  0xc008, /* TLS1_TXT_ECDHE_ECDSA_WITH_DES_192_CBC3_SHA */
-  0xc012, /* TLS1_TXT_ECDHE_RSA_WITH_DES_192_CBC3_SHA */
-  0x0016, /* SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA */
-  0x0013, /* SSL3_TXT_EDH_DSS_DES_192_CBC3_SHA */
-  0xc00d, /* TLS1_TXT_ECDH_RSA_WITH_DES_192_CBC3_SHA */
-  0xc003, /* TLS1_TXT_ECDH_ECDSA_WITH_DES_192_CBC3_SHA */
-  0xfeff, /* SSL3_TXT_RSA_FIPS_WITH_3DES_EDE_CBC_SHA */
-  0x000a, /* SSL3_TXT_RSA_DES_192_CBC3_SHA */
-  0
-};
-/** Have we removed the unrecognized ciphers from v2_cipher_list yet? */
-static int v2_cipher_list_pruned = 0;
-
-/** Return 0 if <b>m</b> does not support the cipher with ID <b>cipher</b>;
- * return 1 if it does support it, or if we have no way to tell. */
-int
-find_cipher_by_id(const SSL *ssl, const SSL_METHOD *m, uint16_t cipher)
-{
-  const SSL_CIPHER *c;
-#ifdef HAVE_SSL_CIPHER_FIND
-  (void) m;
-  {
-    unsigned char cipherid[3];
-    tor_assert(ssl);
-    set_uint16(cipherid, tor_htons(cipher));
-    cipherid[2] = 0; /* If ssl23_get_cipher_by_char finds no cipher starting
-                      * with a two-byte 'cipherid', it may look for a v2
-                      * cipher with the appropriate 3 bytes. */
-    c = SSL_CIPHER_find((SSL*)ssl, cipherid);
-    if (c)
-      tor_assert((SSL_CIPHER_get_id(c) & 0xffff) == cipher);
-    return c != NULL;
-  }
-#else /* !defined(HAVE_SSL_CIPHER_FIND) */
-
-# if defined(HAVE_STRUCT_SSL_METHOD_ST_GET_CIPHER_BY_CHAR)
-  if (m && m->get_cipher_by_char) {
-    unsigned char cipherid[3];
-    set_uint16(cipherid, tor_htons(cipher));
-    cipherid[2] = 0; /* If ssl23_get_cipher_by_char finds no cipher starting
-                      * with a two-byte 'cipherid', it may look for a v2
-                      * cipher with the appropriate 3 bytes. */
-    c = m->get_cipher_by_char(cipherid);
-    if (c)
-      tor_assert((c->id & 0xffff) == cipher);
-    return c != NULL;
-  }
-#endif /* defined(HAVE_STRUCT_SSL_METHOD_ST_GET_CIPHER_BY_CHAR) */
-# ifndef OPENSSL_1_1_API
-  if (m && m->get_cipher && m->num_ciphers) {
-    /* It would seem that some of the "let's-clean-up-openssl" forks have
-     * removed the get_cipher_by_char function.  Okay, so now you get a
-     * quadratic search.
-     */
-    int i;
-    for (i = 0; i < m->num_ciphers(); ++i) {
-      c = m->get_cipher(i);
-      if (c && (c->id & 0xffff) == cipher) {
-        return 1;
-      }
-    }
-    return 0;
-  }
-#endif /* !defined(OPENSSL_1_1_API) */
-  (void) ssl;
-  (void) m;
-  (void) cipher;
-  return 1; /* No way to search */
-#endif /* defined(HAVE_SSL_CIPHER_FIND) */
-}
-
-/** Remove from v2_cipher_list every cipher that we don't support, so that
- * comparing v2_cipher_list to a client's cipher list will give a sensible
- * result. */
-static void
-prune_v2_cipher_list(const SSL *ssl)
-{
-  uint16_t *inp, *outp;
-#ifdef HAVE_TLS_METHOD
-  const SSL_METHOD *m = TLS_method();
-#else
-  const SSL_METHOD *m = SSLv23_method();
-#endif
-
-  inp = outp = v2_cipher_list;
-  while (*inp) {
-    if (find_cipher_by_id(ssl, m, *inp)) {
-      *outp++ = *inp++;
-    } else {
-      inp++;
-    }
-  }
-  *outp = 0;
-
-  v2_cipher_list_pruned = 1;
-}
-
-/** Examine the client cipher list in <b>ssl</b>, and determine what kind of
- * client it is.  Return one of CIPHERS_ERR, CIPHERS_V1, CIPHERS_V2,
- * CIPHERS_UNRESTRICTED.
- **/
-int
-tor_tls_classify_client_ciphers(const SSL *ssl,
-                                STACK_OF(SSL_CIPHER) *peer_ciphers)
-{
-  int i, res;
-  tor_tls_t *tor_tls;
-  if (PREDICT_UNLIKELY(!v2_cipher_list_pruned))
-    prune_v2_cipher_list(ssl);
-
-  tor_tls = tor_tls_get_by_ssl(ssl);
-  if (tor_tls && tor_tls->client_cipher_list_type)
-    return tor_tls->client_cipher_list_type;
-
-  /* If we reached this point, we just got a client hello.  See if there is
-   * a cipher list. */
-  if (!peer_ciphers) {
-    log_info(LD_NET, "No ciphers on session");
-    res = CIPHERS_ERR;
-    goto done;
-  }
-  /* Now we need to see if there are any ciphers whose presence means we're
-   * dealing with an updated Tor. */
-  for (i = 0; i < sk_SSL_CIPHER_num(peer_ciphers); ++i) {
-    const SSL_CIPHER *cipher = sk_SSL_CIPHER_value(peer_ciphers, i);
-    const char *ciphername = SSL_CIPHER_get_name(cipher);
-    if (strcmp(ciphername, TLS1_TXT_DHE_RSA_WITH_AES_128_SHA) &&
-        strcmp(ciphername, TLS1_TXT_DHE_RSA_WITH_AES_256_SHA) &&
-        strcmp(ciphername, SSL3_TXT_EDH_RSA_DES_192_CBC3_SHA) &&
-        strcmp(ciphername, "(NONE)")) {
-      log_debug(LD_NET, "Got a non-version-1 cipher called '%s'", ciphername);
-      // return 1;
-      goto v2_or_higher;
-    }
-  }
-  res = CIPHERS_V1;
-  goto done;
- v2_or_higher:
-  {
-    const uint16_t *v2_cipher = v2_cipher_list;
-    for (i = 0; i < sk_SSL_CIPHER_num(peer_ciphers); ++i) {
-      const SSL_CIPHER *cipher = sk_SSL_CIPHER_value(peer_ciphers, i);
-      uint16_t id = SSL_CIPHER_get_id(cipher) & 0xffff;
-      if (id == 0x00ff) /* extended renegotiation indicator. */
-        continue;
-      if (!id || id != *v2_cipher) {
-        res = CIPHERS_UNRESTRICTED;
-        goto dump_ciphers;
-      }
-      ++v2_cipher;
-    }
-    if (*v2_cipher != 0) {
-      res = CIPHERS_UNRESTRICTED;
-      goto dump_ciphers;
-    }
-    res = CIPHERS_V2;
-  }
-
- dump_ciphers:
-  {
-    smartlist_t *elts = smartlist_new();
-    char *s;
-    for (i = 0; i < sk_SSL_CIPHER_num(peer_ciphers); ++i) {
-      const SSL_CIPHER *cipher = sk_SSL_CIPHER_value(peer_ciphers, i);
-      const char *ciphername = SSL_CIPHER_get_name(cipher);
-      smartlist_add(elts, (char*)ciphername);
-    }
-    s = smartlist_join_strings(elts, ":", 0, NULL);
-    log_debug(LD_NET, "Got a %s V2/V3 cipher list from %s.  It is: '%s'",
-              (res == CIPHERS_V2) ? "fictitious" : "real", ADDR(tor_tls), s);
-    tor_free(s);
-    smartlist_free(elts);
-  }
- done:
-  if (tor_tls && peer_ciphers)
-    return tor_tls->client_cipher_list_type = res;
-
-  return res;
-}
-
-/** Callback to get invoked on a server after we've read the list of ciphers
- * the client supports, but before we pick our own ciphersuite.
- *
- * We can't abuse an info_cb for this, since by the time one of the
- * client_hello info_cbs is called, we've already picked which ciphersuite to
- * use.
- *
- * Technically, this function is an abuse of this callback, since the point of
- * a session_secret_cb is to try to set up and/or verify a shared-secret for
- * authentication on the fly.  But as long as we return 0, we won't actually be
- * setting up a shared secret, and all will be fine.
- */
-int
-tor_tls_session_secret_cb(SSL *ssl, void *secret, int *secret_len,
-                          STACK_OF(SSL_CIPHER) *peer_ciphers,
-                          CONST_IF_OPENSSL_1_1_API SSL_CIPHER **cipher,
-                          void *arg)
-{
-  (void) secret;
-  (void) secret_len;
-  (void) peer_ciphers;
-  (void) cipher;
-  (void) arg;
-
-  if (tor_tls_classify_client_ciphers(ssl, peer_ciphers) ==
-       CIPHERS_UNRESTRICTED) {
-    SSL_set_cipher_list(ssl, UNRESTRICTED_SERVER_CIPHER_LIST);
-  }
-
-  SSL_set_session_secret_cb(ssl, NULL, NULL);
-
-  return 0;
-}
-static void
-tor_tls_setup_session_secret_cb(tor_tls_t *tls)
-{
-  SSL_set_session_secret_cb(tls->ssl, tor_tls_session_secret_cb, NULL);
-}
-
 /** Create a new TLS object from a file descriptor, and a flag to
  * determine whether it is functioning as a server.
  */
@@ -1041,7 +765,8 @@ tor_tls_new(tor_socket_t sock, int isServer)
 #endif /* defined(SSL_CTRL_SET_MAX_PROTO_VERSION) */
 
   if (!SSL_set_cipher_list(result->ssl,
-                     isServer ? SERVER_CIPHER_LIST : CLIENT_CIPHER_LIST)) {
+                           isServer ? UNRESTRICTED_SERVER_CIPHER_LIST
+                                    : CLIENT_CIPHER_LIST)) {
     tls_log_errors(NULL, LOG_WARN, LD_NET, "setting ciphers");
 #ifdef SSL_set_tlsext_host_name
     SSL_set_tlsext_host_name(result->ssl, NULL);
@@ -1083,9 +808,6 @@ tor_tls_new(tor_socket_t sock, int isServer)
   }
 
   SSL_set_info_callback(result->ssl, tor_tls_debug_state_callback);
-
-  if (isServer)
-    tor_tls_setup_session_secret_cb(result);
 
   goto done;
  err:

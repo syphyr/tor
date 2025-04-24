@@ -52,15 +52,6 @@ void tor_tls_allocate_tor_tls_object_ex_data_index(void);
 
 #ifdef TORTLS_OPENSSL_PRIVATE
 int always_accept_verify_cb(int preverify_ok, X509_STORE_CTX *x509_ctx);
-int tor_tls_classify_client_ciphers(const struct ssl_st *ssl,
-                                           STACK_OF(SSL_CIPHER) *peer_ciphers);
-STATIC int tor_tls_session_secret_cb(struct ssl_st *ssl, void *secret,
-                            int *secret_len,
-                            STACK_OF(SSL_CIPHER) *peer_ciphers,
-                            CONST_IF_OPENSSL_1_1_API SSL_CIPHER **cipher,
-                            void *arg);
-STATIC int find_cipher_by_id(const SSL *ssl, const SSL_METHOD *m,
-                             uint16_t cipher);
 #endif /* defined(TORTLS_OPENSSL_PRIVATE) */
 #endif /* defined(ENABLE_OPENSSL) */
 
