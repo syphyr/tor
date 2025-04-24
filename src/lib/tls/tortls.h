@@ -119,7 +119,6 @@ int tor_tls_get_buffer_sizes(tor_tls_t *tls,
 
 MOCK_DECL(double, tls_get_write_overhead_ratio, (void));
 
-int tor_tls_used_v1_handshake(tor_tls_t *tls);
 int tor_tls_get_num_server_handshakes(tor_tls_t *tls);
 int tor_tls_server_got_renegotiate(tor_tls_t *tls);
 MOCK_DECL(int,tor_tls_cert_matches_key,(const tor_tls_t *tls,

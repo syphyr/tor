@@ -1742,7 +1742,7 @@ connection_tls_continue_handshake(or_connection_t *conn)
              tor_tls_err_to_string(result));
       return -1;
     case TOR_TLS_DONE:
-      if (! tor_tls_used_v1_handshake(conn->tls)) {
+      {
         if (!tor_tls_is_server(conn->tls)) {
           tor_assert(conn->base_.state == OR_CONN_STATE_TLS_HANDSHAKING);
           return connection_or_launch_v3_or_handshake(conn);
@@ -2112,15 +2112,7 @@ connection_tls_finish_handshake(or_connection_t *conn)
 
   circuit_build_times_network_is_live(get_circuit_build_times_mutable());
 
-  if (tor_tls_used_v1_handshake(conn->tls)) {
-    conn->link_proto = 1;
-    connection_or_init_conn_from_address(conn, &conn->base_.addr,
-                                         conn->base_.port, digest_rcvd,
-                                         NULL, 0);
-    tor_tls_block_renegotiation(conn->tls);
-    rep_hist_note_negotiated_link_proto(1, started_here);
-    return connection_or_set_state_open(conn);
-  } else {
+  {
     connection_or_change_state(conn, OR_CONN_STATE_OR_HANDSHAKING_V2);
     if (connection_init_or_handshake_state(conn, started_here) < 0)
       return -1;

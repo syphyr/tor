@@ -662,49 +662,6 @@ test_tortls_classify_client_ciphers(void *ignored)
 }
 #endif /* !defined(OPENSSL_OPAQUE) */
 
-static void
-test_tortls_client_is_using_v2_ciphers(void *ignored)
-{
-  (void)ignored;
-
-#ifdef HAVE_SSL_GET_CLIENT_CIPHERS
-  tt_skip();
- done:
-  (void)1;
-#else
-  int ret;
-  SSL_CTX *ctx;
-  SSL *ssl;
-  SSL_SESSION *sess;
-  STACK_OF(SSL_CIPHER) *ciphers;
-
-  library_init();
-
-  ctx = SSL_CTX_new(TLSv1_method());
-  ssl = SSL_new(ctx);
-  sess = SSL_SESSION_new();
-
-  ret = tor_tls_client_is_using_v2_ciphers(ssl);
-  tt_int_op(ret, OP_EQ, -1);
-
-  ssl->session = sess;
-  ret = tor_tls_client_is_using_v2_ciphers(ssl);
-  tt_int_op(ret, OP_EQ, 0);
-
-  ciphers = sk_SSL_CIPHER_new_null();
-  SSL_CIPHER *one = get_cipher_by_name("ECDHE-RSA-AES256-GCM-SHA384");
-  tt_assert(one);
-  one->id = 0x00ff;
-  sk_SSL_CIPHER_push(ciphers, one);
-  sess->ciphers = ciphers;
-  ret = tor_tls_client_is_using_v2_ciphers(ssl);
-  tt_int_op(ret, OP_EQ, 1);
- done:
-  SSL_free(ssl);
-  SSL_CTX_free(ctx);
-#endif /* defined(HAVE_SSL_GET_CLIENT_CIPHERS) */
-}
-
 #ifndef OPENSSL_OPAQUE
 static int fixed_ssl_pending_result = 0;
 
@@ -2105,7 +2062,6 @@ struct testcase_t tortls_openssl_tests[] = {
   INTRUSIVE_TEST_CASE(cert_get_key, 0),
   INTRUSIVE_TEST_CASE(get_ciphersuite_name, 0),
   INTRUSIVE_TEST_CASE(classify_client_ciphers, 0),
-  LOCAL_TEST_CASE(client_is_using_v2_ciphers, 0),
   INTRUSIVE_TEST_CASE(get_pending_bytes, 0),
   INTRUSIVE_TEST_CASE(get_buffer_sizes, 0),
   INTRUSIVE_TEST_CASE(try_to_extract_certs_from_tls, 0),

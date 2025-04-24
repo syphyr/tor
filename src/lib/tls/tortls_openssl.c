@@ -641,11 +641,10 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
                                  result->my_link_cert->cert)) {
       goto error;
     }
-    if (result->my_id_cert) {
-      X509_STORE *s = SSL_CTX_get_cert_store(result->ctx);
-      tor_assert(s);
-      X509_STORE_add_cert(s, result->my_id_cert->cert);
-    }
+    // Here we would once add my_id_cert too via X509_STORE_add_cert.
+    //
+    // We no longer do that, since we no longer send multiple certs;
+    // that was part of the obsolete v1 handshake.
   }
   SSL_CTX_set_session_cache_mode(result->ctx, SSL_SESS_CACHE_OFF);
   if (!is_client) {
@@ -735,8 +734,14 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
     EC_KEY_free(ec_key);
   }
 #endif /* defined(SSL_CTX_set1_groups_list) || defined(HAVE_SSL_CTX_SET1...) */
-  SSL_CTX_set_verify(result->ctx, SSL_VERIFY_PEER,
-                     always_accept_verify_cb);
+
+  if (is_client) {
+    SSL_CTX_set_verify(result->ctx, SSL_VERIFY_PEER,
+                       always_accept_verify_cb);
+  } else {
+    /* Don't send a certificate request at all if we're not a client. */
+    SSL_set_verify((SSL*) ssl, SSL_VERIFY_NONE, NULL);
+  }
   /* let us realloc bufs that we're writing from */
   SSL_CTX_set_mode(result->ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
@@ -978,27 +983,6 @@ tor_tls_classify_client_ciphers(const SSL *ssl,
   return res;
 }
 
-/** Return true iff the cipher list suggested by the client for <b>ssl</b> is
- * a list that indicates that the client knows how to do the v2 TLS connection
- * handshake. */
-int
-tor_tls_client_is_using_v2_ciphers(const SSL *ssl)
-{
-  STACK_OF(SSL_CIPHER) *ciphers;
-#ifdef HAVE_SSL_GET_CLIENT_CIPHERS
-  ciphers = SSL_get_client_ciphers(ssl);
-#else
-  SSL_SESSION *session;
-  if (!(session = SSL_get_session((SSL *)ssl))) {
-    log_info(LD_NET, "No session on TLS?");
-    return CIPHERS_ERR;
-  }
-  ciphers = session->ciphers;
-#endif /* defined(HAVE_SSL_GET_CLIENT_CIPHERS) */
-
-  return tor_tls_classify_client_ciphers(ssl, ciphers) >= CIPHERS_V2;
-}
-
 /** Invoked when we're accepting a connection on <b>ssl</b>, and the connection
  * changes state. We use this:
  * <ul><li>To alter the state of the handshake partway through, so we
@@ -1034,18 +1018,13 @@ tor_tls_server_info_callback(const SSL *ssl, int type, int val)
   }
 
   /* Now check the cipher list. */
-  if (tor_tls_client_is_using_v2_ciphers(ssl)) {
+  {
     if (tls->wasV2Handshake)
       return; /* We already turned this stuff off for the first handshake;
                * This is a renegotiation. */
 
     /* Yes, we're casting away the const from ssl.  This is very naughty of us.
      * Let's hope openssl doesn't notice! */
-
-    /* Set SSL_MODE_NO_AUTO_CHAIN to keep from sending back any extra certs. */
-    SSL_set_mode((SSL*) ssl, SSL_MODE_NO_AUTO_CHAIN);
-    /* Don't send a hello request. */
-    SSL_set_verify((SSL*) ssl, SSL_VERIFY_NONE, NULL);
 
     if (tls) {
       tls->wasV2Handshake = 1;
@@ -1411,7 +1390,7 @@ tor_tls_finish_handshake(tor_tls_t *tls)
     SSL_set_info_callback(tls->ssl, NULL);
     SSL_set_verify(tls->ssl, SSL_VERIFY_PEER, always_accept_verify_cb);
     SSL_clear_mode(tls->ssl, SSL_MODE_NO_AUTO_CHAIN);
-    if (tor_tls_client_is_using_v2_ciphers(tls->ssl)) {
+    {
       /* This check is redundant, but back when we did it in the callback,
        * we might have not been able to look up the tor_tls_t if the code
        * was buggy.  Fixing that. */
@@ -1422,8 +1401,6 @@ tor_tls_finish_handshake(tor_tls_t *tls)
       tls->wasV2Handshake = 1;
       log_debug(LD_HANDSHAKE, "Completed V2 TLS handshake with client; waiting"
                 " for renegotiation.");
-    } else {
-      tls->wasV2Handshake = 0;
     }
   } else {
     /* Client-side */
@@ -1608,14 +1585,6 @@ check_no_tls_errors_(const char *fname, int line)
   log_warn(LD_CRYPTO, "Unhandled OpenSSL errors found at %s:%d: ",
       tor_fix_source_file(fname), line);
   tls_log_errors(NULL, LOG_WARN, LD_NET, NULL);
-}
-
-/** Return true iff the initial TLS connection at <b>tls</b> did not use a v2
- * TLS handshake. Output is undefined if the handshake isn't finished. */
-int
-tor_tls_used_v1_handshake(tor_tls_t *tls)
-{
-  return ! tls->wasV2Handshake;
 }
 
 /** Return true iff the server TLS connection <b>tls</b> got the renegotiation

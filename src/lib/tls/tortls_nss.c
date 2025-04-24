@@ -714,15 +714,6 @@ tls_get_write_overhead_ratio, (void))
 }
 
 int
-tor_tls_used_v1_handshake(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  /* We don't support or allow the V1 handshake with NSS.
-   */
-  return 0;
-}
-
-int
 tor_tls_server_got_renegotiate(tor_tls_t *tls)
 {
   tor_assert(tls);
