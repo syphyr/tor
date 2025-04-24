@@ -88,17 +88,6 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 #define DISABLE_SSL3_HANDSHAKE
 #endif /* OPENSSL_VERSION_NUMBER <  OPENSSL_V(1,0,0,'f') */
 
-/* We redefine these so that we can run correctly even if the vendor gives us
- * a version of OpenSSL that does not match its header files.  (Apple: I am
- * looking at you.)
- */
-#ifndef SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION
-#define SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION 0x00040000L
-#endif
-#ifndef SSL3_FLAGS_ALLOW_UNSAFE_LEGACY_RENEGOTIATION
-#define SSL3_FLAGS_ALLOW_UNSAFE_LEGACY_RENEGOTIATION 0x0010
-#endif
-
 /** Set to true iff openssl bug 7712 has been detected. */
 static int openssl_bug_7712_is_present = 0;
 
@@ -611,13 +600,7 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
   SSL_CTX_set_options(result->ctx,
                       SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
 #endif
-  /* Yes, we know what we are doing here.  No, we do not treat a renegotiation
-   * as authenticating any earlier-received data.
-   */
-  {
-    SSL_CTX_set_options(result->ctx,
-                        SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
-  }
+  SSL_CTX_set_options(result->ctx, SSL_OP_NO_RENEGOTIATION);
 
   /* Don't actually allow compression; it uses RAM and time, it makes TLS
    * vulnerable to CRIME-style attacks, and most of the data we transmit over
@@ -740,7 +723,7 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
                        always_accept_verify_cb);
   } else {
     /* Don't send a certificate request at all if we're not a client. */
-    SSL_set_verify((SSL*) ssl, SSL_VERIFY_NONE, NULL);
+    SSL_CTX_set_verify(result->ctx, SSL_VERIFY_NONE, NULL);
   }
   /* let us realloc bufs that we're writing from */
   SSL_CTX_set_mode(result->ctx, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
@@ -983,59 +966,6 @@ tor_tls_classify_client_ciphers(const SSL *ssl,
   return res;
 }
 
-/** Invoked when we're accepting a connection on <b>ssl</b>, and the connection
- * changes state. We use this:
- * <ul><li>To alter the state of the handshake partway through, so we
- *         do not send or request extra certificates in v2 handshakes.</li>
- * <li>To detect renegotiation</li></ul>
- */
-void
-tor_tls_server_info_callback(const SSL *ssl, int type, int val)
-{
-  tor_tls_t *tls;
-  (void) val;
-
-  IF_BUG_ONCE(ssl == NULL) {
-    return; // LCOV_EXCL_LINE
-  }
-
-  tor_tls_debug_state_callback(ssl, type, val);
-
-  if (type != SSL_CB_ACCEPT_LOOP)
-    return;
-
-  OSSL_HANDSHAKE_STATE ssl_state = SSL_get_state(ssl);
-  if (! STATE_IS_SW_SERVER_HELLO(ssl_state))
-    return;
-  tls = tor_tls_get_by_ssl(ssl);
-  if (tls) {
-    /* Check whether we're watching for renegotiates.  If so, this is one! */
-    if (tls->negotiated_callback)
-      tls->got_renegotiate = 1;
-  } else {
-    log_warn(LD_BUG, "Couldn't look up the tls for an SSL*. How odd!");
-    return;
-  }
-
-  /* Now check the cipher list. */
-  {
-    if (tls->wasV2Handshake)
-      return; /* We already turned this stuff off for the first handshake;
-               * This is a renegotiation. */
-
-    /* Yes, we're casting away the const from ssl.  This is very naughty of us.
-     * Let's hope openssl doesn't notice! */
-
-    if (tls) {
-      tls->wasV2Handshake = 1;
-    } else {
-      /* LCOV_EXCL_START this line is not reachable */
-      log_warn(LD_BUG, "Couldn't look up the tls for an SSL*. How odd!");
-      /* LCOV_EXCL_STOP */
-    }
-  }
-}
-
 /** Callback to get invoked on a server after we've read the list of ciphers
  * the client supports, but before we pick our own ciphersuite.
  *
@@ -1151,11 +1081,8 @@ tor_tls_new(tor_socket_t sock, int isServer)
     log_warn(LD_NET, "Newly created BIO has read count %lu, write count %lu",
              result->last_read_count, result->last_write_count);
   }
-  if (isServer) {
-    SSL_set_info_callback(result->ssl, tor_tls_server_info_callback);
-  } else {
-    SSL_set_info_callback(result->ssl, tor_tls_debug_state_callback);
-  }
+
+  SSL_set_info_callback(result->ssl, tor_tls_debug_state_callback);
 
   if (isServer)
     tor_tls_setup_session_secret_cb(result);
@@ -1167,51 +1094,6 @@ tor_tls_new(tor_socket_t sock, int isServer)
   /* Not expected to get called. */
   tls_log_errors(NULL, LOG_WARN, LD_NET, "creating tor_tls_t object");
   return result;
-}
-
-/** Set <b>cb</b> to be called with argument <b>arg</b> whenever <b>tls</b>
- * next gets a client-side renegotiate in the middle of a read.  Do not
- * invoke this function until <em>after</em> initial handshaking is done!
- */
-void
-tor_tls_set_renegotiate_callback(tor_tls_t *tls,
-                                 void (*cb)(tor_tls_t *, void *arg),
-                                 void *arg)
-{
-  tls->negotiated_callback = cb;
-  tls->callback_arg = arg;
-  tls->got_renegotiate = 0;
-  if (cb) {
-    SSL_set_info_callback(tls->ssl, tor_tls_server_info_callback);
-  } else {
-    SSL_set_info_callback(tls->ssl, tor_tls_debug_state_callback);
-  }
-}
-
-/** If this version of openssl requires it, turn on renegotiation on
- * <b>tls</b>.
- */
-void
-tor_tls_unblock_renegotiation(tor_tls_t *tls)
-{
-  /* Yes, we know what we are doing here.  No, we do not treat a renegotiation
-   * as authenticating any earlier-received data. */
-  SSL_set_options(tls->ssl,
-                  SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION);
-}
-
-/** If this version of openssl supports it, turn off renegotiation on
- * <b>tls</b>.  (Our protocol never requires this for security, but it's nice
- * to use belt-and-suspenders here.)
- */
-void
-tor_tls_block_renegotiation(tor_tls_t *tls)
-{
-#ifdef SUPPORT_UNSAFE_RENEGOTIATION_FLAG
-  tls->ssl->s3->flags &= ~SSL3_FLAGS_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
-#else
-  (void) tls;
-#endif
 }
 
 /**
@@ -1263,13 +1145,6 @@ tor_tls_read,(tor_tls_t *tls, char *cp, size_t len))
   tor_assert(len<INT_MAX);
   r = SSL_read(tls->ssl, cp, (int)len);
   if (r > 0) {
-    if (tls->got_renegotiate) {
-      /* Renegotiation happened! */
-      log_info(LD_NET, "Got a TLS renegotiation from %s", ADDR(tls));
-      if (tls->negotiated_callback)
-        tls->negotiated_callback(tls, tls->callback_arg);
-      tls->got_renegotiate = 0;
-    }
     return r;
   }
   err = tor_tls_get_error(tls, r, CATCH_ZERO, "reading", LOG_DEBUG, LD_NET);
@@ -1357,9 +1232,7 @@ tor_tls_handshake(tor_tls_t *tls)
   if (oldstate != newstate)
     log_debug(LD_HANDSHAKE, "After call, %p was in state %s",
               tls, SSL_state_string_long(tls->ssl));
-  /* We need to call this here and not earlier, since OpenSSL has a penchant
-   * for clearing its flags when you say accept or connect. */
-  tor_tls_unblock_renegotiation(tls);
+
   r = tor_tls_get_error(tls,r,0, "handshaking", LOG_INFO, LD_HANDSHAKE);
   if (ERR_peek_error() != 0) {
     tls_log_errors(tls, tls->isServer ? LOG_INFO : LOG_WARN, LD_HANDSHAKE,
@@ -1368,50 +1241,7 @@ tor_tls_handshake(tor_tls_t *tls)
   }
   if (r == TOR_TLS_DONE) {
     tls->state = TOR_TLS_ST_OPEN;
-    return tor_tls_finish_handshake(tls);
   }
-  return r;
-}
-
-/** Perform the final part of the initial TLS handshake on <b>tls</b>.  This
- * should be called for the first handshake only: it determines whether the v1
- * or the v2 handshake was used, and adjusts things for the renegotiation
- * handshake as appropriate.
- *
- * tor_tls_handshake() calls this on its own; you only need to call this if
- * bufferevent is doing the handshake for you.
- */
-int
-tor_tls_finish_handshake(tor_tls_t *tls)
-{
-  int r = TOR_TLS_DONE;
-  check_no_tls_errors();
-  if (tls->isServer) {
-    SSL_set_info_callback(tls->ssl, NULL);
-    SSL_set_verify(tls->ssl, SSL_VERIFY_PEER, always_accept_verify_cb);
-    SSL_clear_mode(tls->ssl, SSL_MODE_NO_AUTO_CHAIN);
-    {
-      /* This check is redundant, but back when we did it in the callback,
-       * we might have not been able to look up the tor_tls_t if the code
-       * was buggy.  Fixing that. */
-      if (!tls->wasV2Handshake) {
-        log_warn(LD_BUG, "For some reason, wasV2Handshake didn't"
-                 " get set. Fixing that.");
-      }
-      tls->wasV2Handshake = 1;
-      log_debug(LD_HANDSHAKE, "Completed V2 TLS handshake with client; waiting"
-                " for renegotiation.");
-    }
-  } else {
-    /* Client-side */
-    tls->wasV2Handshake = 1;
-    /* XXXX this can move, probably? -NM */
-    if (SSL_set_cipher_list(tls->ssl, SERVER_CIPHER_LIST) == 0) {
-      tls_log_errors(NULL, LOG_WARN, LD_HANDSHAKE, "re-setting ciphers");
-      r = TOR_TLS_ERROR_MISC;
-    }
-  }
-  tls_log_errors(NULL, LOG_WARN, LD_NET, "finishing the handshake");
   return r;
 }
 
@@ -1585,14 +1415,6 @@ check_no_tls_errors_(const char *fname, int line)
   log_warn(LD_CRYPTO, "Unhandled OpenSSL errors found at %s:%d: ",
       tor_fix_source_file(fname), line);
   tls_log_errors(NULL, LOG_WARN, LD_NET, NULL);
-}
-
-/** Return true iff the server TLS connection <b>tls</b> got the renegotiation
- * request it was waiting for. */
-int
-tor_tls_server_got_renegotiate(tor_tls_t *tls)
-{
-  return tls->got_renegotiate;
 }
 
 /** Using the RFC5705 key material exporting construction, and the

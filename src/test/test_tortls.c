@@ -327,23 +327,6 @@ test_tortls_get_forced_write_size(void *ignored)
  done:
   tor_free(tls);
 }
-
-static void
-test_tortls_server_got_renegotiate(void *ignored)
-{
-  (void)ignored;
-  int ret;
-  tor_tls_t *tls;
-
-  tls = tor_malloc_zero(sizeof(tor_tls_t));
-
-  tls->got_renegotiate = 1;
-  ret = tor_tls_server_got_renegotiate(tls);
-  tt_int_op(ret, OP_EQ, 1);
-
- done:
-  tor_free(tls);
-}
 #endif /* defined(ENABLE_OPENSSL) */
 
 static void
@@ -594,7 +577,6 @@ struct testcase_t tortls_tests[] = {
 #ifdef ENABLE_OPENSSL
   LOCAL_TEST_CASE(tor_tls_get_error, 0),
   LOCAL_TEST_CASE(get_forced_write_size, 0),
-  LOCAL_TEST_CASE(server_got_renegotiate, 0),
 #endif /* defined(ENABLE_OPENSSL) */
   LOCAL_TEST_CASE(evaluate_ecgroup_for_tls, 0),
   LOCAL_TEST_CASE(double_init, TT_FORK),

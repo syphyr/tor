@@ -464,18 +464,6 @@ tor_tls_new(tor_socket_t sock, int is_server)
   return tls;
 }
 
-void
-tor_tls_set_renegotiate_callback(tor_tls_t *tls,
-                                 void (*cb)(tor_tls_t *, void *arg),
-                                 void *arg)
-{
-  tor_assert(tls);
-  (void)cb;
-  (void)arg;
-
-  /* We don't support renegotiation-based TLS with NSS. */
-}
-
 /**
  * Tell the TLS library that the underlying socket for <b>tls</b> has been
  * closed, and the library should not attempt to free that socket itself.
@@ -636,20 +624,6 @@ tor_tls_finish_handshake(tor_tls_t *tls)
   return TOR_TLS_DONE;
 }
 
-void
-tor_tls_unblock_renegotiation(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  /* We don't support renegotiation with NSS. */
-}
-
-void
-tor_tls_block_renegotiation(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  /* We don't support renegotiation with NSS. */
-}
-
 int
 tor_tls_get_pending_bytes(tor_tls_t *tls)
 {
@@ -711,13 +685,6 @@ tls_get_write_overhead_ratio, (void))
   /* XXX We don't currently have a way to measure this in NSS; we could do that
    * XXX with a PRIO layer, but it'll take a little coding. */
   return 0.95;
-}
-
-int
-tor_tls_server_got_renegotiate(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  return 0; /* We don't support renegotiation with NSS */
 }
 
 MOCK_IMPL(int,

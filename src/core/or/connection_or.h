@@ -24,7 +24,6 @@ void connection_or_clear_identity(or_connection_t *conn);
 void connection_or_clear_identity_map(void);
 void clear_broken_connection_map(int disable);
 
-void connection_or_block_renegotiation(or_connection_t *conn);
 int connection_or_reached_eof(or_connection_t *conn);
 int connection_or_process_inbuf(or_connection_t *conn);
 ssize_t connection_or_num_cells_writeable(or_connection_t *conn);
