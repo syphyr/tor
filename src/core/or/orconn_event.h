@@ -36,14 +36,14 @@
 #define OR_CONN_STATE_TLS_HANDSHAKING 3
 /** State for a connection at an OR: We're waiting for the client to
  * send a versions cell (to indicate a v3+ handshake) */
-#define OR_CONN_STATE_SERVER_VERSIONS_WAIT 5
+#define OR_CONN_STATE_SERVER_VERSIONS_WAIT 4
 /** State for an OR connection: We're done with our SSL handshake, but we
  * haven't yet negotiated link protocol versions, done a V3 handshake, and
  * sent a netinfo cell. */
-#define OR_CONN_STATE_OR_HANDSHAKING_V3 7
+#define OR_CONN_STATE_OR_HANDSHAKING_V3 5
 /** State for an OR connection: Ready to send/receive cells. */
-#define OR_CONN_STATE_OPEN 8
-#define OR_CONN_STATE_MAX_ 8
+#define OR_CONN_STATE_OPEN 6
+#define OR_CONN_STATE_MAX_ 6
 /** @} */
 
 /** Used to indicate the type of an OR connection event passed to the
