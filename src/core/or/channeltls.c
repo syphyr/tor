@@ -1246,7 +1246,7 @@ channel_tls_handle_var_cell(var_cell_t *var_cell, or_connection_t *conn)
       /* But that should be happening any longer've disabled bufferevents. */
       tor_assert_nonfatal_unreached_once();
       FALLTHROUGH_UNLESS_ALL_BUGS_ARE_FATAL;
-    case OR_CONN_STATE_TLS_SERVER_RENEGOTIATING:
+    case OR_CONN_STATE_SERVER_VERSIONS_WAIT:
       if (!(command_allowed_before_handshake(var_cell->command))) {
         log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
                "Received a cell with command %d in unexpected "
@@ -1416,7 +1416,7 @@ enter_v3_handshake_with_cell(var_cell_t *cell, channel_tls_t *chan)
 
   tor_assert(TO_CONN(chan->conn)->state == OR_CONN_STATE_TLS_HANDSHAKING ||
              TO_CONN(chan->conn)->state ==
-               OR_CONN_STATE_TLS_SERVER_RENEGOTIATING);
+                     OR_CONN_STATE_SERVER_VERSIONS_WAIT);
 
   if (started_here) {
     log_fn(LOG_PROTOCOL_WARN, LD_OR,
@@ -1476,7 +1476,6 @@ channel_tls_process_versions_cell(var_cell_t *cell, channel_tls_t *chan)
     case OR_CONN_STATE_OR_HANDSHAKING_V3:
       break;
     case OR_CONN_STATE_TLS_HANDSHAKING:
-    case OR_CONN_STATE_TLS_SERVER_RENEGOTIATING:
     default:
       log_fn(LOG_PROTOCOL_WARN, LD_OR,
              "VERSIONS cell while in unexpected state");

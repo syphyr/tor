@@ -1709,11 +1709,14 @@ connection_tls_continue_handshake(or_connection_t *conn)
           tor_assert(conn->base_.state == OR_CONN_STATE_TLS_HANDSHAKING);
           return connection_or_launch_v3_or_handshake(conn);
         } else {
-          /* v3 handshake, but we are not a client. */
+          /* v3+ handshake, but we are not a client. */
           log_debug(LD_OR, "Done with initial SSL handshake (server-side). "
                            "Expecting VERSIONS cell");
+          /* Note: We could instead just send a VERSIONS cell now,
+           * since the V2 handshake is no longer a thing.
+           * But that would require re-plumbing this state machine. */
           connection_or_change_state(conn,
-                        OR_CONN_STATE_TLS_SERVER_RENEGOTIATING);
+                                     OR_CONN_STATE_SERVER_VERSIONS_WAIT);
           connection_stop_writing(TO_CONN(conn));
           connection_start_reading(TO_CONN(conn));
           return 0;

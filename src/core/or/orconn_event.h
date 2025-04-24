@@ -35,10 +35,8 @@
  * yet. */
 #define OR_CONN_STATE_TLS_HANDSHAKING 3
 /** State for a connection at an OR: We're waiting for the client to
- * renegotiate (to indicate a v2 handshake) or send a versions cell (to
- * indicate a v3 handshake) */
-// XXXX Rename.
-#define OR_CONN_STATE_TLS_SERVER_RENEGOTIATING 5
+ * send a versions cell (to indicate a v3+ handshake) */
+#define OR_CONN_STATE_SERVER_VERSIONS_WAIT 5
 /** State for an OR connection: We're done with our SSL handshake, but we
  * haven't yet negotiated link protocol versions, done a V3 handshake, and
  * sent a netinfo cell. */
