@@ -607,21 +607,12 @@ tor_tls_handshake(tor_tls_t *tls)
   if (s == SECSuccess) {
     tls->state = TOR_TLS_ST_OPEN;
     log_debug(LD_NET, "SSL handshake is supposedly complete.");
-    return tor_tls_finish_handshake(tls);
+    return TOR_TLS_DONE;
   }
   if (PORT_GetError() == PR_WOULD_BLOCK_ERROR)
     return TOR_TLS_WANTREAD; /* XXXX What about wantwrite? */
 
   return TOR_TLS_ERROR_MISC; // XXXX
-}
-
-int
-tor_tls_finish_handshake(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  // We don't need to do any of the weird handshake nonsense stuff on NSS,
-  // since we only support recent handshakes.
-  return TOR_TLS_DONE;
 }
 
 int
