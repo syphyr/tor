@@ -597,6 +597,7 @@ connection_or_process_inbuf(or_connection_t *conn)
 
       return ret;
     case OR_CONN_STATE_OPEN:
+    case OR_CONN_STATE_SERVER_VERSIONS_WAIT:
     case OR_CONN_STATE_OR_HANDSHAKING_V3:
       return connection_or_process_cells_from_inbuf(conn);
     default:

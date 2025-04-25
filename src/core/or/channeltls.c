@@ -1476,6 +1476,7 @@ channel_tls_process_versions_cell(var_cell_t *cell, channel_tls_t *chan)
     case OR_CONN_STATE_OR_HANDSHAKING_V3:
       break;
     case OR_CONN_STATE_TLS_HANDSHAKING:
+    case OR_CONN_STATE_SERVER_VERSIONS_WAIT:
     default:
       log_fn(LOG_PROTOCOL_WARN, LD_OR,
              "VERSIONS cell while in unexpected state");
