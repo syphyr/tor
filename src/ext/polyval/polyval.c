@@ -194,55 +194,59 @@ pv_xor_y(polyval_t *pv, u128 val)
 }
 #endif
 
-void
-polyval_key_init(polyval_key_t *pvk, const uint8_t *key)
-{
-  pvk->h = u128_from_bytes(key);
-}
-void
-polyval_init(polyval_t *pv, const uint8_t *key)
-{
-  polyval_key_init(&pv->key, key);
-  memset(&pv->y, 0, sizeof(u128));
-}
-void
-polyval_init_from_key(polyval_t *pv, const polyval_key_t *key)
-{
-  memcpy(&pv->key, key, sizeof(polyval_key_t));
-  memset(&pv->y, 0, sizeof(u128));
-}
-void
-polyval_add_block(polyval_t *pv, const uint8_t *block)
-{
-  u128 b = u128_from_bytes(block);
-  pv_xor_y(pv, b);
-  pv_mul_y_h(pv);
-}
-void
-polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n)
-{
-  while (n > 16) {
-    polyval_add_block(pv, data);
-    data += 16;
-    n -= 16;
+#define PV_DECLARE()                                                    \
+  void                                                                  \
+  polyval_key_init(polyval_key_t *pvk, const uint8_t *key)              \
+  {                                                                     \
+    pvk->h = u128_from_bytes(key);                                      \
+  }                                                                     \
+  void                                                                  \
+  polyval_init(polyval_t *pv, const uint8_t *key)                       \
+  {                                                                     \
+    polyval_key_init(&pv->key, key);                                    \
+    memset(&pv->y, 0, sizeof(u128));                                    \
+  }                                                                     \
+  void                                                                  \
+  polyval_init_from_key(polyval_t *pv, const polyval_key_t *key)        \
+  {                                                                     \
+    memcpy(&pv->key, key, sizeof(polyval_key_t));                       \
+    memset(&pv->y, 0, sizeof(u128));                                    \
+  }                                                                     \
+  void                                                                  \
+  polyval_add_block(polyval_t *pv, const uint8_t *block)                \
+  {                                                                     \
+    u128 b = u128_from_bytes(block);                                    \
+    pv_xor_y(pv, b);                                                    \
+    pv_mul_y_h(pv);                                                     \
+  }                                                                     \
+  void                                                                  \
+  polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n)        \
+  {                                                                     \
+    while (n > 16) {                                                    \
+      polyval_add_block(pv, data);                                      \
+      data += 16;                                                       \
+      n -= 16;                                                          \
+    }                                                                   \
+    if (n) {                                                            \
+      uint8_t block[16];                                                \
+      memset(&block, 0, sizeof(block));                                 \
+      memcpy(block, data, n);                                           \
+      polyval_add_block(pv, block);                                     \
+    }                                                                   \
+  }                                                                     \
+  void                                                                  \
+  polyval_get_tag(const polyval_t *pv, uint8_t *tag_out)                \
+  {                                                                     \
+    u128_to_bytes(pv->y, tag_out);                                      \
+  }                                                                     \
+  void                                                                  \
+  polyval_reset(polyval_t *pv)                                          \
+  {                                                                     \
+    memset(&pv->y, 0, sizeof(u128));                                    \
   }
-  if (n) {
-    uint8_t block[16];
-    memset(&block, 0, sizeof(block));
-    memcpy(block, data, n);
-    polyval_add_block(pv, block);
-  }
-}
-void
-polyval_get_tag(const polyval_t *pv, uint8_t *tag_out)
-{
-  u128_to_bytes(pv->y, tag_out);
-}
-void
-polyval_reset(polyval_t *pv)
-{
-  memset(&pv->y, 0, sizeof(u128));
-}
+
+PV_DECLARE()
+
 
 #if 0
 #include <stdio.h>
