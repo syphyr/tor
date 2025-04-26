@@ -57,11 +57,6 @@ typedef struct pv_u128_ {
 /** A key for a polyval hash, plus any precomputed key material. */
 typedef struct polyval_key_t {
   pv_u128_ h;
-#ifdef PV_USE_CTMUL64
-  /** The elements of the key in bit-reversed form.
-   * (Used as an optimization.) */
-  pv_u128_ hr;
-#endif
 } polyval_key_t;
 
 /**

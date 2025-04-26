@@ -63,10 +63,6 @@ static inline void u128_to_bytes(u128, uint8_t *bytes_out);
  * (Within the polyval struct, perform "y ^= v").
  */
 static inline void pv_xor_y(polyval_t *, u128 v);
-/**
- * Initialize any derived fields in pv.
- */
-static inline void pv_init_extra(polyval_key_t *pv);
 
 /* ========
  * The function which we expect our backend to implement.
@@ -139,11 +135,6 @@ pv_xor_y(polyval_t *pv, u128 v)
 {
   pv->y = _mm_xor_si128(pv->y, v);
 }
-static inline void
-pv_init_extra(polyval_key_t *pv)
-{
-  (void)pv;
-}
 #elif defined(PV_USE_CTMUL64)
 
 #include "ext/polyval/ctmul64.c"
@@ -171,12 +162,6 @@ pv_xor_y(polyval_t *pv, u128 val)
 {
   pv->y.lo ^= val.lo;
   pv->y.hi ^= val.hi;
-}
-static inline void
-pv_init_extra(polyval_key_t *pv)
-{
-  pv->hr.lo = rev64(pv->h.lo);
-  pv->hr.hi = rev64(pv->h.hi);
 }
 #elif defined(PV_USE_CTMUL)
 #include "ext/polyval/ctmul.c"
@@ -207,18 +192,12 @@ pv_xor_y(polyval_t *pv, u128 val)
     pv->y.v[i] ^= val.v[i];
   }
 }
-static inline void
-pv_init_extra(polyval_key_t *pv)
-{
-  (void)pv;
-}
 #endif
 
 void
 polyval_key_init(polyval_key_t *pvk, const uint8_t *key)
 {
   pvk->h = u128_from_bytes(key);
-  pv_init_extra(pvk);
 }
 void
 polyval_init(polyval_t *pv, const uint8_t *key)
