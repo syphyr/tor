@@ -39,6 +39,10 @@
 
 #include <string.h>
 
+#ifdef PV_USE_PCLMUL_DETECT
+#include <cpuid.h>
+#endif
+
 typedef pv_u128_ u128;
 
 /* ========
@@ -73,7 +77,7 @@ static inline void pv_xor_y(polyval_t *, u128 v);
  *
  * (This is a carryless multiply in the Polyval galois field)
  */
-static void pv_mul_y_h(polyval_t *);
+static void pv_mul_y_h(polyval_t *);h
 #endif
 
 /* =====
@@ -118,54 +122,73 @@ bswap32(uint64_t v)
 #define convert_byte_order32(x) (x)
 #endif
 
-#ifdef PV_USE_PCLMUL
+#if defined PV_USE_PCLMUL_UNCONDITIONAL
+#define PCLMUL_MEMBER(v) (v)
+#define PV_USE_PCLMUL
 
+#elif defined PV_USE_PCLMUL_DETECT
+#define PCLMUL_MEMBER(v) (v).u128x1
+#define CTMUL64_MEMBER(v) (v).u64x2
+#define PV_USE_PCLMUL
+#define PV_USE_CTMUL64
+
+#elif defined PV_USE_CTMUL64
+#define CTMUL64_MEMBER(v) (v)
+#endif
+
+#ifdef PV_USE_PCLMUL
 #include "ext/polyval/pclmul.c"
 
 static inline u128
 u128_from_bytes_pclmul(const uint8_t *bytes)
 {
-  return _mm_loadu_si128((const u128*)bytes);
+  u128 r;
+  PCLMUL_MEMBER(r) = _mm_loadu_si128((const __m128i*)bytes);
+  return r;
 }
 static inline void
 u128_to_bytes_pclmul(u128 val, uint8_t *bytes_out)
 {
-  _mm_storeu_si128((u128*)bytes_out, val);
+  _mm_storeu_si128((__m128i*)bytes_out, PCLMUL_MEMBER(val));
 }
 static inline void
 pv_xor_y_pclmul(polyval_t *pv, u128 v)
 {
-  pv->y = _mm_xor_si128(pv->y, v);
+  PCLMUL_MEMBER(pv->y) = _mm_xor_si128(PCLMUL_MEMBER(pv->y),
+                                       PCLMUL_MEMBER(v));
 }
-#elif defined(PV_USE_CTMUL64)
+#endif
 
+#if defined(PV_USE_CTMUL64)
 #include "ext/polyval/ctmul64.c"
 
 static inline u128
 u128_from_bytes_ctmul64(const uint8_t *bytes)
 {
   u128 r;
-  memcpy(&r.lo, bytes, 8);
-  memcpy(&r.hi, bytes + 8, 8);
-  r.lo = convert_byte_order64(r.lo);
-  r.hi = convert_byte_order64(r.hi);
+  memcpy(&CTMUL64_MEMBER(r).lo, bytes, 8);
+  memcpy(&CTMUL64_MEMBER(r).hi, bytes + 8, 8);
+  CTMUL64_MEMBER(r).lo = convert_byte_order64(CTMUL64_MEMBER(r).lo);
+  CTMUL64_MEMBER(r).hi = convert_byte_order64(CTMUL64_MEMBER(r).hi);
   return r;
 }
 static inline void
 u128_to_bytes_ctmul64(u128 val, uint8_t *bytes_out)
 {
-  uint64_t lo = convert_byte_order64(val.lo);
-  uint64_t hi = convert_byte_order64(val.hi);
+  uint64_t lo = convert_byte_order64(CTMUL64_MEMBER(val).lo);
+  uint64_t hi = convert_byte_order64(CTMUL64_MEMBER(val).hi);
   memcpy(bytes_out, &lo, 8);
   memcpy(bytes_out + 8, &hi, 8);
 }
 static inline void
 pv_xor_y_ctmul64(polyval_t *pv, u128 val)
 {
-  pv->y.lo ^= val.lo;
-  pv->y.hi ^= val.hi;
+  CTMUL64_MEMBER(pv->y).lo ^= CTMUL64_MEMBER(val).lo;
+  CTMUL64_MEMBER(pv->y).hi ^= CTMUL64_MEMBER(val).hi;
 }
-#elif defined(PV_USE_CTMUL)
+#endif
+
+#if defined(PV_USE_CTMUL)
 #include "ext/polyval/ctmul.c"
 
 static inline u128
@@ -252,7 +275,85 @@ pv_xor_y_ctmul(polyval_t *pv, u128 val)
     memset(&pv->y, 0, sizeof(u128));                                    \
   }
 
-#ifdef PV_USE_PCLMUL
+#ifdef PV_USE_PCLMUL_DETECT
+/* We use a boolean to distinguish whether to use the PCLMUL instructions,
+ * but instead we could use function pointers.  It's probably worth
+ * benchmarking, though it's unlikely to make a measurable difference.
+ */
+static bool use_pclmul = false;
+
+/* Declare _both_ variations of our code, statically,
+ * with different prefixes. */
+PV_DECLARE(pclmul_, static,
+           u128_from_bytes_pclmul,
+           u128_to_bytes_pclmul,
+           pv_xor_y_pclmul,
+           pv_mul_y_h_pclmul)
+
+PV_DECLARE(ctmul64_, static,
+           u128_from_bytes_ctmul64,
+           u128_to_bytes_ctmul64,
+           pv_xor_y_ctmul64,
+           pv_mul_y_h_ctmul64)
+
+void
+polyval_key_init(polyval_key_t *pv, const uint8_t *key)
+{
+  if (use_pclmul)
+    pclmul_polyval_key_init(pv, key);
+  else
+    ctmul64_polyval_key_init(pv, key);
+}
+void
+polyval_init(polyval_t *pv, const uint8_t *key)
+{
+  if (use_pclmul)
+    pclmul_polyval_init(pv, key);
+  else
+    ctmul64_polyval_init(pv, key);
+}
+void
+polyval_init_from_key(polyval_t *pv, const polyval_key_t *key)
+{
+  if (use_pclmul)
+    pclmul_polyval_init_from_key(pv, key);
+  else
+    ctmul64_polyval_init_from_key(pv, key);
+}
+void
+polyval_add_block(polyval_t *pv, const uint8_t *block)
+{
+  if (use_pclmul)
+    pclmul_polyval_add_block(pv, block);
+  else
+    ctmul64_polyval_add_block(pv, block);
+}
+void
+polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n)
+{
+  if (use_pclmul)
+    pclmul_polyval_add_zpad(pv, data, n);
+  else
+    ctmul64_polyval_add_zpad(pv, data, n);
+}
+void
+polyval_get_tag(const polyval_t *pv, uint8_t *tag_out)
+{
+  if (use_pclmul)
+    pclmul_polyval_get_tag(pv, tag_out);
+  else
+    ctmul64_polyval_get_tag(pv, tag_out);
+}
+void
+polyval_reset(polyval_t *pv)
+{
+  if (use_pclmul)
+    pclmul_polyval_reset(pv);
+  else
+    ctmul64_polyval_reset(pv);
+}
+
+#elif defined(PV_USE_PCLMUL)
 PV_DECLARE(, ,
            u128_from_bytes_pclmul,
            u128_to_bytes_pclmul,
@@ -271,7 +372,25 @@ PV_DECLARE(, , u128_from_bytes_ctmul,
            u128_to_bytes_ctmul,
            pv_xor_y_ctmul,
            pv_mul_y_h_ctmul)
+#endif
 
+#ifdef PV_USE_PCLMUL_DETECT
+void
+polyval_detect_implementation(void)
+{
+  unsigned int eax, ebc, ecx, edx;
+  use_pclmul = false;
+  if (__get_cpuid(1, &eax, &ebc, &ecx, &edx)) {
+    if (0 != (ecx & (1<<1))) {
+      use_pclmul = true;
+    }
+  }
+}
+#else
+void
+polyval_detect_implementation(void)
+{
+}
 #endif
 
 #if 0

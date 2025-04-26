@@ -16,12 +16,22 @@
 #if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) \
   || defined(_M_X64) || defined(_M_IX86) || defined(__i486)       \
   || defined(__i386__)
-/* Use intel intrinsics for carryless multiply.
- *
- * TODO: In theory we should detect whether we have the relevant instructions,
- * but they are all at least 15 years old.
+#define PV_INTEL_ARCH
+#endif
+
+#if defined(PV_INTEL_ARCH) && defined(__PCLMUL__)
+/* We're building for an architecture that always has the intel
+ * intrinsics for carryless multiply.
+ * No need for runtime detection.
  */
-#define PV_USE_PCLMUL
+#define PV_USE_PCLMUL_UNCONDITIONAL
+
+#elif defined(PV_INTEL_ARCH) && SIZEOF_VOID_P >= 8
+/* We _might_ have PCLMUL, or we might not.
+ * We need to detect it at runtime.
+ */
+#define PV_USE_PCLMUL_DETECT
+
 #elif SIZEOF_VOID_P >= 8
 /* It's a 64-bit architecture; use the generic 64-bit constant-time
  * implementation.
@@ -40,9 +50,18 @@
  * Declare a 128 bit integer type.
  # The exact representation will depend on which implementation we've chosen.
  */
-#ifdef PV_USE_PCLMUL
+#if defined(PV_USE_PCLMUL_UNCONDITIONAL)
 #include <emmintrin.h>
 typedef __m128i pv_u128_;
+#elif defined(PV_USE_PCLMUL_DETECT)
+#include <emmintrin.h>
+typedef union pv_u128_ {
+  __m128i u128x1;
+  struct {
+    uint64_t lo;
+    uint64_t hi;
+  } u64x2;
+} pv_u128_;
 #elif defined(PV_USE_CTMUL64)
 typedef struct pv_u128_ {
   uint64_t lo;
@@ -116,5 +135,8 @@ void polyval_get_tag(const polyval_t *, uint8_t *tag_out);
  * retaining its key.
  */
 void polyval_reset(polyval_t *);
+
+/** If a faster-than-default polyval implementation is available, use it. */
+void polyval_detect_implementation(void);
 
 #endif

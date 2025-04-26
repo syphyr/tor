@@ -78,10 +78,10 @@ pv_mul_y_h_ctmul64(polyval_t *pv)
 	uint64_t y0, y1;
 	uint64_t h0, h1, h2, h0r, h1r, h2r;
 
-	y0 = pv->y.lo;
-	y1 = pv->y.hi;
-	h0 = pv->key.h.lo;
-	h1 = pv->key.h.hi;
+	y0 = CTMUL64_MEMBER(pv->y).lo;
+	y1 = CTMUL64_MEMBER(pv->y).hi;
+	h0 = CTMUL64_MEMBER(pv->key.h).lo;
+	h1 = CTMUL64_MEMBER(pv->key.h).hi;
 	h0r = rev64(h0);
 	h1r = rev64(h1);
 
@@ -127,7 +127,7 @@ pv_mul_y_h_ctmul64(polyval_t *pv)
 		v3 ^= v1 ^ (v1 >> 1) ^ (v1 >> 2) ^ (v1 >> 7);
 		v2 ^= (v1 << 63) ^ (v1 << 62) ^ (v1 << 57);
 
-		pv->y.lo = v2;
-		pv->y.hi = v3;
+		CTMUL64_MEMBER(pv->y).lo = v2;
+		CTMUL64_MEMBER(pv->y).hi = v3;
 	}
 }

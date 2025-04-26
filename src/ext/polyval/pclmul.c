@@ -156,14 +156,14 @@ void pv_mul_y_h_pclmul(polyval_t *pv)
 {
 	__m128i yw, h1w, h1x;
 
-        h1w = pv->key.h;
+        h1w = PCLMUL_MEMBER(pv->key.h);
         BK(h1w, h1x);
 
         {
 		__m128i aw, ax;
 		__m128i t0, t1, t2, t3;
 
-                aw = pv->y;
+                aw = PCLMUL_MEMBER(pv->y);
 		BK(aw, ax);
 
 		t1 = pclmulqdq11(aw, h1w);
@@ -180,5 +180,5 @@ void pv_mul_y_h_pclmul(polyval_t *pv)
 		yw = _mm_unpacklo_epi64(t1, t0);
 	}
 
-	pv->y = yw;
+	PCLMUL_MEMBER(pv->y) = yw;
 }
