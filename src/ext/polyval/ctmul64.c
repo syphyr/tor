@@ -73,7 +73,7 @@ rev64(uint64_t x)
 
 
 static void
-pv_mul_y_h(polyval_t *pv)
+pv_mul_y_h_ctmul64(polyval_t *pv)
 {
 	uint64_t y0, y1;
 	uint64_t h0, h1, h2, h0r, h1r, h2r;

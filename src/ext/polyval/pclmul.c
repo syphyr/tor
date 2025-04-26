@@ -152,7 +152,7 @@ pclmulqdq11(__m128i x, __m128i y)
 /* see bearssl_hash.h */
 BR_TARGET("ssse3,pclmul")
 static
-void pv_mul_y_h(polyval_t *pv)
+void pv_mul_y_h_pclmul(polyval_t *pv)
 {
 	__m128i yw, h1w, h1x;
 

@@ -47,6 +47,7 @@ typedef pv_u128_ u128;
  * They have different definitions depending on our representation
  * of 128-bit integers.
  */
+#if 0
 /**
  * Read a u128-bit little-endian integer from 'bytes',
  * which may not be aligned.
@@ -73,6 +74,7 @@ static inline void pv_xor_y(polyval_t *, u128 v);
  * (This is a carryless multiply in the Polyval galois field)
  */
 static void pv_mul_y_h(polyval_t *);
+#endif
 
 /* =====
  * Endianness conversion for big-endian platforms
@@ -121,17 +123,17 @@ bswap32(uint64_t v)
 #include "ext/polyval/pclmul.c"
 
 static inline u128
-u128_from_bytes(const uint8_t *bytes)
+u128_from_bytes_pclmul(const uint8_t *bytes)
 {
   return _mm_loadu_si128((const u128*)bytes);
 }
 static inline void
-u128_to_bytes(u128 val, uint8_t *bytes_out)
+u128_to_bytes_pclmul(u128 val, uint8_t *bytes_out)
 {
   _mm_storeu_si128((u128*)bytes_out, val);
 }
 static inline void
-pv_xor_y(polyval_t *pv, u128 v)
+pv_xor_y_pclmul(polyval_t *pv, u128 v)
 {
   pv->y = _mm_xor_si128(pv->y, v);
 }
@@ -140,7 +142,7 @@ pv_xor_y(polyval_t *pv, u128 v)
 #include "ext/polyval/ctmul64.c"
 
 static inline u128
-u128_from_bytes(const uint8_t *bytes)
+u128_from_bytes_ctmul64(const uint8_t *bytes)
 {
   u128 r;
   memcpy(&r.lo, bytes, 8);
@@ -150,7 +152,7 @@ u128_from_bytes(const uint8_t *bytes)
   return r;
 }
 static inline void
-u128_to_bytes(u128 val, uint8_t *bytes_out)
+u128_to_bytes_ctmul64(u128 val, uint8_t *bytes_out)
 {
   uint64_t lo = convert_byte_order64(val.lo);
   uint64_t hi = convert_byte_order64(val.hi);
@@ -158,7 +160,7 @@ u128_to_bytes(u128 val, uint8_t *bytes_out)
   memcpy(bytes_out + 8, &hi, 8);
 }
 static inline void
-pv_xor_y(polyval_t *pv, u128 val)
+pv_xor_y_ctmul64(polyval_t *pv, u128 val)
 {
   pv->y.lo ^= val.lo;
   pv->y.hi ^= val.hi;
@@ -167,7 +169,7 @@ pv_xor_y(polyval_t *pv, u128 val)
 #include "ext/polyval/ctmul.c"
 
 static inline u128
-u128_from_bytes(const uint8_t *bytes)
+u128_from_bytes_ctmul(const uint8_t *bytes)
 {
   u128 r;
   memcpy(&r.v, bytes, 16);
@@ -177,7 +179,7 @@ u128_from_bytes(const uint8_t *bytes)
   return r;
 }
 static inline void
-u128_to_bytes(u128 val, uint8_t *bytes_out)
+u128_to_bytes_ctmul(u128 val, uint8_t *bytes_out)
 {
   uint32_t v[4];
   for (int i = 0; i < 4; ++i) {
@@ -186,7 +188,7 @@ u128_to_bytes(u128 val, uint8_t *bytes_out)
   memcpy(bytes_out, v, 16);
 }
 static inline void
-pv_xor_y(polyval_t *pv, u128 val)
+pv_xor_y_ctmul(polyval_t *pv, u128 val)
 {
   for (int i = 0; i < 4; ++i) {
     pv->y.v[i] ^= val.v[i];
@@ -194,33 +196,38 @@ pv_xor_y(polyval_t *pv, u128 val)
 }
 #endif
 
-#define PV_DECLARE()                                                    \
-  void                                                                  \
-  polyval_key_init(polyval_key_t *pvk, const uint8_t *key)              \
+#define PV_DECLARE(prefix,                                              \
+                   st,                                                  \
+                   u128_from_bytes,                                     \
+                   u128_to_bytes,                                       \
+                   pv_xor_y,                                            \
+                   pv_mul_y_h)                                          \
+  st void                                                               \
+  prefix ## polyval_key_init(polyval_key_t *pvk, const uint8_t *key)    \
   {                                                                     \
     pvk->h = u128_from_bytes(key);                                      \
   }                                                                     \
-  void                                                                  \
-  polyval_init(polyval_t *pv, const uint8_t *key)                       \
+  st void                                                               \
+  prefix ## polyval_init(polyval_t *pv, const uint8_t *key)             \
   {                                                                     \
     polyval_key_init(&pv->key, key);                                    \
     memset(&pv->y, 0, sizeof(u128));                                    \
   }                                                                     \
-  void                                                                  \
-  polyval_init_from_key(polyval_t *pv, const polyval_key_t *key)        \
+  st void                                                               \
+  prefix ## polyval_init_from_key(polyval_t *pv, const polyval_key_t *key) \
   {                                                                     \
     memcpy(&pv->key, key, sizeof(polyval_key_t));                       \
     memset(&pv->y, 0, sizeof(u128));                                    \
   }                                                                     \
-  void                                                                  \
-  polyval_add_block(polyval_t *pv, const uint8_t *block)                \
+  st void                                                               \
+  prefix ## polyval_add_block(polyval_t *pv, const uint8_t *block)      \
   {                                                                     \
     u128 b = u128_from_bytes(block);                                    \
     pv_xor_y(pv, b);                                                    \
     pv_mul_y_h(pv);                                                     \
   }                                                                     \
-  void                                                                  \
-  polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n)        \
+  st void                                                               \
+  prefix ## polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n) \
   {                                                                     \
     while (n > 16) {                                                    \
       polyval_add_block(pv, data);                                      \
@@ -234,19 +241,38 @@ pv_xor_y(polyval_t *pv, u128 val)
       polyval_add_block(pv, block);                                     \
     }                                                                   \
   }                                                                     \
-  void                                                                  \
-  polyval_get_tag(const polyval_t *pv, uint8_t *tag_out)                \
+  st void                                                               \
+  prefix ## polyval_get_tag(const polyval_t *pv, uint8_t *tag_out)      \
   {                                                                     \
     u128_to_bytes(pv->y, tag_out);                                      \
   }                                                                     \
-  void                                                                  \
-  polyval_reset(polyval_t *pv)                                          \
+  st void                                                               \
+  prefix ## polyval_reset(polyval_t *pv)                                \
   {                                                                     \
     memset(&pv->y, 0, sizeof(u128));                                    \
   }
 
-PV_DECLARE()
+#ifdef PV_USE_PCLMUL
+PV_DECLARE(, ,
+           u128_from_bytes_pclmul,
+           u128_to_bytes_pclmul,
+           pv_xor_y_pclmul,
+           pv_mul_y_h_pclmul)
 
+#elif defined(PV_USE_CTMUL64)
+PV_DECLARE(, ,
+           u128_from_bytes_ctmul64,
+           u128_to_bytes_ctmul64,
+           pv_xor_y_ctmul64,
+           pv_mul_y_h_ctmul64)
+
+#elif defined(PV_USE_CTMUL)
+PV_DECLARE(, , u128_from_bytes_ctmul,
+           u128_to_bytes_ctmul,
+           pv_xor_y_ctmul,
+           pv_mul_y_h_ctmul)
+
+#endif
 
 #if 0
 #include <stdio.h>
