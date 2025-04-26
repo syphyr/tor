@@ -1000,7 +1000,7 @@ AC_ARG_WITH(ssl-dir,
       fi
   ])
 
-AC_MSG_NOTICE([Now, we'll look for OpenSSL >= 1.0.1])
+AC_MSG_NOTICE([Now, we'll look for OpenSSL.])
 TOR_SEARCH_LIBRARY(openssl, $tryssldir, [-lssl -lcrypto $TOR_LIB_GDI $TOR_LIB_WS32 $TOR_LIB_CRYPT32],
     [#include <openssl/ssl.h>
      char *getenv(const char *);],
@@ -1040,38 +1040,48 @@ dnl and later.  We want to migrate away from them, but that will be a lot of
 dnl work. (See ticket tor#40166.)  For now, we disable the deprecation
 dnl warnings.
 
-AC_MSG_CHECKING([for OpenSSL >= 3.0.0])
+AC_MSG_CHECKING([for OpenSSL implementation])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <openssl/opensslv.h>
-#if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER >= 0x30000000L
-#error "you_have_version_3"
+#if defined(LIBRESSL_VERSION_NUMBER)
+#error "this is libressl, no worries"
 #endif
    ]], [[]])],
-   [ AC_MSG_RESULT([no]) ],
-   [ AC_MSG_RESULT([yes]);
-     AC_DEFINE(OPENSSL_SUPPRESS_DEPRECATED, 1, [disable openssl deprecated-function warnings]) ])
+   [ openssl_impl=openssl
+     AC_MSG_RESULT([OpenSSL])
+     AC_DEFINE(OPENSSL_SUPPRESS_DEPRECATED, 1, [disable openssl deprecated-function warnings])
+   ],
+   [ openssl_impl=libressl
+     AC_MSG_RESULT([LibreSSL])
+   ])
 
-AC_MSG_CHECKING([for OpenSSL < 1.0.1])
+if test "x$openssl_impl" = "xopenssl"; then
+AC_MSG_CHECKING([for OpenSSL < 1.1.1])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <openssl/opensslv.h>
-#if OPENSSL_VERSION_NUMBER < 0x1000100fL
-#error "too old"
+#if !defined(LIBRESSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x10101000L
+#error "openssl too old"
 #endif
    ]], [[]])],
    [ AC_MSG_RESULT([no]) ],
-   [ AC_MSG_ERROR([OpenSSL is too old. We require 1.0.1 or later. You can specify a path to a newer one with --with-openssl-dir.]) ])
+   [ AC_MSG_RESULT([yes])
+     AC_MSG_ERROR([Your version of OpenSSL is too old. We require 1.1.1 or later, and you should use 3.5 if possible.])
+   ])
+fi
 
-AC_MSG_CHECKING([whether LibreSSL TLS 1.3 APIs are busted])
+if test "x$openssl_impl" = "xlibressl"; then
+AC_MSG_CHECKING([for LibreSSL < 3.7.0])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <openssl/opensslv.h>
-#if defined(LIBRESSL_VERSION_NUMBER) && \
-     LIBRESSL_VERSION_NUMBER >= 0x3020100fL && \
-     LIBRESSL_VERSION_NUMBER < 0x3040100fL
-#error "oh no"
+#if defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x3070000fL
+#error "libressl too old"
 #endif
    ]], [[]])],
    [ AC_MSG_RESULT([no]) ],
-   [ AC_MSG_ERROR([This version of LibreSSL won't work with Tor. Please upgrade to LibreSSL 3.4.1 or later. (Or downgrade to 3.2.0 if you really must.)]) ])
+   [ AC_MSG_RESULT([yes])
+     AC_MSG_ERROR([Your version of LibreSSL is too old. We require 3.7.0 or later.])
+   ])
+fi
 
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <openssl/opensslv.h>
