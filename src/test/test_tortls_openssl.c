@@ -46,15 +46,19 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 #include "test/log_test_helpers.h"
 #include "test/test_tortls.h"
 
-#ifndef HAVE_SSL_STATE
-#define OPENSSL_OPAQUE
-#endif
-
-#if defined(OPENSSL_OPAQUE) && !defined(LIBRESSL_VERSION_NUMBER)
 #define SSL_STATE_STR "before SSL initialization"
-#else
-#define SSL_STATE_STR "before/accept initialization"
-#endif
+
+/* Every version and fork of OpenSSL we support now qualifies as "opaque",
+ * in that it hides the members of important structures.
+ *
+ * That's a good thing, but it means we can't run a number of older tests
+ * that require the ability to poke at OpenSSL's internals.
+ *
+ * We're retaining these tests here, rather than removing them,
+ * in case anybody wants to port them to modern OpenSSL.
+ * (Some of them are probably not worth saving, though.)
+ */
+#define OPENSSL_OPAQUE
 
 #ifndef OPENSSL_OPAQUE
 static SSL_METHOD *

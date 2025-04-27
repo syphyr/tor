@@ -1136,15 +1136,6 @@ AC_CHECK_FUNCS([ \
 		TLS_method \
 	       ])
 
-dnl Check if OpenSSL structures are opaque
-AC_CHECK_MEMBERS([SSL.state], , ,
-[#include <openssl/ssl.h>
-])
-
-AC_CHECK_SIZEOF(SHA_CTX, , [AC_INCLUDES_DEFAULT()
-#include <openssl/sha.h>
-])
-
 fi # enable_nss
 
 dnl We will someday make KECCAK_TINY optional, but for now we still need
