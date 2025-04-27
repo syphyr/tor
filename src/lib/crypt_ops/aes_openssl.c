@@ -24,10 +24,6 @@
 #include <openssl/opensslv.h>
 #include "lib/crypt_ops/crypto_openssl_mgt.h"
 
-#if OPENSSL_VERSION_NUMBER < OPENSSL_V_SERIES(1,0,0)
-#error "We require OpenSSL >= 1.0.0"
-#endif
-
 DISABLE_GCC_WARNING("-Wredundant-decls")
 
 #include <stdlib.h>

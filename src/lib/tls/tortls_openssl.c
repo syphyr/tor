@@ -80,14 +80,6 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 
 #define ADDR(tls) (((tls) && (tls)->address) ? tls->address : "peer")
 
-#if OPENSSL_VERSION_NUMBER <  OPENSSL_V(1,0,0,'f')
-/* This is a version of OpenSSL before 1.0.0f. It does not have
- * the CVE-2011-4576 fix, and as such it can't use RELEASE_BUFFERS and
- * SSL3 safely at the same time.
- */
-#define DISABLE_SSL3_HANDSHAKE
-#endif /* OPENSSL_VERSION_NUMBER <  OPENSSL_V(1,0,0,'f') */
-
 /** Set to true iff openssl bug 7712 has been detected. */
 static int openssl_bug_7712_is_present = 0;
 
@@ -571,12 +563,6 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
 #ifdef SSL_OP_NO_COMPRESSION
   SSL_CTX_set_options(result->ctx, SSL_OP_NO_COMPRESSION);
 #endif
-#if OPENSSL_VERSION_NUMBER < OPENSSL_V_SERIES(1,1,0)
-#ifndef OPENSSL_NO_COMP
-  if (result->ctx->comp_methods)
-    result->ctx->comp_methods = NULL;
-#endif
-#endif /* OPENSSL_VERSION_NUMBER < OPENSSL_V_SERIES(1,1,0) */
 
 #ifdef SSL_MODE_RELEASE_BUFFERS
   SSL_CTX_set_mode(result->ctx, SSL_MODE_RELEASE_BUFFERS);
@@ -1041,18 +1027,9 @@ tor_tls_get_n_raw_bytes(tor_tls_t *tls, size_t *n_read, size_t *n_written)
    * save the original BIO for  tls->ssl in the tor_tls_t structure, but
    * that would be tempting fate. */
   wbio = SSL_get_wbio(tls->ssl);
-#if OPENSSL_VERSION_NUMBER >= OPENSSL_VER(1,1,0,0,5)
-  /* BIO structure is opaque as of OpenSSL 1.1.0-pre5-dev.  Again, not
-   * supposed to use this form of the version macro, but the OpenSSL developers
-   * introduced major API changes in the pre-release stage.
-   */
   if (BIO_method_type(wbio) == BIO_TYPE_BUFFER &&
         (tmpbio = BIO_next(wbio)) != NULL)
     wbio = tmpbio;
-#else /* !(OPENSSL_VERSION_NUMBER >= OPENSSL_VER(1,1,0,0,5)) */
-  if (wbio->method == BIO_f_buffer() && (tmpbio = BIO_next(wbio)) != NULL)
-    wbio = tmpbio;
-#endif /* OPENSSL_VERSION_NUMBER >= OPENSSL_VER(1,1,0,0,5) */
   w = (unsigned long) BIO_number_written(wbio);
 
   /* We are ok with letting these unsigned ints go "negative" here:
@@ -1163,7 +1140,6 @@ tor_tls_get_buffer_sizes(tor_tls_t *tls,
                          size_t *rbuf_capacity, size_t *rbuf_bytes,
                          size_t *wbuf_capacity, size_t *wbuf_bytes)
 {
-#if OPENSSL_VERSION_NUMBER >= OPENSSL_V_SERIES(1,1,0)
   (void)tls;
   (void)rbuf_capacity;
   (void)rbuf_bytes;
@@ -1171,19 +1147,6 @@ tor_tls_get_buffer_sizes(tor_tls_t *tls,
   (void)wbuf_bytes;
 
   return -1;
-#else /* !(OPENSSL_VERSION_NUMBER >= OPENSSL_V_SERIES(1,1,0)) */
-  if (tls->ssl->s3->rbuf.buf)
-    *rbuf_capacity = tls->ssl->s3->rbuf.len;
-  else
-    *rbuf_capacity = 0;
-  if (tls->ssl->s3->wbuf.buf)
-    *wbuf_capacity = tls->ssl->s3->wbuf.len;
-  else
-    *wbuf_capacity = 0;
-  *rbuf_bytes = tls->ssl->s3->rbuf.left;
-  *wbuf_bytes = tls->ssl->s3->wbuf.left;
-  return 0;
-#endif /* OPENSSL_VERSION_NUMBER >= OPENSSL_V_SERIES(1,1,0) */
 }
 
 /** Check whether the ECC group requested is supported by the current OpenSSL

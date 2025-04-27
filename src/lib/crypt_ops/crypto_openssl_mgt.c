@@ -95,12 +95,7 @@ static char *crypto_openssl_version_str = NULL;
 const char *
 crypto_openssl_get_version_str(void)
 {
-#ifdef OPENSSL_VERSION
   const int query = OPENSSL_VERSION;
-#else
-  /* This old name was changed around OpenSSL 1.1.0 */
-  const int query = SSLEAY_VERSION;
-#endif /* defined(OPENSSL_VERSION) */
 
   if (crypto_openssl_version_str == NULL) {
     const char *raw_version = OpenSSL_version(query);
@@ -108,8 +103,6 @@ crypto_openssl_get_version_str(void)
   }
   return crypto_openssl_version_str;
 }
-
-#undef QUERY_OPENSSL_VERSION
 
 static char *crypto_openssl_header_version_str = NULL;
 /* Return a human-readable version of the compile-time openssl version
