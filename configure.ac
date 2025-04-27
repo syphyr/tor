@@ -1118,10 +1118,6 @@ AC_RUN_IFELSE([AC_LANG_SOURCE([AC_LANG_PROGRAM([[
    fi], [openssl_ver_mismatch=cross])
 AC_MSG_RESULT([$openssl_ver_mismatch])
 
-AC_CHECK_MEMBERS([struct ssl_method_st.get_cipher_by_char], , ,
-[#include <openssl/ssl.h>
-])
-
 dnl OpenSSL functions which we might not have.  In theory, we could just
 dnl check the openssl version number, but in practice that gets pretty
 dnl confusing with LibreSSL, OpenSSL, and various distributions' patches
