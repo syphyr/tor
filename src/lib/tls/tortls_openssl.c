@@ -568,7 +568,12 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
   SSL_CTX_set_options(result->ctx,
                       SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
 #endif
+#ifdef SSL_OP_NO_RENEGOTIATION
   SSL_CTX_set_options(result->ctx, SSL_OP_NO_RENEGOTIATION);
+#endif
+#ifdef SSL_OP_NO_CLIENT_RENEGOTIATION
+  SSL_CTX_set_options(result->ctx, SSL_OP_NO_CLIENT_RENEGOTIATION);
+#endif
 
   /* Don't actually allow compression; it uses RAM and time, it makes TLS
    * vulnerable to CRIME-style attacks, and most of the data we transmit over
