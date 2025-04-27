@@ -116,11 +116,7 @@ aes_cipher_free_(aes_cnt_cipher_t *cipher_)
   if (!cipher_)
     return;
   EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *) cipher_;
-#ifdef OPENSSL_1_1_API
   EVP_CIPHER_CTX_reset(cipher);
-#else
-  EVP_CIPHER_CTX_cleanup(cipher);
-#endif
   EVP_CIPHER_CTX_free(cipher);
 }
 void

@@ -179,9 +179,6 @@ tor_tls_log_one_error(tor_tls_t *tls, unsigned long err,
     case SSL_R_HTTP_REQUEST:
     case SSL_R_HTTPS_PROXY_REQUEST:
     case SSL_R_RECORD_LENGTH_MISMATCH:
-#ifndef OPENSSL_1_1_API
-    case SSL_R_RECORD_TOO_LARGE:
-#endif
     case SSL_R_UNKNOWN_PROTOCOL:
     case SSL_R_UNSUPPORTED_PROTOCOL:
       severity = LOG_INFO;
@@ -304,21 +301,14 @@ tor_tls_init(void)
   check_no_tls_errors();
 
   if (!tls_library_is_initialized) {
-#ifdef OPENSSL_1_1_API
     OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, NULL);
-#else
-    SSL_library_init();
-    SSL_load_error_strings();
-#endif /* defined(OPENSSL_1_1_API) */
 
-#if (SIZEOF_VOID_P >= 8 &&                                \
-     OPENSSL_VERSION_NUMBER >= OPENSSL_V_SERIES(1,0,1) && \
-     (!defined(LIBRESSL_VERSION_NUMBER) ||                \
-      LIBRESSL_VERSION_NUMBER < 0x3080000fL))
-    long version = tor_OpenSSL_version_num();
-
+#if (SIZEOF_VOID_P >= 8)
     /* LCOV_EXCL_START : we can't test these lines on the same machine */
-    if (version >= OPENSSL_V_SERIES(1,0,1)) {
+    {
+      /* TODO: I'm not sure that this test is still necessary on our
+       * supported openssl/libressl versions. */
+
       /* Warn if we could *almost* be running with much faster ECDH.
          If we're built for a 64-bit target, using OpenSSL 1.0.1, but we
          don't have one of the built-in __uint128-based speedups, we are
@@ -345,7 +335,7 @@ tor_tls_init(void)
                    "when configuring it) would make ECDH much faster.");
     }
     /* LCOV_EXCL_STOP */
-#endif /* (SIZEOF_VOID_P >= 8 &&                              ... */
+#endif /* (SIZEOF_VOID_P >= 8 */
 
     tor_tls_allocate_tor_tls_object_ex_data_index();
 
