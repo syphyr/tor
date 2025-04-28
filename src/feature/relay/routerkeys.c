@@ -761,8 +761,10 @@ list_family_key_files_impl(const char *keydir)
   SMARTLIST_FOREACH(result, char *, cp, tor_free(cp));
   smartlist_free(result); // sets result to NULL.
  done:
-  SMARTLIST_FOREACH(files, char *, cp, tor_free(cp));
-  smartlist_free(files);
+  if (files) {
+    SMARTLIST_FOREACH(files, char *, cp, tor_free(cp));
+    smartlist_free(files);
+  }
 
   return result;
 }
