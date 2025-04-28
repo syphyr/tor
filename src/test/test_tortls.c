@@ -154,24 +154,6 @@ read_cert_from(const char *str)
   return res;
 }
 
-static tor_x509_cert_impl_t *
-  fixed_try_to_extract_certs_from_tls_cert_out_result = NULL;
-static tor_x509_cert_impl_t *
-  fixed_try_to_extract_certs_from_tls_id_cert_out_result = NULL;
-
-static void
-fixed_try_to_extract_certs_from_tls(int severity, tor_tls_t *tls,
-                                    tor_x509_cert_impl_t **cert_out,
-                                    tor_x509_cert_impl_t **id_cert_out)
-{
-  (void) severity;
-  (void) tls;
-  *cert_out = tor_x509_cert_impl_dup_(
-                      fixed_try_to_extract_certs_from_tls_cert_out_result);
-  *id_cert_out =  tor_x509_cert_impl_dup_(
-                      fixed_try_to_extract_certs_from_tls_id_cert_out_result);
-}
-
 static void
 test_tortls_errno_to_tls_error(void *data)
 {
@@ -454,58 +436,6 @@ test_tortls_is_server(void *arg)
 }
 
 static void
-test_tortls_verify(void *ignored)
-{
-  (void)ignored;
-  int ret;
-  tor_tls_t *tls;
-  crypto_pk_t *k = NULL;
-  tor_x509_cert_impl_t *cert1 = NULL, *cert2 = NULL, *invalidCert = NULL,
-    *validCert = NULL, *caCert = NULL;
-  time_t now = cert_strings_valid_at;
-
-  validCert = read_cert_from(validCertString);
-  caCert = read_cert_from(caCertString);
-  invalidCert = read_cert_from(notCompletelyValidCertString);
-
-  tls = tor_malloc_zero(sizeof(tor_tls_t));
-
-  MOCK(try_to_extract_certs_from_tls, fixed_try_to_extract_certs_from_tls);
-
-  fixed_try_to_extract_certs_from_tls_cert_out_result = cert1;
-  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
-  tt_int_op(ret, OP_EQ, -1);
-
-  fixed_try_to_extract_certs_from_tls_id_cert_out_result = cert2;
-  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
-  tt_int_op(ret, OP_EQ, -1);
-
-  fixed_try_to_extract_certs_from_tls_cert_out_result = invalidCert;
-  fixed_try_to_extract_certs_from_tls_id_cert_out_result = invalidCert;
-
-  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
-  tt_int_op(ret, OP_EQ, -1);
-
-  fixed_try_to_extract_certs_from_tls_cert_out_result = validCert;
-  fixed_try_to_extract_certs_from_tls_id_cert_out_result = caCert;
-
-  ret = tor_tls_verify(LOG_WARN, tls, now, &k);
-  tt_int_op(ret, OP_EQ, 0);
-  tt_assert(k);
-
- done:
-  UNMOCK(try_to_extract_certs_from_tls);
-  tor_x509_cert_impl_free(cert1);
-  tor_x509_cert_impl_free(cert2);
-  tor_x509_cert_impl_free(validCert);
-  tor_x509_cert_impl_free(invalidCert);
-  tor_x509_cert_impl_free(caCert);
-
-  tor_free(tls);
-  crypto_pk_free(k);
-}
-
-static void
 test_tortls_cert_matches_key(void *ignored)
 {
   (void)ignored;
@@ -583,7 +513,6 @@ struct testcase_t tortls_tests[] = {
   LOCAL_TEST_CASE(address, TT_FORK),
   LOCAL_TEST_CASE(is_server, 0),
   LOCAL_TEST_CASE(bridge_init, TT_FORK),
-  LOCAL_TEST_CASE(verify, TT_FORK),
   LOCAL_TEST_CASE(cert_matches_key, 0),
   END_OF_TESTCASES
 };

@@ -1017,44 +1017,6 @@ tor_tls_get_own_cert,(tor_tls_t *tls))
   return tor_x509_cert_new(duplicate);
 }
 
-/** Helper function: try to extract a link certificate and an identity
- * certificate from <b>tls</b>, and store them in *<b>cert_out</b> and
- * *<b>id_cert_out</b> respectively.  Log all messages at level
- * <b>severity</b>.
- *
- * Note that a reference is added both of the returned certificates. */
-MOCK_IMPL(void,
-try_to_extract_certs_from_tls,(int severity, tor_tls_t *tls,
-                               X509 **cert_out, X509 **id_cert_out))
-{
-  X509 *cert = NULL, *id_cert = NULL;
-  STACK_OF(X509) *chain = NULL;
-  int num_in_chain, i;
-  *cert_out = *id_cert_out = NULL;
-  if (!(cert = SSL_get_peer_certificate(tls->ssl)))
-    return;
-  *cert_out = cert;
-  if (!(chain = SSL_get_peer_cert_chain(tls->ssl)))
-    return;
-  num_in_chain = sk_X509_num(chain);
-  /* 1 means we're receiving (server-side), and it's just the id_cert.
-   * 2 means we're connecting (client-side), and it's both the link
-   * cert and the id_cert.
-   */
-  if (num_in_chain < 1) {
-    log_fn(severity,LD_PROTOCOL,
-           "Unexpected number of certificates in chain (%d)",
-           num_in_chain);
-    return;
-  }
-  for (i=0; i<num_in_chain; ++i) {
-    id_cert = sk_X509_value(chain, i);
-    if (X509_cmp(id_cert, cert) != 0)
-      break;
-  }
-  *id_cert_out = id_cert ? X509_dup(id_cert) : NULL;
-}
-
 /** Return the number of bytes available for reading from <b>tls</b>.
  */
 int

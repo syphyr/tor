@@ -46,34 +46,6 @@ ENABLE_GCC_WARNING("-Wstrict-prototypes")
 
 static SECStatus always_accept_cert_cb(void *, PRFileDesc *, PRBool, PRBool);
 
-MOCK_IMPL(void,
-try_to_extract_certs_from_tls,(int severity, tor_tls_t *tls,
-                               tor_x509_cert_impl_t **cert_out,
-                               tor_x509_cert_impl_t **id_cert_out))
-{
-  tor_assert(tls);
-  tor_assert(cert_out);
-  tor_assert(id_cert_out);
-  (void) severity;
-
-  *cert_out = *id_cert_out = NULL;
-
-  CERTCertificate *peer = SSL_PeerCertificate(tls->ssl);
-  if (!peer)
-    return;
-  *cert_out = peer; /* Now owns pointer. */
-
-  CERTCertList *chain = SSL_PeerCertificateChain(tls->ssl);
-  CERTCertListNode *c = CERT_LIST_HEAD(chain);
-  for (; !CERT_LIST_END(c, chain); c = CERT_LIST_NEXT(c)) {
-    if (CERT_CompareCerts(c->cert, peer) == PR_FALSE) {
-      *id_cert_out = CERT_DupCertificate(c->cert);
-      break;
-    }
-  }
-  CERT_DestroyCertList(chain);
-}
-
 static bool
 we_like_ssl_cipher(SSLCipherAlgorithm ca)
 {

@@ -18,10 +18,6 @@ int tor_errno_to_tls_error(int e);
 int tor_tls_get_error(tor_tls_t *tls, int r, int extra,
                   const char *doing, int severity, int domain);
 #endif
-MOCK_DECL(void, try_to_extract_certs_from_tls,
-          (int severity, tor_tls_t *tls,
-           tor_x509_cert_impl_t **cert_out,
-           tor_x509_cert_impl_t **id_cert_out));
 
 tor_tls_context_t *tor_tls_context_new(crypto_pk_t *identity,
                    unsigned int key_lifetime, unsigned flags, int is_client);
