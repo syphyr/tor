@@ -301,6 +301,14 @@ int
 crypto_openssl_late_init(int useAccel, const char *accelName,
                          const char *accelDir)
 {
+  if (tor_OpenSSL_version_num() < OPENSSL_V_SERIES(3,0,0)) {
+    log_warn(LD_CRYPTO, "Running with OpenSSL version \"%s\", "
+             "which is no longer maintained by the OpenSSL project. "
+             "We recommend that you upgrade to OpenSSL 3.0 or later. "
+             "OpenSSL >=3.5 would be ideal.",
+             OPENSSL_VERSION_TEXT);
+  }
+
   if (useAccel > 0) {
     if (crypto_openssl_init_engines(accelName, accelDir) < 0)
       return -1;
