@@ -101,7 +101,9 @@ static int
 encode_v0_cell(const relay_msg_t *msg,
                cell_t *cell_out)
 {
-  IF_BUG_ONCE(msg->length > CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V0) {
+  size_t maxlen =
+    relay_cell_max_payload_size(RELAY_CELL_FORMAT_V0, msg->command);
+  IF_BUG_ONCE(msg->length > maxlen) {
     return -1;
   }
 
@@ -123,16 +125,12 @@ encode_v1_cell(const relay_msg_t *msg,
                cell_t *cell_out)
 {
   bool expects_streamid = relay_cmd_expects_streamid_in_v1(msg->command);
-  size_t maxlen;
-  if (expects_streamid) {
-    maxlen = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_WITH_STREAM_ID;
-  } else {
-    maxlen = CELL_PAYLOAD_SIZE - RELAY_HEADER_SIZE_V1_NO_STREAM_ID;
-  }
-
+  size_t maxlen =
+    relay_cell_max_payload_size(RELAY_CELL_FORMAT_V1, msg->command);
   IF_BUG_ONCE(msg->length > maxlen) {
     return -1;
   }
+
   uint8_t *out = cell_out->payload;
   out[V1_CMD_OFFSET] = msg->command;
   set_uint16(out+V1_LEN_OFFSET, htons(msg->length));
