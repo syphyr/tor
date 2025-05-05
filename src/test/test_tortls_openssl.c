@@ -46,15 +46,19 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 #include "test/log_test_helpers.h"
 #include "test/test_tortls.h"
 
-#ifndef HAVE_SSL_STATE
-#define OPENSSL_OPAQUE
-#endif
-
-#if defined(OPENSSL_OPAQUE) && !defined(LIBRESSL_VERSION_NUMBER)
 #define SSL_STATE_STR "before SSL initialization"
-#else
-#define SSL_STATE_STR "before/accept initialization"
-#endif
+
+/* Every version and fork of OpenSSL we support now qualifies as "opaque",
+ * in that it hides the members of important structures.
+ *
+ * That's a good thing, but it means we can't run a number of older tests
+ * that require the ability to poke at OpenSSL's internals.
+ *
+ * We're retaining these tests here, rather than removing them,
+ * in case anybody wants to port them to modern OpenSSL.
+ * (Some of them are probably not worth saving, though.)
+ */
+#define OPENSSL_OPAQUE
 
 #ifndef OPENSSL_OPAQUE
 static SSL_METHOD *
@@ -124,12 +128,7 @@ test_tortls_tor_tls_new(void *data)
 static void
 library_init(void)
 {
-#ifdef OPENSSL_1_1_API
   OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, NULL);
-#else
-  SSL_library_init();
-  SSL_load_error_strings();
-#endif /* defined(OPENSSL_1_1_API) */
 }
 
 static void
@@ -295,13 +294,6 @@ test_tortls_log_one_error(void *ignored)
   tor_tls_log_one_error(tls, ERR_PACK(1, 2, SSL_R_RECORD_LENGTH_MISMATCH),
                         LOG_WARN, 0, NULL);
   expect_log_severity(LOG_INFO);
-
-#ifndef OPENSSL_1_1_API
-  mock_clean_saved_logs();
-  tor_tls_log_one_error(tls, ERR_PACK(1, 2, SSL_R_RECORD_TOO_LARGE),
-                        LOG_WARN, 0, NULL);
-  expect_log_severity(LOG_INFO);
-#endif /* !defined(OPENSSL_1_1_API) */
 
   mock_clean_saved_logs();
   tor_tls_log_one_error(tls, ERR_PACK(1, 2, SSL_R_UNKNOWN_PROTOCOL),
@@ -721,23 +713,7 @@ test_tortls_get_buffer_sizes(void *ignored)
   tls->ssl->s3->wbuf.left = 43;
 
   ret = tor_tls_get_buffer_sizes(tls, &rbuf_c, &rbuf_b, &wbuf_c, &wbuf_b);
-#if OPENSSL_VERSION_NUMBER >= OPENSSL_V_SERIES(1,1,0)
   tt_int_op(ret, OP_EQ, -1);
-#else
-  tt_int_op(ret, OP_EQ, 0);
-  tt_int_op(rbuf_c, OP_EQ, 0);
-  tt_int_op(wbuf_c, OP_EQ, 0);
-  tt_int_op(rbuf_b, OP_EQ, 42);
-  tt_int_op(wbuf_b, OP_EQ, 43);
-
-  tls->ssl->s3->rbuf.buf = tor_malloc_zero(1);
-  tls->ssl->s3->wbuf.buf = tor_malloc_zero(1);
-  ret = tor_tls_get_buffer_sizes(tls, &rbuf_c, &rbuf_b, &wbuf_c, &wbuf_b);
-  tt_int_op(ret, OP_EQ, 0);
-  tt_int_op(rbuf_c, OP_EQ, 1);
-  tt_int_op(wbuf_c, OP_EQ, 2);
-
-#endif /* OPENSSL_VERSION_NUMBER >= OPENSSL_V_SERIES(1,1,0) */
 
  done:
   tor_free(tls->ssl->s3->rbuf.buf);
@@ -913,11 +889,6 @@ test_tortls_block_renegotiation(void *ignored)
   tls->ssl->s3->flags = SSL3_FLAGS_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
 
   tor_tls_block_renegotiation(tls);
-
-#ifndef OPENSSL_1_1_API
-  tt_assert(!(tls->ssl->s3->flags &
-              SSL3_FLAGS_ALLOW_UNSAFE_LEGACY_RENEGOTIATION));
-#endif
 
  done:
   tor_free(tls->ssl->s3);

@@ -24,10 +24,6 @@
 #include <openssl/opensslv.h>
 #include "lib/crypt_ops/crypto_openssl_mgt.h"
 
-#if OPENSSL_VERSION_NUMBER < OPENSSL_V_SERIES(1,0,0)
-#error "We require OpenSSL >= 1.0.0"
-#endif
-
 DISABLE_GCC_WARNING("-Wredundant-decls")
 
 #include <stdlib.h>
@@ -116,11 +112,7 @@ aes_cipher_free_(aes_cnt_cipher_t *cipher_)
   if (!cipher_)
     return;
   EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *) cipher_;
-#ifdef OPENSSL_1_1_API
   EVP_CIPHER_CTX_reset(cipher);
-#else
-  EVP_CIPHER_CTX_cleanup(cipher);
-#endif
   EVP_CIPHER_CTX_free(cipher);
 }
 void
