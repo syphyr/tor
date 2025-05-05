@@ -46,34 +46,6 @@ ENABLE_GCC_WARNING("-Wstrict-prototypes")
 
 static SECStatus always_accept_cert_cb(void *, PRFileDesc *, PRBool, PRBool);
 
-MOCK_IMPL(void,
-try_to_extract_certs_from_tls,(int severity, tor_tls_t *tls,
-                               tor_x509_cert_impl_t **cert_out,
-                               tor_x509_cert_impl_t **id_cert_out))
-{
-  tor_assert(tls);
-  tor_assert(cert_out);
-  tor_assert(id_cert_out);
-  (void) severity;
-
-  *cert_out = *id_cert_out = NULL;
-
-  CERTCertificate *peer = SSL_PeerCertificate(tls->ssl);
-  if (!peer)
-    return;
-  *cert_out = peer; /* Now owns pointer. */
-
-  CERTCertList *chain = SSL_PeerCertificateChain(tls->ssl);
-  CERTCertListNode *c = CERT_LIST_HEAD(chain);
-  for (; !CERT_LIST_END(c, chain); c = CERT_LIST_NEXT(c)) {
-    if (CERT_CompareCerts(c->cert, peer) == PR_FALSE) {
-      *id_cert_out = CERT_DupCertificate(c->cert);
-      break;
-    }
-  }
-  CERT_DestroyCertList(chain);
-}
-
 static bool
 we_like_ssl_cipher(SSLCipherAlgorithm ca)
 {
@@ -464,18 +436,6 @@ tor_tls_new(tor_socket_t sock, int is_server)
   return tls;
 }
 
-void
-tor_tls_set_renegotiate_callback(tor_tls_t *tls,
-                                 void (*cb)(tor_tls_t *, void *arg),
-                                 void *arg)
-{
-  tor_assert(tls);
-  (void)cb;
-  (void)arg;
-
-  /* We don't support renegotiation-based TLS with NSS. */
-}
-
 /**
  * Tell the TLS library that the underlying socket for <b>tls</b> has been
  * closed, and the library should not attempt to free that socket itself.
@@ -619,35 +579,12 @@ tor_tls_handshake(tor_tls_t *tls)
   if (s == SECSuccess) {
     tls->state = TOR_TLS_ST_OPEN;
     log_debug(LD_NET, "SSL handshake is supposedly complete.");
-    return tor_tls_finish_handshake(tls);
+    return TOR_TLS_DONE;
   }
   if (PORT_GetError() == PR_WOULD_BLOCK_ERROR)
     return TOR_TLS_WANTREAD; /* XXXX What about wantwrite? */
 
   return TOR_TLS_ERROR_MISC; // XXXX
-}
-
-int
-tor_tls_finish_handshake(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  // We don't need to do any of the weird handshake nonsense stuff on NSS,
-  // since we only support recent handshakes.
-  return TOR_TLS_DONE;
-}
-
-void
-tor_tls_unblock_renegotiation(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  /* We don't support renegotiation with NSS. */
-}
-
-void
-tor_tls_block_renegotiation(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  /* We don't support renegotiation with NSS. */
 }
 
 int
@@ -711,22 +648,6 @@ tls_get_write_overhead_ratio, (void))
   /* XXX We don't currently have a way to measure this in NSS; we could do that
    * XXX with a PRIO layer, but it'll take a little coding. */
   return 0.95;
-}
-
-int
-tor_tls_used_v1_handshake(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  /* We don't support or allow the V1 handshake with NSS.
-   */
-  return 0;
-}
-
-int
-tor_tls_server_got_renegotiate(tor_tls_t *tls)
-{
-  tor_assert(tls);
-  return 0; /* We don't support renegotiation with NSS */
 }
 
 MOCK_IMPL(int,
