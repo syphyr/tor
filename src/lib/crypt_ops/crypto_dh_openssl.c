@@ -27,7 +27,8 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 #include <string.h>
 
 #ifndef ENABLE_NSS
-static int tor_check_dh_key(int severity, const BIGNUM *bn);
+static int tor_check_dh_key(int severity, const BIGNUM *bn,
+                            const BIGNUM *dh_p);
 
 /** A structure to hold the first half (x, g^x) of a Diffie-Hellman handshake
  * while we're waiting for the second.*/
@@ -277,7 +278,7 @@ crypto_dh_generate_public(crypto_dh_t *dh)
    */
   const BIGNUM *pub_key, *priv_key;
   DH_get0_key(dh->dh, &pub_key, &priv_key);
-  if (tor_check_dh_key(LOG_WARN, pub_key)<0) {
+  if (tor_check_dh_key(LOG_WARN, pub_key, DH_get0_p(dh->dh))<0) {
     log_warn(LD_CRYPTO, "Weird! Our own DH key was invalid.  I guess once-in-"
              "the-universe chances really do happen.  Treating as a failure.");
     return -1;
@@ -314,7 +315,7 @@ crypto_dh_get_public(crypto_dh_t *dh, char *pubkey, size_t pubkey_len)
   tor_assert(bytes >= 0);
   if (pubkey_len < (size_t)bytes) {
     log_warn(LD_CRYPTO,
-             "Weird! pubkey_len (%d) was smaller than DH1024_KEY_LEN (%d)",
+             "Weird! pubkey_len (%d) was smaller than key length (%d)",
              (int) pubkey_len, bytes);
     return -1;
   }
@@ -330,21 +331,19 @@ crypto_dh_get_public(crypto_dh_t *dh, char *pubkey, size_t pubkey_len)
  * See http://www.cl.cam.ac.uk/ftp/users/rja14/psandqs.ps.gz for some tips.
  */
 static int
-tor_check_dh_key(int severity, const BIGNUM *bn)
+tor_check_dh_key(int severity, const BIGNUM *bn, const BIGNUM *dh_p)
 {
   BIGNUM *x;
   char *s;
   tor_assert(bn);
   x = BN_new();
   tor_assert(x);
-  if (BUG(!dh_param_p))
-    crypto_dh_init(); //LCOV_EXCL_LINE we already checked whether we did this.
   BN_set_word(x, 1);
   if (BN_cmp(bn,x)<=0) {
     log_fn(severity, LD_CRYPTO, "DH key must be at least 2.");
     goto err;
   }
-  BN_copy(x,dh_param_p);
+  BN_copy(x,dh_p);
   BN_sub_word(x, 1);
   if (BN_cmp(bn,x)>=0) {
     log_fn(severity, LD_CRYPTO, "DH key must be at most p-2.");
@@ -388,7 +387,7 @@ crypto_dh_handshake(int severity, crypto_dh_t *dh,
   if (!(pubkey_bn = BN_bin2bn((const unsigned char*)pubkey,
                               (int)pubkey_len, NULL)))
     goto error;
-  if (tor_check_dh_key(severity, pubkey_bn)<0) {
+  if (tor_check_dh_key(severity, pubkey_bn, DH_get0_p(dh->dh))<0) {
     /* Check for invalid public keys. */
     log_fn(severity, LD_CRYPTO,"Rejected invalid g^x");
     goto error;
