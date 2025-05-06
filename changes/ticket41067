@@ -1,3 +1,5 @@
   o Minor features (security):
     - Require TLS version 1.2 or later.  (Version 1.3 support will
       be required in the near future.)  Part of ticket 41067.
+    - Update TLS 1.2 client cipher list to match current Firefox.
+      Part of ticket 41067.
