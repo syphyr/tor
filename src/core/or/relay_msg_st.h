@@ -21,13 +21,23 @@
 typedef struct relay_msg_t {
   /* Relay command of a message. */
   uint8_t command;
-  /* Length of the message body. */
+  /* Length of the message body.
+   *
+   * This value MUST always be less than or equal to the lower of:
+   * - the number of bytes available in `body`.
+   * - relay_cell_max_format(_, command).
+   *
+   * (These bounds on the length field are guaranteed by all message decoding
+   * functions, and enforced by all message encoding functions.)
+   */
   uint16_t length;
   /* Optional routing header: stream ID of a message or 0. */
   streamid_t stream_id;
   /* Indicate if this is a message from a relay early cell. */
   bool is_relay_early;
   /* Message body of a relay message.
+   *
+   * Code MUST NOT access any part of `body` beyond the first `length` bytes.
    *
    * NOTE that this struct does not own the body; instead, this is a pointer
    * into a different object. */

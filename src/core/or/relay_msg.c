@@ -60,10 +60,14 @@ relay_msg_clear(relay_msg_t *msg)
 /** Allocate a new relay message and copy the content of the given message.
  *
  * This message allocation _will_ own its body, even if the original did not.
+ *
+ * Requires that msg is well-formed, and that its length is within
+ * allowable bounds.
  **/
 relay_msg_t *
 relay_msg_copy(const relay_msg_t *msg)
 {
+  tor_assert(msg->length <= RELAY_PAYLOAD_SIZE_MAX);
   void *alloc = tor_malloc_zero(sizeof(relay_msg_t) + msg->length);
   relay_msg_t *new_msg = alloc;
   uint8_t *body = ((uint8_t*)alloc) + sizeof(relay_msg_t);
