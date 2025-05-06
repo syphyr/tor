@@ -497,26 +497,6 @@ test_tortls_cert_get_key(void *ignored)
 }
 #endif /* !defined(OPENSSL_OPAQUE) */
 
-#ifndef HAVE_SSL_GET_CLIENT_CIPHERS
-static SSL_CIPHER *
-get_cipher_by_name(const char *name)
-{
-  int i;
-  const SSL_METHOD *method = SSLv23_method();
-  int num = method->num_ciphers();
-
-  for (i = 0; i < num; ++i) {
-    const SSL_CIPHER *cipher = method->get_cipher(i);
-    const char *ciphername = SSL_CIPHER_get_name(cipher);
-    if (!strcmp(ciphername, name)) {
-      return (SSL_CIPHER *)cipher;
-    }
-  }
-
-  return NULL;
-}
-#endif /* !defined(HAVE_SSL_GET_CLIENT_CIPHERS) */
-
 #ifndef OPENSSL_OPAQUE
 static void
 test_tortls_get_ciphersuite_name(void *ignored)
