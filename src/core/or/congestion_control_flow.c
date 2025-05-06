@@ -71,15 +71,13 @@ double cc_stats_flow_xon_outbuf_ma = 0;
 void
 flow_control_new_consensus_params(const networkstatus_t *ns)
 {
-  // TODO CGO: These numbers might be wrong for the v1 cell format!
-
 #define CC_XOFF_CLIENT_DFLT 500
 #define CC_XOFF_CLIENT_MIN 1
 #define CC_XOFF_CLIENT_MAX 10000
   xoff_client = networkstatus_get_param(ns, "cc_xoff_client",
       CC_XOFF_CLIENT_DFLT,
       CC_XOFF_CLIENT_MIN,
-      CC_XOFF_CLIENT_MAX)*RELAY_PAYLOAD_SIZE_MAX;
+      CC_XOFF_CLIENT_MAX)*RELAY_PAYLOAD_SIZE_MIN;
 
 #define CC_XOFF_EXIT_DFLT 500
 #define CC_XOFF_EXIT_MIN 1
@@ -87,7 +85,7 @@ flow_control_new_consensus_params(const networkstatus_t *ns)
   xoff_exit = networkstatus_get_param(ns, "cc_xoff_exit",
       CC_XOFF_EXIT_DFLT,
       CC_XOFF_EXIT_MIN,
-      CC_XOFF_EXIT_MAX)*RELAY_PAYLOAD_SIZE_MAX;
+      CC_XOFF_EXIT_MAX)*RELAY_PAYLOAD_SIZE_MIN;
 
 #define CC_XON_CHANGE_PCT_DFLT 25
 #define CC_XON_CHANGE_PCT_MIN 1
@@ -479,8 +477,7 @@ flow_control_decide_xoff(edge_connection_t *stream)
    * do this because writes only happen when the socket unblocks, so
    * may not otherwise notice accumulation of data in the outbuf for
    * advisory XONs. */
-  // TODO CGO: This might be wrong for the v1 cell format!
-   if (total_buffered > MAX_EXPECTED_CELL_BURST*RELAY_PAYLOAD_SIZE_MAX) {
+   if (total_buffered > MAX_EXPECTED_CELL_BURST*RELAY_PAYLOAD_SIZE_MIN) {
      flow_control_decide_xon(stream, 0);
    }
 
