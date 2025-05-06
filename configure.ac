@@ -1128,8 +1128,7 @@ AC_CHECK_FUNCS([ \
 		SSL_CIPHER_find \
 		SSL_CTX_set1_groups_list \
 		SSL_CTX_set_security_level \
-		SSL_get_client_ciphers \
-		TLS_method \
+		SSL_get_client_ciphers
 	       ])
 
 fi # enable_nss
