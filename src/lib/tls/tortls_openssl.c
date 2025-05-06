@@ -497,26 +497,16 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
     }
   }
 
-#if 0
-  /* Tell OpenSSL to only use TLS1.  This may have subtly different results
-   * from SSLv23_method() with SSLv2 and SSLv3 disabled, so we need to do some
-   * investigation before we consider adjusting it. It should be compatible
-   * with existing Tors. */
-  if (!(result->ctx = SSL_CTX_new(TLSv1_method())))
-    goto error;
-#endif /* 0 */
-
-  /* Tell OpenSSL to use TLS 1.0 or later but not SSL2 or SSL3. */
+  /* Tell OpenSSL to use TLS 1.2 or later. */
   if (!(result->ctx = SSL_CTX_new(TLS_method())))
+    goto error;
+  if (!SSL_CTX_set_min_proto_version(result->ctx, TLS1_2_VERSION))
     goto error;
 
 #ifdef HAVE_SSL_CTX_SET_SECURITY_LEVEL
   /* Level 1 re-enables RSA1024 and DH1024 for compatibility with old tors */
   SSL_CTX_set_security_level(result->ctx, 1);
 #endif
-
-  SSL_CTX_set_options(result->ctx, SSL_OP_NO_SSLv2);
-  SSL_CTX_set_options(result->ctx, SSL_OP_NO_SSLv3);
 
   /* Prefer the server's ordering of ciphers: the client's ordering has
   * historically been chosen for fingerprinting resistance. */
