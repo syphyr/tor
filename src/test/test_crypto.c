@@ -43,10 +43,10 @@ test_crypto_dh(void *arg)
   crypto_dh_t *dh1 = crypto_dh_new(DH_TYPE_CIRCUIT);
   crypto_dh_t *dh1_dup = NULL;
   crypto_dh_t *dh2 = crypto_dh_new(DH_TYPE_CIRCUIT);
-  char p1[DH1024_KEY_LEN * 2];
-  char p2[DH1024_KEY_LEN * 2];
-  char s1[DH1024_KEY_LEN * 2];
-  char s2[DH1024_KEY_LEN * 2];
+  char p1[DH2048_KEY_LEN];
+  char p2[DH2048_KEY_LEN];
+  char s1[DH2048_KEY_LEN];
+  char s2[DH2048_KEY_LEN];
   ssize_t s1len, s2len;
 #ifdef ENABLE_OPENSSL
   crypto_dh_t *dh3 = NULL;
