@@ -971,75 +971,6 @@ fake_get_cipher(unsigned ncipher)
 
 #ifndef OPENSSL_OPAQUE
 static void
-test_tortls_find_cipher_by_id(void *ignored)
-{
-  (void)ignored;
-  int ret;
-  SSL *ssl;
-  SSL_CTX *ctx;
-  const SSL_METHOD *m = TLSv1_method();
-  SSL_METHOD *empty_method = tor_malloc_zero(sizeof(SSL_METHOD));
-
-  fixed_cipher1 = tor_malloc_zero(sizeof(SSL_CIPHER));
-  fixed_cipher2 = tor_malloc_zero(sizeof(SSL_CIPHER));
-  fixed_cipher2->id = 0xC00A;
-
-  library_init();
-
-  ctx = SSL_CTX_new(m);
-  ssl = SSL_new(ctx);
-
-  ret = find_cipher_by_id(ssl, NULL, 0xC00A);
-  tt_int_op(ret, OP_EQ, 1);
-
-  ret = find_cipher_by_id(ssl, m, 0xC00A);
-  tt_int_op(ret, OP_EQ, 1);
-
-  ret = find_cipher_by_id(ssl, m, 0xFFFF);
-  tt_int_op(ret, OP_EQ, 0);
-
-  ret = find_cipher_by_id(ssl, empty_method, 0xC00A);
-  tt_int_op(ret, OP_EQ, 1);
-
-  ret = find_cipher_by_id(ssl, empty_method, 0xFFFF);
-#ifdef HAVE_SSL_CIPHER_FIND
-  tt_int_op(ret, OP_EQ, 0);
-#else
-  tt_int_op(ret, OP_EQ, 1);
-#endif
-
-  empty_method->get_cipher = fake_get_cipher;
-  ret = find_cipher_by_id(ssl, empty_method, 0xC00A);
-  tt_int_op(ret, OP_EQ, 1);
-
-  empty_method->get_cipher = m->get_cipher;
-  empty_method->num_ciphers = m->num_ciphers;
-  ret = find_cipher_by_id(ssl, empty_method, 0xC00A);
-  tt_int_op(ret, OP_EQ, 1);
-
-  empty_method->get_cipher = fake_get_cipher;
-  empty_method->num_ciphers = m->num_ciphers;
-  ret = find_cipher_by_id(ssl, empty_method, 0xC00A);
-  tt_int_op(ret, OP_EQ, 1);
-
-  empty_method->num_ciphers = fake_num_ciphers;
-  ret = find_cipher_by_id(ssl, empty_method, 0xC00A);
-#ifdef HAVE_SSL_CIPHER_FIND
-  tt_int_op(ret, OP_EQ, 1);
-#else
-  tt_int_op(ret, OP_EQ, 0);
-#endif
-
- done:
-  tor_free(empty_method);
-  SSL_free(ssl);
-  SSL_CTX_free(ctx);
-  tor_free(fixed_cipher1);
-}
-#endif /* !defined(OPENSSL_OPAQUE) */
-
-#ifndef OPENSSL_OPAQUE
-static void
 test_tortls_debug_state_callback(void *ignored)
 {
   (void)ignored;
@@ -1958,7 +1889,6 @@ struct testcase_t tortls_openssl_tests[] = {
   INTRUSIVE_TEST_CASE(unblock_renegotiation, 0),
   INTRUSIVE_TEST_CASE(set_renegotiate_callback, 0),
   LOCAL_TEST_CASE(set_logged_address, 0),
-  INTRUSIVE_TEST_CASE(find_cipher_by_id, 0),
   INTRUSIVE_TEST_CASE(session_secret_cb, 0),
   INTRUSIVE_TEST_CASE(debug_state_callback, 0),
   INTRUSIVE_TEST_CASE(context_new, TT_FORK /* redundant */),
