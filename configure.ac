@@ -1123,7 +1123,6 @@ dnl check the openssl version number, but in practice that gets pretty
 dnl confusing with LibreSSL, OpenSSL, and various distributions' patches
 dnl to them.
 AC_CHECK_FUNCS([ \
-		ERR_load_KDF_strings \
 		EVP_PBE_scrypt \
 		SSL_CIPHER_find \
 		SSL_CTX_set1_groups_list \
