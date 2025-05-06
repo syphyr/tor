@@ -128,7 +128,7 @@ parse_create2_payload(create_cell_t *cell_out, const uint8_t *p, size_t p_len)
   handshake_type = ntohs(get_uint16(p));
   handshake_len = ntohs(get_uint16(p+2));
 
-  if (handshake_len > CELL_PAYLOAD_SIZE - 4 || handshake_len > p_len - 4)
+  if (handshake_len > MAX_CREATE_LEN || handshake_len > p_len - 4)
     return -1;
   if (handshake_type == ONION_HANDSHAKE_TYPE_FAST)
     return -1;
@@ -183,7 +183,7 @@ check_created_cell(const created_cell_t *cell)
       return -1;
     break;
   case CELL_CREATED2:
-    if (cell->handshake_len > RELAY_PAYLOAD_SIZE-2)
+    if (cell->handshake_len > MAX_CREATED_LEN)
       return -1;
     break;
   }
@@ -211,7 +211,7 @@ created_cell_parse(created_cell_t *cell_out, const cell_t *cell_in)
       const uint8_t *p = cell_in->payload;
       cell_out->cell_type = CELL_CREATED2;
       cell_out->handshake_len = ntohs(get_uint16(p));
-      if (cell_out->handshake_len > CELL_PAYLOAD_SIZE - 2)
+      if (cell_out->handshake_len > MAX_CREATED_LEN)
         return -1;
       memcpy(cell_out->reply, p+2, cell_out->handshake_len);
       break;
@@ -353,7 +353,7 @@ extend_cell_parse,(extend_cell_t *cell_out,
   tor_assert(cell_out);
   tor_assert(payload);
 
-  if (payload_length > RELAY_PAYLOAD_SIZE)
+  if (payload_length > RELAY_PAYLOAD_SIZE_MAX)
     return -1;
 
   switch (command) {
@@ -412,7 +412,7 @@ extended_cell_parse(extended_cell_t *cell_out,
   tor_assert(payload);
 
   memset(cell_out, 0, sizeof(*cell_out));
-  if (payload_len > RELAY_PAYLOAD_SIZE)
+  if (payload_len > RELAY_PAYLOAD_SIZE_MAX)
     return -1;
 
   switch (command) {
@@ -423,7 +423,7 @@ extended_cell_parse(extended_cell_t *cell_out,
       cell_out->cell_type = RELAY_COMMAND_EXTENDED2;
       cell_out->created_cell.cell_type = CELL_CREATED2;
       cell_out->created_cell.handshake_len = ntohs(get_uint16(payload));
-      if (cell_out->created_cell.handshake_len > RELAY_PAYLOAD_SIZE - 2 ||
+      if (cell_out->created_cell.handshake_len > RELAY_PAYLOAD_SIZE_MAX - 2 ||
           cell_out->created_cell.handshake_len > payload_len - 2)
         return -1;
       memcpy(cell_out->created_cell.reply, payload+2,
@@ -544,7 +544,9 @@ should_include_ed25519_id_extend_cells(const networkstatus_t *ns,
 /** Format the EXTEND{,2} cell in <b>cell_in</b>, storing its relay payload in
  * <b>payload_out</b>, the number of bytes used in *<b>len_out</b>, and the
  * relay command in *<b>command_out</b>. The <b>payload_out</b> must have
- * RELAY_PAYLOAD_SIZE bytes available.  Return 0 on success, -1 on failure. */
+ * RELAY_PAYLOAD_SIZE_MAX bytes available.
+ *
+ * Return 0 on success, -1 on failure. */
 int
 extend_cell_format(uint8_t *command_out, uint16_t *len_out,
                    uint8_t *payload_out, const extend_cell_t *cell_in)
@@ -555,7 +557,7 @@ extend_cell_format(uint8_t *command_out, uint16_t *len_out,
 
   p = payload_out;
 
-  memset(p, 0, RELAY_PAYLOAD_SIZE);
+  memset(p, 0, RELAY_PAYLOAD_SIZE_MAX);
 
   switch (cell_in->cell_type) {
   case RELAY_COMMAND_EXTEND:
@@ -618,7 +620,7 @@ extend_cell_format(uint8_t *command_out, uint16_t *len_out,
              cell_in->create_cell.handshake_len);
 
       ssize_t len_encoded = extend2_cell_body_encode(
-                             payload_out, RELAY_PAYLOAD_SIZE,
+                             payload_out, RELAY_PAYLOAD_SIZE_MAX,
                              cell);
       extend2_cell_body_free(cell);
       if (len_encoded < 0 || len_encoded > UINT16_MAX)
@@ -636,7 +638,9 @@ extend_cell_format(uint8_t *command_out, uint16_t *len_out,
 /** Format the EXTENDED{,2} cell in <b>cell_in</b>, storing its relay payload
  * in <b>payload_out</b>, the number of bytes used in *<b>len_out</b>, and the
  * relay command in *<b>command_out</b>. The <b>payload_out</b> must have
- * RELAY_PAYLOAD_SIZE bytes available.  Return 0 on success, -1 on failure. */
+ * RELAY_PAYLOAD_SIZE_MAX bytes available.
+ *
+ * Return 0 on success, -1 on failure. */
 int
 extended_cell_format(uint8_t *command_out, uint16_t *len_out,
                      uint8_t *payload_out, const extended_cell_t *cell_in)
@@ -646,7 +650,7 @@ extended_cell_format(uint8_t *command_out, uint16_t *len_out,
     return -1;
 
   p = payload_out;
-  memset(p, 0, RELAY_PAYLOAD_SIZE);
+  memset(p, 0, RELAY_PAYLOAD_SIZE_MAX);
 
   switch (cell_in->cell_type) {
   case RELAY_COMMAND_EXTENDED:
@@ -656,7 +660,7 @@ extended_cell_format(uint8_t *command_out, uint16_t *len_out,
       *command_out = RELAY_COMMAND_EXTENDED2;
       *len_out = 2 + cell_in->created_cell.handshake_len;
       set_uint16(payload_out, htons(cell_in->created_cell.handshake_len));
-      if (2+cell_in->created_cell.handshake_len > RELAY_PAYLOAD_SIZE)
+      if (cell_in->created_cell.handshake_len > MAX_CREATED_LEN)
         return -1;
       memcpy(payload_out+2, cell_in->created_cell.reply,
              cell_in->created_cell.handshake_len);

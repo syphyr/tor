@@ -421,15 +421,14 @@ circuit_open_connection_for_extend(const struct extend_cell_t *ec,
  * Return -1 if we want to warn and tear down the circuit, else return 0.
  */
 int
-circuit_extend(struct cell_t *cell, struct circuit_t *circ)
+circuit_extend(const relay_msg_t *rmsg, struct circuit_t *circ)
 {
   channel_t *n_chan;
-  relay_header_t rh;
   extend_cell_t ec;
   const char *msg = NULL;
   int should_launch = 0;
 
-  IF_BUG_ONCE(!cell) {
+  IF_BUG_ONCE(!rmsg) {
     return -1;
   }
 
@@ -440,17 +439,13 @@ circuit_extend(struct cell_t *cell, struct circuit_t *circ)
   if (circuit_extend_state_valid_helper(circ) < 0)
     return -1;
 
-  relay_header_unpack(&rh, cell->payload);
-
   /* We no longer accept EXTEND messages; only EXTEND2. */
-  if (rh.command == RELAY_COMMAND_EXTEND) {
+  if (rmsg->command == RELAY_COMMAND_EXTEND) {
     /* TODO: Should we log this? */
     return -1;
   }
 
-  if (extend_cell_parse(&ec, rh.command,
-                        cell->payload+RELAY_HEADER_SIZE,
-                        rh.length) < 0) {
+  if (extend_cell_parse(&ec, rmsg->command, rmsg->body, rmsg->length) < 0) {
     log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
            "Can't parse extend cell. Closing circuit.");
     return -1;

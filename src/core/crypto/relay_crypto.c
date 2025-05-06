@@ -19,27 +19,33 @@
 #include "core/or/relay.h"
 #include "core/crypto/relay_crypto.h"
 #include "core/or/sendme.h"
+#include "lib/cc/ctassert.h"
 
 #include "core/or/cell_st.h"
 #include "core/or/or_circuit_st.h"
 #include "core/or/origin_circuit_st.h"
 
-/** Update digest from the payload of cell. Assign integrity part to
+/* TODO CGO: This file will be largely incorrect when we have
+ * CGO crypto. */
+
+/* Offset of digest within relay cell body for v0 cells. */
+#define V0_DIGEST_OFFSET 5
+#define V0_DIGEST_LEN 4
+#define V0_RECOGNIZED_OFFSET 1
+
+/** Update digest{ from the payload of cell. Assign integrity part to
  * cell.
  */
 void
-relay_set_digest(crypto_digest_t *digest, cell_t *cell)
+relay_set_digest_v0(crypto_digest_t *digest, cell_t *cell)
 {
-  char integrity[4];
-  relay_header_t rh;
+  char integrity[V0_DIGEST_LEN];
 
   crypto_digest_add_bytes(digest, (char*)cell->payload, CELL_PAYLOAD_SIZE);
-  crypto_digest_get_digest(digest, integrity, 4);
+  crypto_digest_get_digest(digest, integrity, V0_DIGEST_LEN);
 //  log_fn(LOG_DEBUG,"Putting digest of %u %u %u %u into relay cell.",
 //    integrity[0], integrity[1], integrity[2], integrity[3]);
-  relay_header_unpack(&rh, cell->payload);
-  memcpy(rh.integrity, integrity, 4);
-  relay_header_pack(cell->payload, &rh);
+  memcpy(cell->payload + V0_DIGEST_OFFSET, integrity, V0_DIGEST_LEN);
 }
 
 /** Does the digest for this circuit indicate that this cell is for us?
@@ -49,25 +55,25 @@ relay_set_digest(crypto_digest_t *digest, cell_t *cell)
  * and cell to their original state and return 0.
  */
 static int
-relay_digest_matches(crypto_digest_t *digest, cell_t *cell)
+relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell)
 {
   uint32_t received_integrity, calculated_integrity;
-  relay_header_t rh;
   crypto_digest_checkpoint_t backup_digest;
+
+  CTASSERT(sizeof(uint32_t) == V0_DIGEST_LEN);
 
   crypto_digest_checkpoint(&backup_digest, digest);
 
-  relay_header_unpack(&rh, cell->payload);
-  memcpy(&received_integrity, rh.integrity, 4);
-  memset(rh.integrity, 0, 4);
-  relay_header_pack(cell->payload, &rh);
+  memcpy(&received_integrity, cell->payload + V0_DIGEST_OFFSET, V0_DIGEST_LEN);
+  memset(cell->payload + V0_DIGEST_OFFSET, 0, V0_DIGEST_LEN);
 
 //  log_fn(LOG_DEBUG,"Reading digest of %u %u %u %u from relay cell.",
 //    received_integrity[0], received_integrity[1],
 //    received_integrity[2], received_integrity[3]);
 
   crypto_digest_add_bytes(digest, (char*) cell->payload, CELL_PAYLOAD_SIZE);
-  crypto_digest_get_digest(digest, (char*) &calculated_integrity, 4);
+  crypto_digest_get_digest(digest, (char*) &calculated_integrity,
+                           V0_DIGEST_LEN);
 
   int rv = 1;
 
@@ -77,13 +83,19 @@ relay_digest_matches(crypto_digest_t *digest, cell_t *cell)
     /* restore digest to its old form */
     crypto_digest_restore(digest, &backup_digest);
     /* restore the relay header */
-    memcpy(rh.integrity, &received_integrity, 4);
-    relay_header_pack(cell->payload, &rh);
+    memcpy(cell->payload + V0_DIGEST_OFFSET, &received_integrity,
+           V0_DIGEST_LEN);
     rv = 0;
   }
 
   memwipe(&backup_digest, 0, sizeof(backup_digest));
   return rv;
+}
+
+static inline bool
+relay_cell_is_recognized_v0(const cell_t *cell)
+{
+  return get_uint16(cell->payload + V0_RECOGNIZED_OFFSET) == 0;
 }
 
 /** Apply <b>cipher</b> to CELL_PAYLOAD_SIZE bytes of <b>in</b>
@@ -146,8 +158,6 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
                    cell_direction_t cell_direction,
                    crypt_path_t **layer_hint, char *recognized)
 {
-  relay_header_t rh;
-
   tor_assert(circ);
   tor_assert(cell);
   tor_assert(recognized);
@@ -170,10 +180,10 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
         /* decrypt one layer */
         cpath_crypt_cell(thishop, cell->payload, true);
 
-        relay_header_unpack(&rh, cell->payload);
-        if (rh.recognized == 0) {
+        if (relay_cell_is_recognized_v0(cell)) {
           /* it's possibly recognized. have to check digest to be sure. */
-          if (relay_digest_matches(cpath_get_incoming_digest(thishop), cell)) {
+          if (relay_digest_matches_v0(cpath_get_incoming_digest(thishop),
+                                      cell)) {
             *recognized = 1;
             *layer_hint = thishop;
             return 0;
@@ -196,10 +206,9 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
 
     relay_crypt_one_payload(crypto->f_crypto, cell->payload);
 
-    relay_header_unpack(&rh, cell->payload);
-    if (rh.recognized == 0) {
+    if (relay_cell_is_recognized_v0(cell)) {
       /* it's possibly recognized. have to check digest to be sure. */
-      if (relay_digest_matches(crypto->f_digest, cell)) {
+      if (relay_digest_matches_v0(crypto->f_digest, cell)) {
         *recognized = 1;
         return 0;
       }
@@ -248,7 +257,7 @@ void
 relay_encrypt_cell_inbound(cell_t *cell,
                            or_circuit_t *or_circ)
 {
-  relay_set_digest(or_circ->crypto.b_digest, cell);
+  relay_set_digest_v0(or_circ->crypto.b_digest, cell);
 
   /* Record cell digest as the SENDME digest if need be. */
   sendme_record_sending_cell_digest(TO_CIRCUIT(or_circ), NULL);

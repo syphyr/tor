@@ -110,6 +110,9 @@ create_rend_cpath(const uint8_t *ntor_key_seed, size_t seed_len,
   cpath = tor_malloc_zero(sizeof(crypt_path_t));
   cpath->magic = CRYPT_PATH_MAGIC;
 
+  // TODO CGO: Pick relay cell format based on capabilities.
+  cpath->relay_cell_format = RELAY_CELL_FORMAT_V0;
+
   if (cpath_init_circuit_crypto(cpath, (char*)keys, sizeof(keys),
                                 is_service_side, 1) < 0) {
     tor_free(cpath);
@@ -268,7 +271,7 @@ send_establish_intro(const hs_service_t *service,
                      hs_service_intro_point_t *ip, origin_circuit_t *circ)
 {
   ssize_t cell_len;
-  uint8_t payload[RELAY_PAYLOAD_SIZE];
+  uint8_t payload[RELAY_PAYLOAD_SIZE_MAX];
 
   tor_assert(service);
   tor_assert(ip);
@@ -1153,7 +1156,7 @@ hs_circ_service_rp_has_opened(const hs_service_t *service,
                               origin_circuit_t *circ)
 {
   size_t payload_len;
-  uint8_t payload[RELAY_PAYLOAD_SIZE] = {0};
+  uint8_t payload[RELAY_PAYLOAD_SIZE_MAX] = {0};
 
   tor_assert(service);
   tor_assert(circ);
@@ -1442,7 +1445,7 @@ hs_circ_send_introduce1(origin_circuit_t *intro_circ,
 {
   int ret = -1;
   ssize_t payload_len;
-  uint8_t payload[RELAY_PAYLOAD_SIZE] = {0};
+  uint8_t payload[RELAY_PAYLOAD_SIZE_MAX] = {0};
   hs_cell_introduce1_data_t intro1_data;
 
   tor_assert(intro_circ);
@@ -1526,7 +1529,7 @@ int
 hs_circ_send_establish_rendezvous(origin_circuit_t *circ)
 {
   ssize_t cell_len = 0;
-  uint8_t cell[RELAY_PAYLOAD_SIZE] = {0};
+  uint8_t cell[RELAY_PAYLOAD_SIZE_MAX] = {0};
 
   tor_assert(circ);
   tor_assert(TO_CIRCUIT(circ)->purpose == CIRCUIT_PURPOSE_C_ESTABLISH_REND);

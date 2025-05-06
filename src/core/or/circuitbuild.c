@@ -1185,9 +1185,15 @@ circuit_send_intermediate_onion_skin(origin_circuit_t *circ,
   {
     uint8_t command = 0;
     uint16_t payload_len=0;
-    uint8_t payload[RELAY_PAYLOAD_SIZE];
+    uint8_t payload[RELAY_PAYLOAD_SIZE_MAX];
     if (extend_cell_format(&command, &payload_len, payload, &ec)<0) {
       log_warn(LD_CIRC,"Couldn't format extend cell");
+      return -END_CIRC_REASON_INTERNAL;
+    }
+
+    if (payload_len > circuit_max_relay_payload(
+                             TO_CIRCUIT(circ), hop->prev, command)) {
+      log_warn(LD_BUG, "Generated a too-long extend cell");
       return -END_CIRC_REASON_INTERNAL;
     }
 

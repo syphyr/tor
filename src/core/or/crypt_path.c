@@ -71,6 +71,9 @@ cpath_append_hop(crypt_path_t **head_ptr, extend_info_t *choice)
   hop->package_window = circuit_initial_package_window();
   hop->deliver_window = CIRCWINDOW_START;
 
+  // TODO CGO: Initialize this from a real decision.
+  hop->relay_cell_format = RELAY_CELL_FORMAT_V0;
+
   return 0;
 }
 
@@ -198,7 +201,7 @@ cpath_get_incoming_digest(const crypt_path_t *cpath)
 void
 cpath_set_cell_forward_digest(crypt_path_t *cpath, cell_t *cell)
 {
-  relay_set_digest(cpath->pvt_crypto.f_digest, cell);
+  relay_set_digest_v0(cpath->pvt_crypto.f_digest, cell);
 }
 
 /************ cpath sendme API ***************************/

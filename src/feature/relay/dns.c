@@ -508,7 +508,9 @@ MOCK_IMPL(STATIC void,
 send_resolved_cell,(edge_connection_t *conn, uint8_t answer_type,
                     const cached_resolve_t *resolved))
 {
-  char buf[RELAY_PAYLOAD_SIZE], *cp = buf;
+  // (We use the minimum here to ensure that we never
+  // generate a too-big message.)
+  char buf[RELAY_PAYLOAD_SIZE_MIN], *cp = buf;
   size_t buflen = 0;
   uint32_t ttl;
 
@@ -581,7 +583,7 @@ MOCK_IMPL(STATIC void,
 send_resolved_hostname_cell,(edge_connection_t *conn,
                              const char *hostname))
 {
-  char buf[RELAY_PAYLOAD_SIZE];
+  char buf[RELAY_PAYLOAD_SIZE_MAX];
   size_t buflen;
   uint32_t ttl;
 
@@ -590,7 +592,9 @@ send_resolved_hostname_cell,(edge_connection_t *conn,
 
   size_t namelen = strlen(hostname);
 
-  tor_assert(namelen < 256);
+  if (BUG(namelen >= 256)) {
+    return;
+  }
   ttl = conn->address_ttl;
 
   buf[0] = RESOLVED_TYPE_HOSTNAME;
