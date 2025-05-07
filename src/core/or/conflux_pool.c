@@ -196,7 +196,8 @@ conflux_free_(conflux_t *cfx)
   } SMARTLIST_FOREACH_END(leg);
   smartlist_free(cfx->legs);
 
-  SMARTLIST_FOREACH(cfx->ooo_q, conflux_msg_t *, cell, tor_free(cell));
+  SMARTLIST_FOREACH(cfx->ooo_q, conflux_msg_t *, cell,
+                    conflux_relay_msg_free(cell));
   smartlist_free(cfx->ooo_q);
 
   memwipe(cfx->nonce, 0, sizeof(cfx->nonce));
