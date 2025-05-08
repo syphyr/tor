@@ -172,7 +172,8 @@ uint64_t
 conflux_get_circ_bytes_allocation(const circuit_t *circ)
 {
   if (circ->conflux) {
-    return smartlist_len(circ->conflux->ooo_q) * sizeof(conflux_msg_t);
+    return smartlist_len(circ->conflux->ooo_q) * sizeof(void*)
+      + circ->conflux->ooo_q_alloc_cost;
   }
   return 0;
 }
@@ -887,11 +888,13 @@ conflux_process_relay_msg(conflux_t *cfx, circuit_t *in_circ,
      * stack. This is simpler and less error prone but might show up in our
      * profile (maybe?). The Maze is serious. It needs to be respected. */
     c_msg->msg = relay_msg_copy(msg);
+    size_t cost = conflux_msg_alloc_cost(c_msg);
 
     smartlist_pqueue_add(cfx->ooo_q, conflux_queue_cmp,
                          offsetof(conflux_msg_t, heap_idx), c_msg);
 
-    total_ooo_q_bytes += conflux_msg_alloc_cost(c_msg);
+    total_ooo_q_bytes += cost;
+    cfx->ooo_q_alloc_cost += cost;
 
     /* This cell should not be processed yet, and the queue is not ready
      * to process because the next absolute seqnum has not yet arrived */
@@ -919,7 +922,11 @@ conflux_dequeue_relay_msg(conflux_t *cfx)
   if (top->seq == cfx->last_seq_delivered+1) {
     smartlist_pqueue_pop(cfx->ooo_q, conflux_queue_cmp,
                          offsetof(conflux_msg_t, heap_idx));
-    total_ooo_q_bytes -= conflux_msg_alloc_cost(top);
+
+    size_t cost = conflux_msg_alloc_cost(top);
+    total_ooo_q_bytes -= cost;
+    cfx->ooo_q_alloc_cost -= cost;
+
     cfx->last_seq_delivered++;
     return top;
   } else {
