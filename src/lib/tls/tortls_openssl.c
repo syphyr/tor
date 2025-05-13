@@ -626,13 +626,6 @@ tor_tls_debug_state_callback(const SSL *ssl, int type, int val)
   /* LCOV_EXCL_STOP */
 }
 
-/* Return the name of the negotiated ciphersuite in use on <b>tls</b> */
-const char *
-tor_tls_get_ciphersuite_name(tor_tls_t *tls)
-{
-  return SSL_get_cipher(tls->ssl);
-}
-
 /** Create a new TLS object from a file descriptor, and a flag to
  * determine whether it is functioning as a server.
  */
