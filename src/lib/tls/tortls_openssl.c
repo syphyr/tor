@@ -533,9 +533,7 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
     SSL_CTX_set_tmp_dh(result->ctx, dh);
     DH_free(dh);
   }
-/* We check for this function in two ways, since it might be either a symbol
- * or a macro. */
-#if defined(SSL_CTX_set1_groups_list) || defined(HAVE_SSL_CTX_SET1_GROUPS_LIST)
+
   {
     // We'd like to say something like:
     //    "?X25519MLKEM768:P-256:P-224"
@@ -591,17 +589,6 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
                "Using library defaults");
     }
   }
-#else /* !(defined(SSL_CTX_set1_groups_list) || defined(HAVE_SSL_CTX_SE...)) */
-  if (! is_client) {
-    int nid;
-    EC_KEY *ec_key;
-    nid = NID_tor_default_ecdhe_group;
-    ec_key = EC_KEY_new_by_curve_name(nid);
-    if (ec_key != NULL) /*XXXX Handle errors? */
-      SSL_CTX_set_tmp_ecdh(result->ctx, ec_key);
-    EC_KEY_free(ec_key);
-  }
-#endif /* defined(SSL_CTX_set1_groups_list) || defined(HAVE_SSL_CTX_SET1...) */
 
   if (is_client) {
     SSL_CTX_set_verify(result->ctx, SSL_VERIFY_PEER,
