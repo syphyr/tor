@@ -301,6 +301,7 @@ int
 crypto_openssl_late_init(int useAccel, const char *accelName,
                          const char *accelDir)
 {
+#ifndef LIBRESSL_VERSION_NUMBER
   if (tor_OpenSSL_version_num() < OPENSSL_V_SERIES(3,0,0)) {
     log_warn(LD_CRYPTO, "Running with OpenSSL version \"%s\", "
              "which is no longer maintained by the OpenSSL project. "
@@ -308,6 +309,7 @@ crypto_openssl_late_init(int useAccel, const char *accelName,
              "OpenSSL >=3.5 would be ideal.",
              OPENSSL_VERSION_TEXT);
   }
+#endif
 
   if (useAccel > 0) {
     if (crypto_openssl_init_engines(accelName, accelDir) < 0)
