@@ -54,7 +54,7 @@ cgo_et_init(cgo_et_t *et, int aesbits, bool encrypt,
   et->kb = aes_raw_new(key, aesbits, encrypt);
   if (et->kb == NULL)
     return -1;
-  polyval_key_init(&et->ku, key + aes_key_bytes);
+  polyvalx_init(&et->ku, key + aes_key_bytes);
   return 0;
 }
 /** Replace the key on an existing, already initialized cgo_et_t.
@@ -66,25 +66,24 @@ cgo_et_set_key(cgo_et_t *et, int aesbits, bool encrypt,
 {
   size_t aes_key_bytes = aesbits / 8;
   aes_raw_set_key(&et->kb, key, aesbits, encrypt);
-  polyval_key_init(&et->ku, key + aes_key_bytes);
+  polyvalx_init(&et->ku, key + aes_key_bytes);
 }
 
 /** Helper: Compute polyval(KU, H | CMD | X_R). */
 static inline void
-compute_et_mask(polyval_key_t *pvk, const et_tweak_t tweak, uint8_t *t_out)
+compute_et_mask(polyvalx_t *pvk, const et_tweak_t tweak, uint8_t *t_out)
 {
   // block 0: tweak.h
   // block 1: one byte of command, first 15 bytes of x_r
   // block 2...: remainder of x_r, zero-padded.
-  polyval_t pv;
+  polyvalx_reset(pvk);
   uint8_t block1[16];
   block1[0] = tweak.uiv.cmd;
   memcpy(block1+1, tweak.x_r, 15);
-  polyval_init_from_key(&pv, pvk);
-  polyval_add_block(&pv, tweak.uiv.h);
-  polyval_add_block(&pv, block1);
-  polyval_add_zpad(&pv, tweak.x_r + 15, ET_TWEAK_LEN_X_R - 15);
-  polyval_get_tag(&pv, t_out);
+  polyvalx_add_block(pvk, tweak.uiv.h);
+  polyvalx_add_block(pvk, block1);
+  polyvalx_add_zpad(pvk, tweak.x_r + 15, ET_TWEAK_LEN_X_R - 15);
+  polyvalx_get_tag(pvk, t_out);
 }
 /** XOR the 16 byte block from inp into out. */
 static void

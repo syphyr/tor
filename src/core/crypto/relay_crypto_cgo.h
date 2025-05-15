@@ -77,9 +77,9 @@ typedef struct cgo_et_t {
    */
   aes_raw_t *kb;
   /**
-   * Polyval key.
+   * Polyval instance, with expanded key.
    */
-  polyval_key_t ku;
+  polyvalx_t ku;
 } cgo_et_t;
 /**
  * Keyed pseudorandom function, based on polyval and AES-CTR.
