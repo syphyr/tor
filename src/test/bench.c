@@ -670,7 +670,7 @@ bench_cell_ops_cgo(void)
   printf("%s: %.2f per cell (%.2f cpb)\n",              \
          (operation),                                   \
          NANOCOUNT(start,end,iters),                    \
-         cpb(cstart, cend, iters * payload_len))
+         cpb(cstart, cend, (double)iters * payload_len))
 
   // Initialize crypto
   cgo_crypt_t *r_f = cgo_crypt_new(CGO_MODE_RELAY_FORWARD, 128, keys, keylen);

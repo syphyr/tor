@@ -72,6 +72,44 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
 
 #endif /* OPENSSL_VERSION_NUMBER >= OPENSSL_V_NOPATCH(1,1,0) || ... */
 
+/* Cached values of our EVP_CIPHER items.  If we don't pre-fetch them,
+ * then EVP_CipherInit calls EVP_CIPHER_fetch itself,
+ * which is surprisingly expensive.
+ */
+static const EVP_CIPHER *aes128ctr = NULL;
+static const EVP_CIPHER *aes192ctr = NULL;
+static const EVP_CIPHER *aes256ctr = NULL;
+static const EVP_CIPHER *aes128ecb = NULL;
+static const EVP_CIPHER *aes192ecb = NULL;
+static const EVP_CIPHER *aes256ecb = NULL;
+
+#if OPENSSL_VERSION_NUMBER >= OPENSSL_V_NOPATCH(3,0,0) \
+  && !defined(LIBRESSL_VERSION_NUMBER)
+#define RESOLVE_CIPHER(c) \
+  EVP_CIPHER_fetch(NULL, OBJ_nid2sn(EVP_CIPHER_get_nid(c)), "")
+#else
+#define RESOLVE_CIPHER(c) (c)
+#endif
+
+/**
+ * Pre-fetch the versions of every AES cipher with its associated provider.
+ */
+static void
+init_ciphers(void)
+{
+  aes128ctr = RESOLVE_CIPHER(EVP_aes_128_ctr());
+  aes192ctr = RESOLVE_CIPHER(EVP_aes_192_ctr());
+  aes256ctr = RESOLVE_CIPHER(EVP_aes_256_ctr());
+  aes128ecb = RESOLVE_CIPHER(EVP_aes_128_ecb());
+  aes192ecb = RESOLVE_CIPHER(EVP_aes_192_ecb());
+  aes256ecb = RESOLVE_CIPHER(EVP_aes_256_ecb());
+}
+#define INIT_CIPHERS() STMT_BEGIN { \
+    if (PREDICT_UNLIKELY(NULL == aes128ctr)) {  \
+      init_ciphers();                           \
+    }                                           \
+  } STMT_END
+
 /* We have 2 strategies for getting the AES block cipher: Via OpenSSL's
  * AES_encrypt function, or via OpenSSL's EVP_EncryptUpdate function.
  *
@@ -91,17 +129,6 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
  * make sure that we have a fixed version.)
  */
 
-/* Helper function to use EVP with openssl's counter-mode wrapper. */
-static void
-evp_block128_fn(const uint8_t in[16],
-                uint8_t out[16],
-                const void *key)
-{
-  EVP_CIPHER_CTX *ctx = (void*)key;
-  int inl=16, outl=16;
-  EVP_EncryptUpdate(ctx, out, &outl, in, inl);
-}
-
 #ifdef USE_EVP_AES_CTR
 
 /* We don't actually define the struct here. */
@@ -109,12 +136,13 @@ evp_block128_fn(const uint8_t in[16],
 aes_cnt_cipher_t *
 aes_new_cipher(const uint8_t *key, const uint8_t *iv, int key_bits)
 {
+  INIT_CIPHERS();
   EVP_CIPHER_CTX *cipher = EVP_CIPHER_CTX_new();
   const EVP_CIPHER *c = NULL;
   switch (key_bits) {
-    case 128: c = EVP_aes_128_ctr(); break;
-    case 192: c = EVP_aes_192_ctr(); break;
-    case 256: c = EVP_aes_256_ctr(); break;
+    case 128: c = aes128ctr; break;
+    case 192: c = aes192ctr; break;
+    case 256: c = aes256ctr; break;
     default: tor_assert_unreached(); // LCOV_EXCL_LINE
   }
   EVP_EncryptInit(cipher, c, key, iv);
@@ -128,6 +156,44 @@ aes_cipher_free_(aes_cnt_cipher_t *cipher_)
   EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *) cipher_;
   EVP_CIPHER_CTX_reset(cipher);
   EVP_CIPHER_CTX_free(cipher);
+}
+
+/** Changes the key of the cipher;
+ * sets the IV to 0.
+ */
+void
+aes_cipher_set_key(aes_cnt_cipher_t *cipher_, const uint8_t *key, int key_bits)
+{
+  EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *) cipher_;
+  uint8_t iv[16] = {0};
+  const EVP_CIPHER *c = NULL;
+  switch (key_bits) {
+    case 128: c = aes128ctr; break;
+    case 192: c = aes192ctr; break;
+    case 256: c = aes256ctr; break;
+    default: tor_assert_unreached(); // LCOV_EXCL_LINE
+  }
+
+  // No need to call EVP_CIPHER_CTX_Reset here; EncryptInit already
+  // does it for us.
+  EVP_EncryptInit(cipher, c, key, iv);
+}
+/** Change the IV of this stream cipher without changing the key.
+ *
+ * Requires that the cipher stream position is at an even multiple of 16 bytes.
+ */
+void
+aes_cipher_set_iv_aligned(aes_cnt_cipher_t *cipher_, const uint8_t *iv)
+{
+  EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *) cipher_;
+#ifdef LIBRESSL_VERSION_NUMBER
+  EVP_CIPHER_CTX_set_iv(cipher, iv, 16);
+#else
+  // We would have to do this if the cipher's position were not aligned:
+  // EVP_CIPHER_CTX_set_num(cipher, 0);
+
+  memcpy(EVP_CIPHER_CTX_iv_noconst(cipher), iv, 16);
+#endif
 }
 void
 aes_crypt_inplace(aes_cnt_cipher_t *cipher_, char *data, size_t len)
@@ -306,9 +372,9 @@ aes_set_key(aes_cnt_cipher_t *cipher, const uint8_t *key, int key_bits)
   if (should_use_EVP) {
     const EVP_CIPHER *c = 0;
     switch (key_bits) {
-      case 128: c = EVP_aes_128_ecb(); break;
-      case 192: c = EVP_aes_192_ecb(); break;
-      case 256: c = EVP_aes_256_ecb(); break;
+      case 128: c = aes128ecb; break;
+      case 192: c = aes192ecb; break;
+      case 256: c = aes256ecb; break;
       default: tor_assert(0); // LCOV_EXCL_LINE
     }
     EVP_EncryptInit(&cipher->key.evp, c, key, NULL);
@@ -406,16 +472,19 @@ aes_crypt_inplace(aes_cnt_cipher_t *cipher, char *data, size_t len)
 aes_raw_t *
 aes_raw_new(const uint8_t *key, int key_bits, bool encrypt)
 {
+  INIT_CIPHERS();
   EVP_CIPHER_CTX *cipher = EVP_CIPHER_CTX_new();
   tor_assert(cipher);
   const EVP_CIPHER *c = NULL;
   switch (key_bits) {
-    case 128: c = EVP_aes_128_ecb(); break;
-    case 192: c = EVP_aes_192_ecb(); break;
-    case 256: c = EVP_aes_256_ecb(); break;
+    case 128: c = aes128ecb; break;
+    case 192: c = aes192ecb; break;
+    case 256: c = aes256ecb; break;
     default: tor_assert_unreached();
   }
 
+  // No need to call EVP_CIPHER_CTX_Reset here; EncryptInit already
+  // does it for us.
   int r = EVP_CipherInit(cipher, c, key, NULL, encrypt);
   tor_assert(r == 1);
   EVP_CIPHER_CTX_set_padding(cipher, 0);
@@ -432,14 +501,13 @@ aes_raw_set_key(aes_raw_t **cipher_, const uint8_t *key,
 {
   const EVP_CIPHER *c = *(EVP_CIPHER**) cipher_;
   switch (key_bits) {
-    case 128: c = EVP_aes_128_ecb(); break;
-    case 192: c = EVP_aes_192_ecb(); break;
-    case 256: c = EVP_aes_256_ecb(); break;
+    case 128: c = aes128ecb; break;
+    case 192: c = aes192ecb; break;
+    case 256: c = aes256ecb; break;
     default: tor_assert_unreached();
   }
   aes_raw_t *cipherp = *cipher_;
   EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *)cipherp;
-  EVP_CIPHER_CTX_reset(cipher);
   int r = EVP_CipherInit(cipher, c, key, NULL, encrypt);
   tor_assert(r == 1);
   EVP_CIPHER_CTX_set_padding(cipher, 0);
@@ -486,31 +554,4 @@ aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block)
   int r = EVP_DecryptUpdate((EVP_CIPHER_CTX *)cipher, block, &outl, block, 16);
   tor_assert(r == 1);
   tor_assert(outl == 16);
-}
-
-/**
- * Use the AES encryption key AES in counter mode,
- * starting at the position (iv + iv_offset)*16,
- * to encrypt the 'n' bytes of data in 'data'.
- *
- * Unlike aes_crypt_inplace, this function can re-use the same key repeatedly
- * with diferent IVs.
- */
-void
-aes_raw_counter_xor(const aes_raw_t *cipher,
-                    const uint8_t *iv, uint32_t iv_offset,
-                    uint8_t *data, size_t n)
-{
-  uint8_t counter[16];
-  uint8_t buf[16];
-  unsigned int pos = 0;
-
-  memcpy(counter, iv, 16);
-  if (iv_offset) {
-    aes_ctr_add_iv_offset(counter, iv_offset);
-  }
-
-  CRYPTO_ctr128_encrypt(data, data, n,
-                        (EVP_CIPHER_CTX *)cipher,
-                        counter, buf, &pos, evp_block128_fn);
 }

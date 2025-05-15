@@ -3340,103 +3340,102 @@ test_crypto_aes_raw(void *arg)
 #undef T
 }
 
+/** Make sure that we can set keys on live AES instances correctly. */
 static void
-test_crypto_aes_raw_ctr_equiv(void *arg)
+test_crypto_aes_keymanip_cnt(void *arg)
 {
   (void) arg;
-  size_t buflen = 65536;
-  uint8_t *buf = tor_malloc_zero(buflen);
-  aes_cnt_cipher_t *c = NULL;
-  aes_raw_t *c_raw = NULL;
+  uint8_t k1[16] = "123456780123678";
+  uint8_t k2[16] = "abcdefghijklmno";
+  int kbits = 128;
+  uint8_t iv1[16]= "{return 4;}////";
+  uint8_t iv2[16] = {0};
+  uint8_t buf[128] = {0};
+  uint8_t buf2[128] = {0};
 
-  const uint8_t iv[16];
-  const uint8_t key[16];
+  aes_cnt_cipher_t *aes = aes_new_cipher(k1, iv1, kbits);
+  aes_crypt_inplace(aes, (char*)buf, sizeof(buf));
 
-  // Simple case, IV  with zero offset.
-  for (int i = 0; i < 32; ++i) {
-    crypto_rand((char*)iv, sizeof(iv));
-    crypto_rand((char*)key, sizeof(key));
-    c = aes_new_cipher(key, iv, 128);
-    c_raw = aes_raw_new(key, 128, true);
-
-    aes_crypt_inplace(c, (char*)buf, buflen);
-    aes_raw_counter_xor(c_raw, iv, 0, buf, buflen);
-    tt_assert(fast_mem_is_zero((char*)buf, buflen));
-
-    aes_cipher_free(c);
-    aes_raw_free(c_raw);
-  }
-  // Trickier case, IV with offset == 31.
-  for (int i = 0; i < 32; ++i) {
-    crypto_rand((char*)iv, sizeof(iv));
-    crypto_rand((char*)key, sizeof(key));
-    c = aes_new_cipher(key, iv, 128);
-    c_raw = aes_raw_new(key, 128, true);
-
-    aes_crypt_inplace(c, (char*)buf, buflen);
-    size_t off = 31*16;
-    aes_raw_counter_xor(c_raw, iv, 31, buf + off, buflen - off);
-    tt_assert(fast_mem_is_zero((char*)buf + off, buflen - off));
-
-    aes_cipher_free(c);
-    aes_raw_free(c_raw);
-  }
+  aes_cnt_cipher_t *aes2 = aes_new_cipher(k2, iv2, kbits);
+  // 128-5 to make sure internal buf is cleared when we set key.
+  aes_crypt_inplace(aes2, (char*)buf2, sizeof(buf2)-5);
+  aes_cipher_set_key(aes2, k1, kbits);
+  aes_cipher_set_iv_aligned(aes2, iv1); // should work in this case.
+  memset(buf2, 0, sizeof(buf2));
+  aes_crypt_inplace(aes2, (char*)buf2, sizeof(buf2));
+  tt_mem_op(buf, OP_EQ, buf2, sizeof(buf));
 
  done:
-  aes_cipher_free(c);
-  aes_raw_free(c_raw);
-  tor_free(buf);
+  aes_cipher_free(aes);
+  aes_cipher_free(aes2);
 }
 
-/* Make sure that our IV addition code is correct.
- *
- * We test this function separately to make sure we handle corner cases well;
- * the corner cases are rare enough that we shouldn't expect to see them in
- * randomized testing.
- */
 static void
-test_crypto_aes_cnt_iv_manip(void *arg)
+test_crypto_aes_keymanip_ecb(void *arg)
+{
+  (void) arg;
+  uint8_t k1[16] = "123456780123678";
+  uint8_t k2[16] = "abcdefghijklmno";
+  int kbits = 128;
+  uint8_t buf_orig[16] = {1,2,3,0};
+  uint8_t buf1[16];
+  uint8_t buf2[16];
+
+  aes_raw_t *aes1 = aes_raw_new(k1, kbits, true);
+  aes_raw_t *aes2 = aes_raw_new(k1, kbits, false);
+  aes_raw_set_key(&aes2, k2, kbits, false);
+
+  memcpy(buf1, buf_orig, 16);
+  memcpy(buf2, buf_orig, 16);
+
+  aes_raw_encrypt(aes1, buf1);
+  aes_raw_encrypt(aes1, buf2);
+  tt_mem_op(buf1, OP_EQ, buf2, 16);
+
+  aes_raw_decrypt(aes2, buf1);
+  aes_raw_set_key(&aes2, k1, kbits, false);
+  aes_raw_decrypt(aes2, buf2);
+
+  tt_mem_op(buf1, OP_NE, buf2, 16);
+  tt_mem_op(buf2, OP_EQ, buf_orig, 16);
+
+ done:
+  aes_raw_free(aes1);
+  aes_raw_free(aes2);
+}
+
+static void
+test_crypto_aes_cnt_set_iv(void *arg)
 {
   (void)arg;
-  uint8_t buf[16];
-  uint8_t expect[16];
-  int n;
-#define T(pre, off, post) STMT_BEGIN {                                  \
-    n = base16_decode((char*)buf, sizeof(buf),                          \
-                  (pre), strlen(pre));                                  \
-    tt_int_op(n, OP_EQ, sizeof(buf));                                   \
-    n = base16_decode((char*)expect, sizeof(expect),                    \
-                  (post), strlen(post));                                \
-    tt_int_op(n, OP_EQ, sizeof(expect));                                \
-    aes_ctr_add_iv_offset(buf, (off));                                  \
-    tt_mem_op(buf, OP_EQ, expect, 16);                                  \
-  } STMT_END
+  uint8_t k1[16] = "123456780123678";
+  uint8_t iv_zero[16] = {0};
+  int kbits = 128;
+  const int iters = 100;
+  uint8_t buf1[128];
+  uint8_t buf2[128];
 
-  T("00000000000000000000000000000000", 0x4032,
-    "00000000000000000000000000004032");
-  T("0000000000000000000000000000ffff", 0x4032,
-    "00000000000000000000000000014031");
-  // We focus on "31" here because that's what CGO uses.
-  T("000000000000000000000000ffffffe0", 31,
-    "000000000000000000000000ffffffff");
-  T("000000000000000000000000ffffffe1", 31,
-    "00000000000000000000000100000000");
-  T("0000000100000000ffffffffffffffe0", 31,
-    "0000000100000000ffffffffffffffff");
-  T("0000000100000000ffffffffffffffe1", 31,
-    "00000001000000010000000000000000");
-  T("0000000ffffffffffffffffffffffff0", 31,
-    "0000001000000000000000000000000f");
-  T("ffffffffffffffffffffffffffffffe0", 31,
-    "ffffffffffffffffffffffffffffffff");
-  T("ffffffffffffffffffffffffffffffe1", 31,
-    "00000000000000000000000000000000");
-  T("ffffffffffffffffffffffffffffffe8", 31,
-    "00000000000000000000000000000007");
+  aes_cnt_cipher_t *aes1, *aes2 = NULL;
+  aes1 = aes_new_cipher(k1, iv_zero, kbits);
 
-#undef T
+  for (int i = 0; i < iters; ++i) {
+    uint8_t iv[16];
+    crypto_rand((char*) iv, sizeof(iv));
+    memset(buf1, 0, sizeof(buf1));
+    memset(buf2, 0, sizeof(buf2));
+
+    aes_cipher_set_iv_aligned(aes1, iv);
+    aes2 = aes_new_cipher(k1, iv, kbits);
+
+    aes_crypt_inplace(aes1, (char*)buf1, sizeof(buf1));
+    aes_crypt_inplace(aes2, (char*)buf1, sizeof(buf2));
+    tt_mem_op(buf1, OP_EQ, buf2, sizeof(buf1));
+
+    aes_cipher_free(aes2);
+  }
  done:
-  ;
+  aes_cipher_free(aes1);
+  aes_cipher_free(aes2);
 }
 
 #ifndef COCCI
@@ -3508,7 +3507,8 @@ struct testcase_t crypto_tests[] = {
   { "failure_modes", test_crypto_failure_modes, TT_FORK, NULL, NULL },
   { "polyval", test_crypto_polyval, 0, NULL, NULL },
   { "aes_raw", test_crypto_aes_raw, 0, NULL, NULL },
-  { "aes_raw_ctr_equiv", test_crypto_aes_raw_ctr_equiv, 0, NULL, NULL },
-  { "aes_cnt_iv_manip", test_crypto_aes_cnt_iv_manip, 0, NULL, NULL },
+  { "aes_keymanip_cnt", test_crypto_aes_keymanip_cnt, 0, NULL, NULL },
+  { "aes_keymanip_ecb", test_crypto_aes_keymanip_ecb, 0, NULL, NULL },
+  { "aes_cnt_set_iv", test_crypto_aes_cnt_set_iv, 0, NULL, NULL },
   END_OF_TESTCASES
 };
