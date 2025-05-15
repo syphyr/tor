@@ -23,6 +23,8 @@
 #include <openssl/obj_mac.h>
 #endif /* defined(ENABLE_OPENSSL) */
 
+#include <math.h>
+
 #include "core/or/circuitlist.h"
 #include "app/config/config.h"
 #include "app/main/subsysmgr.h"
@@ -42,6 +44,27 @@
 
 #include "feature/dirparse/microdesc_parse.h"
 #include "feature/nodelist/microdesc.h"
+
+#if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) \
+  || defined(_M_X64) || defined(_M_IX86) || defined(__i486)       \
+  || defined(__i386__)
+#define INTEL
+#endif
+
+#ifdef INTEL
+#include "x86intrin.h"
+
+static inline uint64_t
+cycles(void)
+{
+  return __rdtsc();
+}
+#define cpb(start, end, bytes) \
+  (((double)(end - start)) / (bytes))
+#else
+#define cycles() 0
+#define cpb(start,end,bytes) ((void)(start+end+bytes), (double)NAN)
+#endif
 
 #if defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_PROCESS_CPUTIME_ID)
 static uint64_t nanostart;
@@ -498,9 +521,9 @@ bench_digest(void)
 }
 
 static void
-bench_cell_ops(void)
+bench_cell_ops_tor1(void)
 {
-  const int iters = 1<<16;
+  const int iters = 1<<20;
   int i;
 
   /* benchmarks for cell ops at relay. */
@@ -508,6 +531,10 @@ bench_cell_ops(void)
   cell_t *cell = tor_malloc(sizeof(cell_t));
   int outbound;
   uint64_t start, end;
+  uint64_t cstart, cend;
+
+  // TODO CGO: use constant after this is merged or rebased.
+  const unsigned payload_len = 498;
 
   crypto_rand((char*)cell->payload, sizeof(cell->payload));
 
@@ -529,18 +556,34 @@ bench_cell_ops(void)
   for (outbound = 0; outbound <= 1; ++outbound) {
     cell_direction_t d = outbound ? CELL_DIRECTION_OUT : CELL_DIRECTION_IN;
     start = perftime();
+    cstart = cycles();
     for (i = 0; i < iters; ++i) {
       char recognized = 0;
       crypt_path_t *layer_hint = NULL;
       relay_decrypt_cell(TO_CIRCUIT(or_circ), cell, d,
                          &layer_hint, &recognized);
     }
+    cend = cycles();
     end = perftime();
-    printf("%sbound cells: %.2f ns per cell. (%.2f ns per byte of payload)\n",
+    printf("%sbound cells: %.2f ns per cell. (%.2f ns per byte of payload, %.2f cpb)\n",
            outbound?"Out":" In",
            NANOCOUNT(start,end,iters),
-           NANOCOUNT(start,end,iters*CELL_PAYLOAD_SIZE));
+           NANOCOUNT(start,end,iters * payload_len),
+           cpb(cstart, cend, iters * payload_len));
   }
+
+  start = perftime();
+  cstart = cycles();
+  for (i = 0; i < iters; ++i) {
+    relay_encrypt_cell_inbound(cell, or_circ);
+  }
+  cend = cycles();
+  end = perftime();
+  printf("originate inbound : %.2f ns per cell. "
+         "(%.2f ns per payload byte, %.2f cpb)\n",
+         NANOCOUNT(start, end, iters),
+         NANOCOUNT(start, end, iters * payload_len),
+         cpb(cstart, cend, iters*payload_len));
 
   relay_crypto_clear(&or_circ->crypto);
   tor_free(or_circ);
@@ -689,7 +732,7 @@ static struct benchmark_t benchmarks[] = {
   ENT(rand),
 
   ENT(cell_aes),
-  ENT(cell_ops),
+  ENT(cell_ops_tor1),
   ENT(dh),
 
 #ifdef ENABLE_OPENSSL
