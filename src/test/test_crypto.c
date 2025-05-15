@@ -3252,6 +3252,20 @@ test_crypto_polyval(void *arg)
   polyval_get_tag(&pv, output2);
   tt_mem_op(output, OP_EQ, output2, 16);
 
+  // Now the same with polyvalx.
+  polyvalx_t pvx;
+  polyvalx_init(&pvx, key);
+  polyvalx_add_zpad(&pvx, longer, 4090);
+  polyvalx_get_tag(&pvx, output2);
+  tt_mem_op(output, OP_EQ, output2, 16);
+
+  polyvalx_reset(&pvx);
+  for (cp = longer; cp < longer + 4096; cp += 16) {
+    polyvalx_add_block(&pvx, cp);
+  }
+  polyvalx_get_tag(&pvx, output2);
+  tt_mem_op(output, OP_EQ, output2, 16);
+
  done:
   tor_free(mem_op_hex_tmp);
   tor_free(longer);

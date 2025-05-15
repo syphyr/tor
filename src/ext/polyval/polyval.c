@@ -316,8 +316,8 @@ PV_DECLARE(pclmul_, static,
            u128_to_bytes_pclmul,
            pv_xor_y_pclmul,
            pv_mul_y_h_pclmul,
-           PCLMUL_BLOCK_STRIDE,
-           struct expanded_key_pclmul,
+           PV_BLOCK_STRIDE,
+           pv_expanded_key_t,
            expand_key_pclmul,
            pv_add_multiple_pclmul)
 
@@ -394,11 +394,10 @@ PV_DECLARE(, ,
            u128_to_bytes_pclmul,
            pv_xor_y_pclmul,
            pv_mul_y_h_pclmul,
-           PCLMUL_BLOCK_STRIDE,
-           struct expanded_key_pclmul,
+           PV_BLOCK_STRIDE,
+           pv_expanded_key_t,
            expand_key_pclmul,
            pv_add_multiple_pclmul)
-
 #elif defined(PV_USE_CTMUL64)
 PV_DECLARE(, ,
            u128_from_bytes_ctmul64,
@@ -437,6 +436,68 @@ polyval_detect_implementation(void)
 void
 polyval_detect_implementation(void)
 {
+}
+#endif
+
+#ifdef POLYVAL_USE_EXPANDED_KEYS
+
+#ifdef PV_USE_PCLMUL_DETECT
+#define SHOULD_EXPAND() (use_pclmul)
+#else
+#define SHOULD_EXPAND() (1)
+#endif
+
+void
+polyvalx_init(polyvalx_t *pvx, const uint8_t *key)
+{
+  polyval_init(&pvx->pv, key);
+  if (SHOULD_EXPAND()) {
+    expand_key_pclmul(&pvx->pv, &pvx->expanded);
+  }
+}
+void
+polyvalx_init_from_key(polyvalx_t *pvx, const polyval_key_t *key)
+{
+  polyval_init_from_key(&pvx->pv, key);
+  if (SHOULD_EXPAND()) {
+    expand_key_pclmul(&pvx->pv, &pvx->expanded);
+  }
+}
+void
+polyvalx_add_block(polyvalx_t *pvx, const uint8_t *block)
+{
+  polyval_add_block(&pvx->pv, block);
+}
+void
+polyvalx_add_zpad(polyvalx_t *pvx, const uint8_t *data, size_t n)
+{
+  if (SHOULD_EXPAND() && n >= PV_BLOCK_STRIDE * 16) {
+    while (n > PV_BLOCK_STRIDE * 16) {
+      pv_add_multiple_pclmul(&pvx->pv, data, &pvx->expanded);
+      data += PV_BLOCK_STRIDE * 16;
+      n -= PV_BLOCK_STRIDE * 16;
+    }
+  }
+  while (n > 16) {
+    polyval_add_block(&pvx->pv, data);
+    data += 16;
+    n -= 16;
+  }
+  if (n) {
+    uint8_t block[16];
+    memset(&block, 0, sizeof(block));
+    memcpy(block, data, n);
+    polyval_add_block(&pvx->pv, block);
+  }
+}
+void
+polyvalx_get_tag(const polyvalx_t *pvx, uint8_t *tag_out)
+{
+  polyval_get_tag(&pvx->pv, tag_out);
+}
+void polyvalx_reset(polyvalx_t *pvx)
+{
+  polyval_reset(&pvx->pv);
 }
 #endif
 

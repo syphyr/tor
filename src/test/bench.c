@@ -597,6 +597,7 @@ static void
 bench_polyval(void)
 {
   polyval_t pv;
+  polyvalx_t pvx;
   uint8_t key[16];
   uint8_t input[512];
   uint64_t start, end, cstart, cend;
@@ -625,6 +626,18 @@ bench_polyval(void)
   cend = cycles();
   end = perftime();
   printf("polyval (add 512): %.2f ns; %.2f cpb\n",
+         NANOCOUNT(start, end, iters),
+         cpb(cstart, cend, iters * 512));
+
+  polyvalx_init(&pvx, key);
+  start = perftime();
+  cstart = cycles();
+  for (int i = 0; i < iters; ++i) {
+    polyvalx_add_zpad(&pvx, input, 512);
+  }
+  cend = cycles();
+  end = perftime();
+  printf("polyval (add 512, pre-expanded key): %.2f ns; %.2f cpb\n",
          NANOCOUNT(start, end, iters),
          cpb(cstart, cend, iters * 512));
 }

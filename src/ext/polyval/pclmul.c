@@ -148,17 +148,10 @@ pclmulqdq11(__m128i x, __m128i y)
 				_mm_slli_epi64(x2, 57))); \
 	} while (0)
 
-#define PCLMUL_BLOCK_STRIDE 4
-struct expanded_key_pclmul {
-	// powers of h in reverse order.
-	// (in other words, contains
-	// h^PCLMUL_BLOCK_STRIDE .. H^2, H^1
-	__m128i k[PCLMUL_BLOCK_STRIDE];
-};
 
 BR_TARGET("ssse3,pclmul")
 static inline void
-expand_key_pclmul(const polyval_t *pv, struct expanded_key_pclmul *out)
+expand_key_pclmul(const polyval_t *pv, pv_expanded_key_t *out)
 {
 	__m128i h1w, h1x;
 	__m128i lastw, lastx;
@@ -166,9 +159,9 @@ expand_key_pclmul(const polyval_t *pv, struct expanded_key_pclmul *out)
 
 	h1w = PCLMUL_MEMBER(pv->key.h);
         BK(h1w, h1x);
-	out->k[PCLMUL_BLOCK_STRIDE-1] = lastw = h1w;
+        lastw = h1w;
 
-	for (int i = PCLMUL_BLOCK_STRIDE - 2; i >= 0; --i) {
+	for (int i = PV_BLOCK_STRIDE - 2; i >= 0; --i) {
 		BK(lastw, lastx);
 
 		t1 = pclmulqdq11(lastw, h1w);
@@ -188,7 +181,7 @@ BR_TARGET("ssse3,pclmul")
 static inline void
 pv_add_multiple_pclmul(polyval_t *pv,
 		       const uint8_t *input,
-		       const struct expanded_key_pclmul *expanded)
+		       const pv_expanded_key_t *expanded)
 {
 	__m128i t0, t1, t2, t3;
 
@@ -196,21 +189,23 @@ pv_add_multiple_pclmul(polyval_t *pv,
 	t2 = _mm_setzero_si128();
 	t3 = _mm_setzero_si128();
 
-	for (int i = 0; i < PCLMUL_BLOCK_STRIDE; ++i, input += 16) {
+        for (int i = 0; i < PV_BLOCK_STRIDE; ++i, input += 16) {
 		__m128i aw = _mm_loadu_si128((void *)(input));
 		__m128i ax;
-		__m128i hx;
+		__m128i hx, hw;
 		if (i == 0) {
 			aw = _mm_xor_si128(aw, PCLMUL_MEMBER(pv->y));
 		}
+		if (i == PV_BLOCK_STRIDE - 1) {
+			hw = PCLMUL_MEMBER(pv->key.h);
+		} else {
+			hw = expanded->k[i];
+		}
 		BK(aw, ax);
-		BK(expanded->k[i], hx);
-		t1 = _mm_xor_si128(t1,
-				   pclmulqdq11(aw, expanded->k[i]));
-		t3 = _mm_xor_si128(t3,
-				   pclmulqdq00(aw, expanded->k[i]));
-		t2 = _mm_xor_si128(t2,
-				   pclmulqdq00(ax, hx));
+		BK(hw, hx);
+		t1 = _mm_xor_si128(t1, pclmulqdq11(aw, hw));
+		t3 = _mm_xor_si128(t3, pclmulqdq00(aw, hw));
+		t2 = _mm_xor_si128(t2, pclmulqdq00(ax, hx));
 	}
 
 	t2 = _mm_xor_si128(t2, _mm_xor_si128(t1, t3));
