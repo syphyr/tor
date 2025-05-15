@@ -42,7 +42,6 @@ variables:
 .x86-64-template: &x86-64-template
   tags:
     - amd64
-    - physical
 
 # This template should be usable on any system that's based on apt.
 .apt-template: &apt-template |
@@ -104,16 +103,31 @@ variables:
     - if [ "$NSS" = yes ]; then apt-get install libnss3 libnss3-dev; fi
     # llvm-symbolizer for sanitizer backtrace
     - if [ "$HARDENING" = yes ]; then apt-get install llvm; fi
+    # libubsan1 for building with -fsanitize=address
+    - if [ "$HARDENING" = yes ]; then apt-get install libubsan1 libclang-rt-dev; fi
     # TODO: This next line should not be debian-only.
     - if [ "$STEM" = yes ]; then git clone --depth 1 https://gitlab.torproject.org/tpo/network-health/stem.git ; export STEM_PATH="$(pwd)/stem"; fi
     # TODO: This next line should not be debian-only.
-    - if [ "$CHUTNEY" = yes ]; then git clone --depth 1 https://gitlab.torproject.org/tpo/core/chutney.git ;  export CHUTNEY_PATH="$(pwd)/chutney"; fi
+    - |
+      if [ "$CHUTNEY" = yes ]; then
+        # Use a fixed version of chutney to avoid surprise breakage.
+        CHUTNEY_SHALLOW_SINCE=2024-10-28
+        CHUTNEY_COMMIT=be881a1e7c4bc8038fa13fde4a7b24e5c56349c4
+
+        git clone --shallow-since "$CHUTNEY_SHALLOW_SINCE" https://gitlab.torproject.org/tpo/core/chutney.git
+        git -C ./chutney checkout "$CHUTNEY_COMMIT"
+
+        apt install python3-venv
+        export CHUTNEY_PATH="$(pwd)/chutney"
+        python3 -m venv venv
+        venv/bin/pip install ./chutney
+      fi
     - if [ "$TRACING" = yes ]; then apt install liblttng-ust-dev; fi
 
 # Minimal check on debian: just make, make check.
 #
 debian-minimal:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   script:
     - ./scripts/ci/ci-driver.sh
@@ -121,12 +135,15 @@ debian-minimal:
 # Minimal check on debian/i386: just make, make check.
 #
 debian-i386-minimal:
-  image: i386/debian:bullseye
+  # TODO: Use a TPA-maintained image when there is one.
+  # See https://gitlab.torproject.org/tpo/tpa/base-images/-/issues/3
+  image:
+    name: i386/debian:bookworm
+    docker:
+      platform: linux/386
   <<: *debian-template
   script:
     - ./scripts/ci/ci-driver.sh
-  tags:
-    - physical
 
 #####
 # Run "make check" with a hardened clang on debian stable.  This takes
@@ -134,7 +151,7 @@ debian-i386-minimal:
 #
 # TODO: This will be faster once we merge #40098 and #40099.
 debian-hardened:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     ALL_BUGS_ARE_FATAL: "yes"
@@ -146,7 +163,7 @@ debian-hardened:
 #####
 # Distcheck on debian stable
 debian-distcheck:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     DISTCHECK: "yes"
@@ -157,7 +174,7 @@ debian-distcheck:
 #####
 # Documentation tests on debian stable: doxygen and asciidoc.
 debian-docs:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     DOXYGEN: "yes"
@@ -175,7 +192,7 @@ debian-docs:
 #       with the 'artifacts' mechanism, in theory, but it would be good to
 #       avoid having to have a system with hundreds of artifacts.
 debian-integration:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     CHECK: "no"
@@ -184,12 +201,13 @@ debian-integration:
     STEM: "yes"
     ALL_BUGS_ARE_FATAL: "yes"
   script:
+    - source venv/bin/activate
     - ./scripts/ci/ci-driver.sh
 
 #####
 # Tracing build on Debian stable.
 debian-tracing:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     TRACING: "yes"
@@ -201,7 +219,7 @@ debian-tracing:
 #####
 # No-authority mode
 debian-disable-dirauth:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     DISABLE_DIRAUTH: "yes"
@@ -211,7 +229,7 @@ debian-disable-dirauth:
 #####
 # No-relay mode
 debian-disable-relay:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     DISABLE_RELAY: "yes"
@@ -221,7 +239,7 @@ debian-disable-relay:
 #####
 # GPL licensed mode, enables pow module
 debian-gpl:
-  image: debian:buster
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     GPL: "yes"
@@ -231,7 +249,7 @@ debian-gpl:
 #####
 # NSS check on debian
 debian-nss:
-  image: debian:bullseye
+  image: containers.torproject.org/tpo/tpa/base-images/debian:bookworm
   <<: *debian-template
   variables:
     NSS: "yes"
