@@ -3201,6 +3201,7 @@ test_crypto_polyval(void *arg)
   uint8_t output[16];
   uint8_t output2[16];
   char *mem_op_hex_tmp=NULL;
+  uint8_t *longer = NULL;
 
   // From RFC 8452
   const char *key_hex = "25629347589242761d31f826ba4b757b";
@@ -3236,8 +3237,24 @@ test_crypto_polyval(void *arg)
   polyval_get_tag(&pv, output2);
   tt_mem_op(output, OP_EQ, output2, 16);
 
+  // Try a long input both ways, and make sure the answer is the same.
+  longer = tor_malloc_zero(4096);
+  crypto_rand((char *)longer, 4090); // leave zeros at the end.
+  polyval_reset(&pv);
+  polyval_add_zpad(&pv, longer, 4090);
+  polyval_get_tag(&pv, output);
+
+  polyval_reset(&pv);
+  const uint8_t *cp;
+  for (cp = longer; cp < longer + 4096; cp += 16) {
+    polyval_add_block(&pv, cp);
+  }
+  polyval_get_tag(&pv, output2);
+  tt_mem_op(output, OP_EQ, output2, 16);
+
  done:
   tor_free(mem_op_hex_tmp);
+  tor_free(longer);
 }
 
 static void

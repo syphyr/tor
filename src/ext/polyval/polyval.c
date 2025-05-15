@@ -219,12 +219,30 @@ pv_xor_y_ctmul(polyval_t *pv, u128 val)
 }
 #endif
 
+struct expanded_key_none {};
+static inline void add_multiple_none(polyval_t *pv,
+                                     const uint8_t *input,
+                                     const struct expanded_key_none *expanded)
+{
+  (void) pv;
+  (void) input;
+  (void) expanded;
+}
+static inline void expand_key_none(const polyval_t *inp,
+                                   struct expanded_key_none *out)
+{
+  (void) inp;
+  (void) out;
+}
+
 #define PV_DECLARE(prefix,                                              \
                    st,                                                  \
                    u128_from_bytes,                                     \
                    u128_to_bytes,                                       \
                    pv_xor_y,                                            \
-                   pv_mul_y_h)                                          \
+                   pv_mul_y_h,                                          \
+                   block_stride,                                        \
+                   expanded_key_tp, expand_fn, add_multiple_fn)         \
   st void                                                               \
   prefix ## polyval_key_init(polyval_key_t *pvk, const uint8_t *key)    \
   {                                                                     \
@@ -252,6 +270,15 @@ pv_xor_y_ctmul(polyval_t *pv, u128 val)
   st void                                                               \
   prefix ## polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n) \
   {                                                                     \
+    if (n > block_stride * 16) {                                        \
+      expanded_key_tp expanded_key;                                     \
+      expand_fn(pv, &expanded_key);                                     \
+      while (n > block_stride * 16) {                                   \
+        add_multiple_fn(pv, data, &expanded_key);                       \
+        n -= block_stride*16;                                           \
+        data += block_stride * 16;                                      \
+      }                                                                 \
+    }                                                                   \
     while (n > 16) {                                                    \
       polyval_add_block(pv, data);                                      \
       data += 16;                                                       \
@@ -288,13 +315,21 @@ PV_DECLARE(pclmul_, static,
            u128_from_bytes_pclmul,
            u128_to_bytes_pclmul,
            pv_xor_y_pclmul,
-           pv_mul_y_h_pclmul)
+           pv_mul_y_h_pclmul,
+           PCLMUL_BLOCK_STRIDE,
+           struct expanded_key_pclmul,
+           expand_key_pclmul,
+           pv_add_multiple_pclmul)
 
 PV_DECLARE(ctmul64_, static,
            u128_from_bytes_ctmul64,
            u128_to_bytes_ctmul64,
            pv_xor_y_ctmul64,
-           pv_mul_y_h_ctmul64)
+           pv_mul_y_h_ctmul64,
+           0,
+           struct expanded_key_none,
+           expand_key_none,
+           add_multiple_none)
 
 void
 polyval_key_init(polyval_key_t *pv, const uint8_t *key)
@@ -358,20 +393,32 @@ PV_DECLARE(, ,
            u128_from_bytes_pclmul,
            u128_to_bytes_pclmul,
            pv_xor_y_pclmul,
-           pv_mul_y_h_pclmul)
+           pv_mul_y_h_pclmul,
+           PCLMUL_BLOCK_STRIDE,
+           struct expanded_key_pclmul,
+           expand_key_pclmul,
+           pv_add_multiple_pclmul)
 
 #elif defined(PV_USE_CTMUL64)
 PV_DECLARE(, ,
            u128_from_bytes_ctmul64,
            u128_to_bytes_ctmul64,
            pv_xor_y_ctmul64,
-           pv_mul_y_h_ctmul64)
+           pv_mul_y_h_ctmul64,
+           0,
+           struct expanded_key_none,
+           expand_key_none,
+           add_multiple_none)
 
 #elif defined(PV_USE_CTMUL)
 PV_DECLARE(, , u128_from_bytes_ctmul,
            u128_to_bytes_ctmul,
            pv_xor_y_ctmul,
-           pv_mul_y_h_ctmul)
+           pv_mul_y_h_ctmul,
+           0,
+           struct expanded_key_none,
+           expand_key_none,
+           add_multiple_none)
 #endif
 
 #ifdef PV_USE_PCLMUL_DETECT
