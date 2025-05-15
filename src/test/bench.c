@@ -25,6 +25,7 @@
 
 #include <math.h>
 
+#include "ext/polyval/polyval.h"
 #include "core/or/circuitlist.h"
 #include "app/config/config.h"
 #include "app/main/subsysmgr.h"
@@ -35,6 +36,7 @@
 #include "lib/crypt_ops/crypto_rand.h"
 #include "feature/dircommon/consdiff.h"
 #include "lib/compress/compress.h"
+#include "core/crypto/relay_crypto_cgo.h"
 
 #include "core/or/cell_st.h"
 #include "core/or/or_circuit_st.h"
@@ -565,7 +567,8 @@ bench_cell_ops_tor1(void)
     }
     cend = cycles();
     end = perftime();
-    printf("%sbound cells: %.2f ns per cell. (%.2f ns per byte of payload, %.2f cpb)\n",
+    printf("%sbound cells: %.2f ns per cell. "
+           "(%.2f ns per byte of payload, %.2f cpb)\n",
            outbound?"Out":" In",
            NANOCOUNT(start,end,iters),
            NANOCOUNT(start,end,iters * payload_len),
@@ -588,6 +591,113 @@ bench_cell_ops_tor1(void)
   relay_crypto_clear(&or_circ->crypto);
   tor_free(or_circ);
   tor_free(cell);
+}
+
+static void
+bench_polyval(void)
+{
+  polyval_t pv;
+  uint8_t key[16];
+  uint8_t input[512];
+  uint64_t start, end, cstart, cend;
+  crypto_rand((char*) key, sizeof(key));
+  crypto_rand((char*) input, sizeof(input));
+
+  const int iters = 1<<20;
+
+  polyval_init(&pv, key);
+  start = perftime();
+  cstart = cycles();
+  for (int i = 0; i < iters; ++i) {
+    polyval_add_block(&pv, input);
+  }
+  cend = cycles();
+  end = perftime();
+  printf("polyval (add 16): %.2f ns; %.2f cpb\n",
+         NANOCOUNT(start, end, iters),
+         cpb(cstart, cend, iters * 16));
+
+  start = perftime();
+  cstart = cycles();
+  for (int i = 0; i < iters; ++i) {
+    polyval_add_zpad(&pv, input, 512);
+  }
+  cend = cycles();
+  end = perftime();
+  printf("polyval (add 512): %.2f ns; %.2f cpb\n",
+         NANOCOUNT(start, end, iters),
+         cpb(cstart, cend, iters * 512));
+}
+
+static void
+bench_cell_ops_cgo(void)
+{
+  const int iters = 1<<20;
+
+  /* benchmarks for cell ops at relay. */
+  cell_t *cell = tor_malloc(sizeof(cell_t));
+
+  uint64_t start, end;
+  uint64_t cstart, cend;
+
+  const uint8_t *tag = NULL;
+  size_t  keylen = cgo_key_material_len(128);
+  uint8_t *keys = tor_malloc(keylen);
+  crypto_rand((char*) keys, keylen);
+
+  // We're using the version of this constant that _does_ include
+  // stream IDs, for an apples-to-apples comparison with tor1.
+  //
+  // TODO CGO: use constant after this is merged or rebased.
+  const unsigned payload_len = 488;
+
+  memset(cell, 0, sizeof(*cell));
+
+#define SHOW(operation) \
+  printf("%s: %.2f per cell (%.2f cpb)\n",              \
+         (operation),                                   \
+         NANOCOUNT(start,end,iters),                    \
+         cpb(cstart, cend, iters * payload_len))
+
+  // Initialize crypto
+  cgo_crypt_t *r_f = cgo_crypt_new(CGO_MODE_RELAY_FORWARD, 128, keys, keylen);
+  cgo_crypt_t *r_b = cgo_crypt_new(CGO_MODE_RELAY_BACKWARD, 128, keys, keylen);
+
+  reset_perftime();
+
+  start = perftime();
+  cstart = cycles();
+  for (int i=0; i < iters; ++i) {
+    cgo_crypt_relay_forward(r_f, cell, &tag);
+  }
+  cend = cycles();
+  end = perftime();
+  SHOW("CGO outbound at relay");
+
+  start = perftime();
+  cstart = cycles();
+  for (int i=0; i < iters; ++i) {
+    cgo_crypt_relay_backward(r_b, cell);
+  }
+  cend = cycles();
+  end = perftime();
+  SHOW("CGO inbound at relay");
+
+  start = perftime();
+  cstart = cycles();
+  for (int i=0; i < iters; ++i) {
+    cgo_crypt_relay_originate(r_b, cell, &tag);
+  }
+  cend = cycles();
+  end = perftime();
+  SHOW("CGO originate at relay");
+
+  tor_free(cell);
+  tor_free(keys);
+  cgo_crypt_free(r_f);
+  cgo_crypt_free(r_b);
+
+#undef SHOW
 }
 
 static void
@@ -726,6 +836,7 @@ static struct benchmark_t benchmarks[] = {
   ENT(dmap),
   ENT(siphash),
   ENT(digest),
+  ENT(polyval),
   ENT(aes),
   ENT(onion_ntor),
   ENT(ed25519),
@@ -733,6 +844,7 @@ static struct benchmark_t benchmarks[] = {
 
   ENT(cell_aes),
   ENT(cell_ops_tor1),
+  ENT(cell_ops_cgo),
   ENT(dh),
 
 #ifdef ENABLE_OPENSSL
