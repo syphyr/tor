@@ -72,7 +72,7 @@ BR_TARGETS_X86_UP
  * We use a target of "sse2" only, so that Clang may still handle the
  * '__m128i' type and allocate SSE2 registers.
  */
-#ifdef __clang__
+#ifdef __clang__AND_NOT_WORKING
  BR_TARGET("sse2")
 static inline __m128i
 pclmulqdq00(__m128i x, __m128i y)
