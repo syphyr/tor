@@ -29,9 +29,6 @@ void aes_cipher_free_(aes_cnt_cipher_t *cipher);
   FREE_AND_NULL(aes_cnt_cipher_t, aes_cipher_free_, (cipher))
 void aes_crypt_inplace(aes_cnt_cipher_t *cipher, char *data, size_t len);
 
-int evaluate_evp_for_aes(int force_value);
-int evaluate_ctr_for_aes(void);
-
 #ifdef USE_AES_RAW
 typedef struct aes_raw_t aes_raw_t;
 
