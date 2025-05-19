@@ -570,6 +570,21 @@ if test "$tor_cv_c_attr_fallthrough" = "yes"; then
   AC_DEFINE(HAVE_ATTR_FALLTHROUGH, [1], [defined if we have the fallthrough attribute.])
 fi
 
+saved_CFLAGS="$CFLAGS"
+CFLAGS="$CFLAGS -Werror"
+AC_CACHE_CHECK([for __attribute__((nonstring))],
+      tor_cv_c_attr_nonstring,
+      [AC_COMPILE_IFELSE(
+         [AC_LANG_PROGRAM([],
+	       [[ __attribute__((nonstring)) const char foo[5] = "abcde"; ]])],
+	 [tor_cv_c_attr_nonstring=yes],
+	 [tor_cv_c_attr_nonstring=no] )])
+CFLAGS="$saved_CFLAGS"
+
+if test "$tor_cv_c_attr_nonstring" = "yes"; then
+  AC_DEFINE(HAVE_ATTR_NONSTRING, [1], [defined if we have the nonstring attribute.])
+fi
+
 TORUSER=_tor
 AC_ARG_WITH(tor-user,
         AS_HELP_STRING(--with-tor-user=NAME, [specify username for tor daemon]),
