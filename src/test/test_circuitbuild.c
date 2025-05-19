@@ -1295,7 +1295,7 @@ test_circuit_extend(void *arg)
   setup_full_capture_of_logs(LOG_INFO);
 
   msg->command = RELAY_COMMAND_EXTEND2;
-  uint8_t body[3] = "xyz";
+  NONSTRING uint8_t body[3] = "xyz";
   msg->body = body;
 
 #ifndef ALL_BUGS_ARE_FATAL
