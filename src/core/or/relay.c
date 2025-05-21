@@ -2107,12 +2107,11 @@ connection_edge_process_relay_cell(const relay_msg_t *msg, circuit_t *circ,
     if (conflux_process_relay_msg(circ->conflux, circ, layer_hint,
                                   (relay_msg_t *) msg)) {
       conflux_msg_t *c_msg = NULL;
-      int ret = 0;
 
       /* First, process this cell */
-      if ((ret = connection_edge_process_ordered_relay_cell(msg, circ,
-                                                            conn,
-                                                            layer_hint) < 0)) {
+      int ret = connection_edge_process_ordered_relay_cell(
+                 msg, circ, conn, layer_hint);
+      if (ret < 0) {
         return ret;
       }
 
@@ -2120,10 +2119,10 @@ connection_edge_process_relay_cell(const relay_msg_t *msg, circuit_t *circ,
       while ((c_msg = conflux_dequeue_relay_msg(circ->conflux))) {
         conn = relay_lookup_conn(circ, c_msg->msg, CELL_DIRECTION_OUT,
                                  layer_hint);
-        if ((ret =
-             connection_edge_process_ordered_relay_cell(c_msg->msg, circ,
-                                                        conn,
-                                                        layer_hint)) < 0) {
+        ret = connection_edge_process_ordered_relay_cell(c_msg->msg, circ,
+                                                         conn,
+                                                         layer_hint);
+        if (ret < 0) {
           /* Negative return value is a fatal error. Return early and tear down
            * circuit */
           conflux_relay_msg_free(c_msg);

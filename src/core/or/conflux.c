@@ -35,7 +35,9 @@ static inline uint64_t cwnd_sendable(const circuit_t *on_circ,
                                      uint64_t in_usec, uint64_t our_usec);
 
 /* Track the total number of bytes used by all ooo_q so it can be used by the
- * OOM handler to assess. */
+ * OOM handler to assess.
+ *
+ * When adding or subtracting to this value, use conflux_msg_alloc_cost(). */
 static uint64_t total_ooo_q_bytes = 0;
 
 /**
@@ -170,7 +172,8 @@ uint64_t
 conflux_get_circ_bytes_allocation(const circuit_t *circ)
 {
   if (circ->conflux) {
-    return smartlist_len(circ->conflux->ooo_q) * sizeof(conflux_msg_t);
+    return smartlist_len(circ->conflux->ooo_q) * sizeof(void*)
+      + circ->conflux->ooo_q_alloc_cost;
   }
   return 0;
 }
@@ -823,6 +826,15 @@ conflux_process_switch_command(circuit_t *in_circ,
 }
 
 /**
+ * Return the total number of required allocated to store `msg`.
+ */
+static inline size_t
+conflux_msg_alloc_cost(conflux_msg_t *msg)
+{
+  return msg->msg->length + sizeof(conflux_msg_t) + sizeof(relay_msg_t);
+}
+
+/**
  * Process an incoming relay cell for conflux. Called from
  * connection_edge_process_relay_cell().
  *
@@ -876,10 +888,13 @@ conflux_process_relay_msg(conflux_t *cfx, circuit_t *in_circ,
      * stack. This is simpler and less error prone but might show up in our
      * profile (maybe?). The Maze is serious. It needs to be respected. */
     c_msg->msg = relay_msg_copy(msg);
+    size_t cost = conflux_msg_alloc_cost(c_msg);
 
     smartlist_pqueue_add(cfx->ooo_q, conflux_queue_cmp,
                          offsetof(conflux_msg_t, heap_idx), c_msg);
-    total_ooo_q_bytes += sizeof(msg->length);
+
+    total_ooo_q_bytes += cost;
+    cfx->ooo_q_alloc_cost += cost;
 
     /* This cell should not be processed yet, and the queue is not ready
      * to process because the next absolute seqnum has not yet arrived */
@@ -907,7 +922,11 @@ conflux_dequeue_relay_msg(conflux_t *cfx)
   if (top->seq == cfx->last_seq_delivered+1) {
     smartlist_pqueue_pop(cfx->ooo_q, conflux_queue_cmp,
                          offsetof(conflux_msg_t, heap_idx));
-    total_ooo_q_bytes -= sizeof(top->msg->length);
+
+    size_t cost = conflux_msg_alloc_cost(top);
+    total_ooo_q_bytes -= cost;
+    cfx->ooo_q_alloc_cost -= cost;
+
     cfx->last_seq_delivered++;
     return top;
   } else {
