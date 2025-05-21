@@ -76,6 +76,11 @@ we_like_ssl_kea(SSLKEAType kt)
     case ssl_kea_ecdh_psk: return false;
     case ssl_kea_dh_psk: return false;
 
+#ifdef NSS_HAS_ECDH_HYBRID
+    case ssl_kea_ecdh_hybrid_psk: return false;
+    case ssl_kea_ecdh_hybrid: return true;
+#endif
+
     case ssl_kea_dh: return true;
     case ssl_kea_ecdh: return true;
     case ssl_kea_tls13_any: return true;

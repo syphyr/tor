@@ -6,6 +6,8 @@
 #include "orconfig.h"
 #define CRYPTO_CURVE25519_PRIVATE
 #define CRYPTO_RAND_PRIVATE
+#define USE_AES_RAW
+#define TOR_AES_PRIVATE
 #include "core/or/or.h"
 #include "test/test.h"
 #include "lib/crypt_ops/aes.h"
@@ -21,6 +23,7 @@
 #include "lib/crypt_ops/crypto_init.h"
 #include "ed25519_vectors.inc"
 #include "test/log_test_helpers.h"
+#include "ext/polyval/polyval.h"
 
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
@@ -3188,6 +3191,223 @@ test_crypto_failure_modes(void *arg)
   ;
 }
 
+static void
+test_crypto_polyval(void *arg)
+{
+  (void)arg;
+  polyval_t pv;
+  uint8_t key[16];
+  uint8_t input[48];
+  uint8_t output[16];
+  uint8_t output2[16];
+  char *mem_op_hex_tmp=NULL;
+
+  // From RFC 8452
+  const char *key_hex = "25629347589242761d31f826ba4b757b";
+  const char *input_hex =
+    "4f4f95668c83dfb6401762bb2d01a262"
+    "d1a24ddd2721d006bbe45f20d3c9f362";
+  memset(input, 0, sizeof(input));
+  base16_decode((char*)key,sizeof(key), key_hex, strlen(key_hex));
+  base16_decode((char*)input,sizeof(input), input_hex, strlen(input_hex));
+
+  // Two blocks, directly.
+  polyval_init(&pv, key);
+  polyval_add_block(&pv, input);
+  polyval_add_block(&pv, input+16);
+  polyval_get_tag(&pv, output);
+  test_memeq_hex(output, "f7a3b47b846119fae5b7866cf5e5b77e");
+  // Two blocks, as a string.
+  polyval_reset(&pv);
+  polyval_add_zpad(&pv, input, 32);
+  polyval_get_tag(&pv, output);
+  test_memeq_hex(output, "f7a3b47b846119fae5b7866cf5e5b77e");
+
+  // Now make sure that zero-padding works.
+  input[32] = 77;
+  polyval_reset(&pv);
+  polyval_add_block(&pv, input);
+  polyval_add_block(&pv, input+16);
+  polyval_add_block(&pv, input+32);
+  polyval_get_tag(&pv, output);
+
+  polyval_reset(&pv);
+  polyval_add_zpad(&pv, input, 33);
+  polyval_get_tag(&pv, output2);
+  tt_mem_op(output, OP_EQ, output2, 16);
+
+ done:
+  tor_free(mem_op_hex_tmp);
+}
+
+static void
+test_aes_raw_one(int keybits,
+                 const char *key_hex,
+                 const char *plaintext_hex,
+                 const char *ciphertext_hex)
+{
+  aes_raw_t *enc = NULL;
+  aes_raw_t *dec = NULL;
+  uint8_t key[32]; // max key size.
+  uint8_t pt[16], ct[16], block[16];
+  tt_int_op(keybits, OP_EQ, strlen(key_hex) * 8 / 2);
+  base16_decode((char*)key, sizeof(key), key_hex, strlen(key_hex));
+  base16_decode((char*)pt, sizeof(pt), plaintext_hex, strlen(plaintext_hex));
+  base16_decode((char*)ct, sizeof(ct), ciphertext_hex, strlen(ciphertext_hex));
+
+  enc = aes_raw_new(key, keybits, true);
+  dec = aes_raw_new(key, keybits, false);
+  memcpy(block, pt, sizeof(pt));
+  aes_raw_encrypt(enc, block);
+  tt_mem_op(block, OP_EQ, ct, 16);
+  aes_raw_decrypt(dec, block);
+  tt_mem_op(block, OP_EQ, pt, 16);
+
+ done:
+  aes_raw_free(enc);
+  aes_raw_free(dec);
+}
+
+static void
+test_crypto_aes_raw(void *arg)
+{
+  (void)arg;
+
+#define T test_aes_raw_one
+
+  /* From https://csrc.nist.gov/CSRC/media/Projects/
+     Cryptographic-Algorithm-Validation-Program/documents/aes/AESAVS.pdf */
+  const char *z128 =
+    "00000000000000000000000000000000";
+  const char *z192 =
+    "00000000000000000000000000000000"
+    "0000000000000000";
+  const char *z256 =
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000";
+
+  T(128, z128,
+    "f34481ec3cc627bacd5dc3fb08f273e6",
+    "0336763e966d92595a567cc9ce537f5e");
+  T(192, z192,
+    "1b077a6af4b7f98229de786d7516b639",
+    "275cfc0413d8ccb70513c3859b1d0f72");
+  T(256, z256,
+    "014730f80ac625fe84f026c60bfd547d",
+    "5c9d844ed46f9885085e5d6a4f94c7d7");
+  T(128,
+    "10a58869d74be5a374cf867cfb473859", z128,
+    "6d251e6944b051e04eaa6fb4dbf78465");
+  T(192,
+    "e9f065d7c13573587f7875357dfbb16c53489f6a4bd0f7cd", z128,
+    "0956259c9cd5cfd0181cca53380cde06");
+  T(256,
+    "c47b0294dbbbee0fec4757f22ffeee35"
+    "87ca4730c3d33b691df38bab076bc558", z128,
+    "46f2fb342d6f0ab477476fc501242c5f");
+
+#undef T
+}
+
+static void
+test_crypto_aes_raw_ctr_equiv(void *arg)
+{
+  (void) arg;
+  size_t buflen = 65536;
+  uint8_t *buf = tor_malloc_zero(buflen);
+  aes_cnt_cipher_t *c = NULL;
+  aes_raw_t *c_raw = NULL;
+
+  const uint8_t iv[16];
+  const uint8_t key[16];
+
+  // Simple case, IV  with zero offset.
+  for (int i = 0; i < 32; ++i) {
+    crypto_rand((char*)iv, sizeof(iv));
+    crypto_rand((char*)key, sizeof(key));
+    c = aes_new_cipher(key, iv, 128);
+    c_raw = aes_raw_new(key, 128, true);
+
+    aes_crypt_inplace(c, (char*)buf, buflen);
+    aes_raw_counter_xor(c_raw, iv, 0, buf, buflen);
+    tt_assert(fast_mem_is_zero((char*)buf, buflen));
+
+    aes_cipher_free(c);
+    aes_raw_free(c_raw);
+  }
+  // Trickier case, IV with offset == 31.
+  for (int i = 0; i < 32; ++i) {
+    crypto_rand((char*)iv, sizeof(iv));
+    crypto_rand((char*)key, sizeof(key));
+    c = aes_new_cipher(key, iv, 128);
+    c_raw = aes_raw_new(key, 128, true);
+
+    aes_crypt_inplace(c, (char*)buf, buflen);
+    size_t off = 31*16;
+    aes_raw_counter_xor(c_raw, iv, 31, buf + off, buflen - off);
+    tt_assert(fast_mem_is_zero((char*)buf + off, buflen - off));
+
+    aes_cipher_free(c);
+    aes_raw_free(c_raw);
+  }
+
+ done:
+  aes_cipher_free(c);
+  aes_raw_free(c_raw);
+  tor_free(buf);
+}
+
+/* Make sure that our IV addition code is correct.
+ *
+ * We test this function separately to make sure we handle corner cases well;
+ * the corner cases are rare enough that we shouldn't expect to see them in
+ * randomized testing.
+ */
+static void
+test_crypto_aes_cnt_iv_manip(void *arg)
+{
+  (void)arg;
+  uint8_t buf[16];
+  uint8_t expect[16];
+  int n;
+#define T(pre, off, post) STMT_BEGIN {                                  \
+    n = base16_decode((char*)buf, sizeof(buf),                          \
+                  (pre), strlen(pre));                                  \
+    tt_int_op(n, OP_EQ, sizeof(buf));                                   \
+    n = base16_decode((char*)expect, sizeof(expect),                    \
+                  (post), strlen(post));                                \
+    tt_int_op(n, OP_EQ, sizeof(expect));                                \
+    aes_ctr_add_iv_offset(buf, (off));                                  \
+    tt_mem_op(buf, OP_EQ, expect, 16);                                  \
+  } STMT_END
+
+  T("00000000000000000000000000000000", 0x4032,
+    "00000000000000000000000000004032");
+  T("0000000000000000000000000000ffff", 0x4032,
+    "00000000000000000000000000014031");
+  // We focus on "31" here because that's what CGO uses.
+  T("000000000000000000000000ffffffe0", 31,
+    "000000000000000000000000ffffffff");
+  T("000000000000000000000000ffffffe1", 31,
+    "00000000000000000000000100000000");
+  T("0000000100000000ffffffffffffffe0", 31,
+    "0000000100000000ffffffffffffffff");
+  T("0000000100000000ffffffffffffffe1", 31,
+    "00000001000000010000000000000000");
+  T("0000000ffffffffffffffffffffffff0", 31,
+    "0000001000000000000000000000000f");
+  T("ffffffffffffffffffffffffffffffe0", 31,
+    "ffffffffffffffffffffffffffffffff");
+  T("ffffffffffffffffffffffffffffffe1", 31,
+    "00000000000000000000000000000000");
+  T("ffffffffffffffffffffffffffffffe8", 31,
+    "00000000000000000000000000000007");
+
+#undef T
+ done:
+  ;
+}
+
 #ifndef COCCI
 #define CRYPTO_LEGACY(name)                                            \
   { #name, test_crypto_ ## name , 0, NULL, NULL }
@@ -3255,5 +3475,9 @@ struct testcase_t crypto_tests[] = {
   { "blake2b", test_crypto_blake2b, 0, NULL, NULL },
   { "hashx", test_crypto_hashx, 0, NULL, NULL },
   { "failure_modes", test_crypto_failure_modes, TT_FORK, NULL, NULL },
+  { "polyval", test_crypto_polyval, 0, NULL, NULL },
+  { "aes_raw", test_crypto_aes_raw, 0, NULL, NULL },
+  { "aes_raw_ctr_equiv", test_crypto_aes_raw_ctr_equiv, 0, NULL, NULL },
+  { "aes_cnt_iv_manip", test_crypto_aes_cnt_iv_manip, 0, NULL, NULL },
   END_OF_TESTCASES
 };

@@ -9,6 +9,9 @@
  * \brief Use OpenSSL to implement AES_CTR.
  **/
 
+#define USE_AES_RAW
+#define TOR_AES_PRIVATE
+
 #include "orconfig.h"
 #include "lib/crypt_ops/aes.h"
 #include "lib/crypt_ops/crypto_util.h"
@@ -87,6 +90,17 @@ ENABLE_GCC_WARNING("-Wredundant-decls")
  * critical bug in that counter mode implementation, so we need to test to
  * make sure that we have a fixed version.)
  */
+
+/* Helper function to use EVP with openssl's counter-mode wrapper. */
+static void
+evp_block128_fn(const uint8_t in[16],
+                uint8_t out[16],
+                const void *key)
+{
+  EVP_CIPHER_CTX *ctx = (void*)key;
+  int inl=16, outl=16;
+  EVP_EncryptUpdate(ctx, out, &outl, in, inl);
+}
 
 #ifdef USE_EVP_AES_CTR
 
@@ -340,17 +354,6 @@ aes_cipher_free_(aes_cnt_cipher_t *cipher)
 #define UPDATE_CTR_BUF(c, n)
 #endif /* defined(USING_COUNTER_VARS) */
 
-/* Helper function to use EVP with openssl's counter-mode wrapper. */
-static void
-evp_block128_fn(const uint8_t in[16],
-                uint8_t out[16],
-                const void *key)
-{
-  EVP_CIPHER_CTX *ctx = (void*)key;
-  int inl=16, outl=16;
-  EVP_EncryptUpdate(ctx, out, &outl, in, inl);
-}
-
 /** Encrypt <b>len</b> bytes from <b>input</b>, storing the results in place.
  * Uses the key in <b>cipher</b>, and advances the counter by <b>len</b> bytes
  * as it encrypts.
@@ -383,19 +386,131 @@ aes_crypt_inplace(aes_cnt_cipher_t *cipher, char *data, size_t len)
   }
 }
 
-/** Reset the 128-bit counter of <b>cipher</b> to the 16-bit big-endian value
- * in <b>iv</b>. */
-static void
-aes_set_iv(aes_cnt_cipher_t *cipher, const uint8_t *iv)
+#endif /* defined(USE_EVP_AES_CTR) */
+
+/* ========
+ * Functions for "raw" (ECB) AES.
+ *
+ * I'm choosing the name "raw" here because ECB is not a mode;
+ * it's a disaster.  The only way to use this safely is
+ * within a real construction.
+ */
+
+/**
+ * Create a new instance of AES using a key of length 'key_bits'
+ * for raw block encryption.
+ *
+ * This is even more low-level than counter-mode, and you should
+ * only use it with extreme caution.
+ */
+aes_raw_t *
+aes_raw_new(const uint8_t *key, int key_bits, bool encrypt)
 {
-#ifdef USING_COUNTER_VARS
-  cipher->counter3 = tor_ntohl(get_uint32(iv));
-  cipher->counter2 = tor_ntohl(get_uint32(iv+4));
-  cipher->counter1 = tor_ntohl(get_uint32(iv+8));
-  cipher->counter0 = tor_ntohl(get_uint32(iv+12));
-#endif /* defined(USING_COUNTER_VARS) */
-  cipher->pos = 0;
-  memcpy(cipher->ctr_buf.buf, iv, 16);
+  EVP_CIPHER_CTX *cipher = EVP_CIPHER_CTX_new();
+  tor_assert(cipher);
+  const EVP_CIPHER *c = NULL;
+  switch (key_bits) {
+    case 128: c = EVP_aes_128_ecb(); break;
+    case 192: c = EVP_aes_192_ecb(); break;
+    case 256: c = EVP_aes_256_ecb(); break;
+    default: tor_assert_unreached();
+  }
+
+  int r = EVP_CipherInit(cipher, c, key, NULL, encrypt);
+  tor_assert(r == 1);
+  EVP_CIPHER_CTX_set_padding(cipher, 0);
+  return (aes_raw_t *)cipher;
+}
+/**
+ * Replace the key on an existing aes_raw_t.
+ *
+ * This may be faster than freeing and reallocating.
+ */
+void
+aes_raw_set_key(aes_raw_t **cipher_, const uint8_t *key,
+                int key_bits, bool encrypt)
+{
+  const EVP_CIPHER *c = *(EVP_CIPHER**) cipher_;
+  switch (key_bits) {
+    case 128: c = EVP_aes_128_ecb(); break;
+    case 192: c = EVP_aes_192_ecb(); break;
+    case 256: c = EVP_aes_256_ecb(); break;
+    default: tor_assert_unreached();
+  }
+  aes_raw_t *cipherp = *cipher_;
+  EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *)cipherp;
+  EVP_CIPHER_CTX_reset(cipher);
+  int r = EVP_CipherInit(cipher, c, key, NULL, encrypt);
+  tor_assert(r == 1);
+  EVP_CIPHER_CTX_set_padding(cipher, 0);
 }
 
-#endif /* defined(USE_EVP_AES_CTR) */
+/**
+ * Release storage held by 'cipher'.
+ */
+void
+aes_raw_free_(aes_raw_t *cipher_)
+{
+  if (!cipher_)
+    return;
+  EVP_CIPHER_CTX *cipher = (EVP_CIPHER_CTX *)cipher_;
+#ifdef OPENSSL_1_1_API
+  EVP_CIPHER_CTX_reset(cipher);
+#else
+  EVP_CIPHER_CTX_cleanup(cipher);
+#endif
+  EVP_CIPHER_CTX_free(cipher);
+}
+#define aes_raw_free(cipher) \
+  FREE_AND_NULL(aes_raw_t, aes_raw_free_, (cipher))
+/**
+ * Encrypt a single 16-byte block with 'cipher',
+ * which must have been initialized for encryption.
+ */
+void
+aes_raw_encrypt(const aes_raw_t *cipher, uint8_t *block)
+{
+  int outl = 16;
+  int r = EVP_EncryptUpdate((EVP_CIPHER_CTX *)cipher, block, &outl, block, 16);
+  tor_assert(r == 1);
+  tor_assert(outl == 16);
+}
+/**
+ * Decrypt a single 16-byte block with 'cipher',
+ * which must have been initialized for decryption.
+ */
+void
+aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block)
+{
+  int outl = 16;
+  int r = EVP_DecryptUpdate((EVP_CIPHER_CTX *)cipher, block, &outl, block, 16);
+  tor_assert(r == 1);
+  tor_assert(outl == 16);
+}
+
+/**
+ * Use the AES encryption key AES in counter mode,
+ * starting at the position (iv + iv_offset)*16,
+ * to encrypt the 'n' bytes of data in 'data'.
+ *
+ * Unlike aes_crypt_inplace, this function can re-use the same key repeatedly
+ * with diferent IVs.
+ */
+void
+aes_raw_counter_xor(const aes_raw_t *cipher,
+                    const uint8_t *iv, uint32_t iv_offset,
+                    uint8_t *data, size_t n)
+{
+  uint8_t counter[16];
+  uint8_t buf[16];
+  unsigned int pos = 0;
+
+  memcpy(counter, iv, 16);
+  if (iv_offset) {
+    aes_ctr_add_iv_offset(counter, iv_offset);
+  }
+
+  CRYPTO_ctr128_encrypt(data, data, n,
+                        (EVP_CIPHER_CTX *)cipher,
+                        counter, buf, &pos, evp_block128_fn);
+}
