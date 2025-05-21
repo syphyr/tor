@@ -50,9 +50,6 @@ struct tor_tls_t {
                                        * have completed successfully. */
   unsigned int isServer:1; /**< True iff this is a server-side connection */
 #ifdef ENABLE_OPENSSL
-  /** Return value from tor_tls_classify_client_ciphers, or 0 if we haven't
-   * called that function yet. */
-  int8_t client_cipher_list_type;
   size_t wantwrite_n; /**< 0 normally, >0 if we returned wantwrite last
                        * time. */
   /** Last values retrieved from BIO_number_read()/write(); see

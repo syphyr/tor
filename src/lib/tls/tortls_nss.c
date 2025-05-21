@@ -744,30 +744,6 @@ tor_tls_export_key_material,(tor_tls_t *tls, uint8_t *secrets_out,
   return (s == SECSuccess) ? 0 : -1;
 }
 
-const char *
-tor_tls_get_ciphersuite_name(tor_tls_t *tls)
-{
-  tor_assert(tls);
-
-  SSLChannelInfo channel_info;
-  SSLCipherSuiteInfo cipher_info;
-
-  memset(&channel_info, 0, sizeof(channel_info));
-  memset(&cipher_info, 0, sizeof(cipher_info));
-
-  SECStatus s = SSL_GetChannelInfo(tls->ssl,
-                                   &channel_info, sizeof(channel_info));
-  if (s != SECSuccess)
-    return NULL;
-
-  s = SSL_GetCipherSuiteInfo(channel_info.cipherSuite,
-                             &cipher_info, sizeof(cipher_info));
-  if (s != SECSuccess)
-    return NULL;
-
-  return cipher_info.cipherSuiteName;
-}
-
 /** The group we should use for ecdhe when none was selected. */
 #define SEC_OID_TOR_DEFAULT_ECDHE_GROUP SEC_OID_ANSIX962_EC_PRIME256V1
 

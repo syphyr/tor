@@ -136,8 +136,6 @@ int tor_tls_get_my_certs(int server,
                          const struct tor_x509_cert_t **link_cert_out,
                          const struct tor_x509_cert_t **id_cert_out);
 
-const char *tor_tls_get_ciphersuite_name(tor_tls_t *tls);
-
 int evaluate_ecgroup_for_tls(const char *ecgroup);
 
 #endif /* !defined(TOR_TORTLS_H) */
