@@ -235,6 +235,11 @@ static inline void expand_key_none(const polyval_t *inp,
   (void) out;
 }
 
+/* Kludge: a special value to use for block_stride when we don't support
+ * processing multiple blocks at once.  Previously we used 0, but that
+ * caused warnings with some comparisons. */
+#define BLOCK_STRIDE_NONE  0xffff
+
 #define PV_DECLARE(prefix,                                              \
                    st,                                                  \
                    u128_from_bytes,                                     \
@@ -270,10 +275,12 @@ static inline void expand_key_none(const polyval_t *inp,
   st void                                                               \
   prefix ## polyval_add_zpad(polyval_t *pv, const uint8_t *data, size_t n) \
   {                                                                     \
-    if (n > block_stride * 16) {                                        \
+    /* since block_stride is a constant, this should get optimized */   \
+    if ((block_stride != BLOCK_STRIDE_NONE)                             \
+        && n >= (block_stride) * 16) {                                  \
       expanded_key_tp expanded_key;                                     \
       expand_fn(pv, &expanded_key);                                     \
-      while (n > block_stride * 16) {                                   \
+      while (n >= (block_stride) * 16) {                                \
         add_multiple_fn(pv, data, &expanded_key);                       \
         n -= block_stride*16;                                           \
         data += block_stride * 16;                                      \
@@ -326,7 +333,7 @@ PV_DECLARE(ctmul64_, static,
            u128_to_bytes_ctmul64,
            pv_xor_y_ctmul64,
            pv_mul_y_h_ctmul64,
-           0,
+           BLOCK_STRIDE_NONE,
            struct expanded_key_none,
            expand_key_none,
            add_multiple_none)
@@ -404,7 +411,7 @@ PV_DECLARE(, ,
            u128_to_bytes_ctmul64,
            pv_xor_y_ctmul64,
            pv_mul_y_h_ctmul64,
-           0,
+           BLOCK_STRIDE_NONE,
            struct expanded_key_none,
            expand_key_none,
            add_multiple_none)
@@ -414,7 +421,7 @@ PV_DECLARE(, , u128_from_bytes_ctmul,
            u128_to_bytes_ctmul,
            pv_xor_y_ctmul,
            pv_mul_y_h_ctmul,
-           0,
+           BLOCK_STRIDE_NONE,
            struct expanded_key_none,
            expand_key_none,
            add_multiple_none)
