@@ -72,7 +72,7 @@ BR_TARGETS_X86_UP
  * We use a target of "sse2" only, so that Clang may still handle the
  * '__m128i' type and allocate SSE2 registers.
  */
-#ifdef __clang__
+#ifdef __clang__AND_NOT_WORKING
  BR_TARGET("sse2")
 static inline __m128i
 pclmulqdq00(__m128i x, __m128i y)
@@ -149,21 +149,90 @@ pclmulqdq11(__m128i x, __m128i y)
 	} while (0)
 
 
+BR_TARGET("ssse3,pclmul")
+static inline void
+expand_key_pclmul(const polyval_t *pv, pv_expanded_key_t *out)
+{
+	__m128i h1w, h1x;
+	__m128i lastw, lastx;
+	__m128i t0, t1, t2, t3;
+
+	h1w = PCLMUL_MEMBER(pv->key.h);
+        BK(h1w, h1x);
+        lastw = h1w;
+
+	for (int i = PV_BLOCK_STRIDE - 2; i >= 0; --i) {
+		BK(lastw, lastx);
+
+		t1 = pclmulqdq11(lastw, h1w);
+		t3 = pclmulqdq00(lastw, h1w);
+		t2 = pclmulqdq00(lastx, h1x);
+		t2 = _mm_xor_si128(t2, _mm_xor_si128(t1, t3));
+		t0 = _mm_shuffle_epi32(t1, 0x0E);
+		t1 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
+		t2 = _mm_xor_si128(t2, _mm_shuffle_epi32(t3, 0x0E));
+		REDUCE_F128(t0, t1, t2, t3);
+		out->k[i] = lastw = _mm_unpacklo_epi64(t1, t0);
+	}
+}
+
+// Add PCLMUL_BLOCK_STRIDE * 16 bytes from input.
+BR_TARGET("ssse3,pclmul")
+static inline void
+pv_add_multiple_pclmul(polyval_t *pv,
+		       const uint8_t *input,
+		       const pv_expanded_key_t *expanded)
+{
+	__m128i t0, t1, t2, t3;
+
+	t1 = _mm_setzero_si128();
+	t2 = _mm_setzero_si128();
+	t3 = _mm_setzero_si128();
+
+        for (int i = 0; i < PV_BLOCK_STRIDE; ++i, input += 16) {
+		__m128i aw = _mm_loadu_si128((void *)(input));
+		__m128i ax;
+		__m128i hx, hw;
+		if (i == 0) {
+			aw = _mm_xor_si128(aw, PCLMUL_MEMBER(pv->y));
+		}
+		if (i == PV_BLOCK_STRIDE - 1) {
+			hw = PCLMUL_MEMBER(pv->key.h);
+		} else {
+			hw = expanded->k[i];
+		}
+		BK(aw, ax);
+		BK(hw, hx);
+		t1 = _mm_xor_si128(t1, pclmulqdq11(aw, hw));
+		t3 = _mm_xor_si128(t3, pclmulqdq00(aw, hw));
+		t2 = _mm_xor_si128(t2, pclmulqdq00(ax, hx));
+	}
+
+	t2 = _mm_xor_si128(t2, _mm_xor_si128(t1, t3));
+	t0 = _mm_shuffle_epi32(t1, 0x0E);
+	t1 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
+	t2 = _mm_xor_si128(t2, _mm_shuffle_epi32(t3, 0x0E));
+
+	REDUCE_F128(t0, t1, t2, t3);
+	PCLMUL_MEMBER(pv->y) = _mm_unpacklo_epi64(t1, t0);
+}
+
+
 /* see bearssl_hash.h */
 BR_TARGET("ssse3,pclmul")
-static
-void pv_mul_y_h(polyval_t *pv)
+static inline void
+pv_mul_y_h_pclmul(polyval_t *pv)
 {
 	__m128i yw, h1w, h1x;
 
-        h1w = pv->key.h;
+        h1w = PCLMUL_MEMBER(pv->key.h);
         BK(h1w, h1x);
 
         {
 		__m128i aw, ax;
 		__m128i t0, t1, t2, t3;
 
-                aw = pv->y;
+                aw = PCLMUL_MEMBER(pv->y);
 		BK(aw, ax);
 
 		t1 = pclmulqdq11(aw, h1w);
@@ -180,5 +249,5 @@ void pv_mul_y_h(polyval_t *pv)
 		yw = _mm_unpacklo_epi64(t1, t0);
 	}
 
-	pv->y = yw;
+	PCLMUL_MEMBER(pv->y) = yw;
 }

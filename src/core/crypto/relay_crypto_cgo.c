@@ -54,7 +54,7 @@ cgo_et_init(cgo_et_t *et, int aesbits, bool encrypt,
   et->kb = aes_raw_new(key, aesbits, encrypt);
   if (et->kb == NULL)
     return -1;
-  polyval_key_init(&et->ku, key + aes_key_bytes);
+  polyvalx_init(&et->ku, key + aes_key_bytes);
   return 0;
 }
 /** Replace the key on an existing, already initialized cgo_et_t.
@@ -66,25 +66,24 @@ cgo_et_set_key(cgo_et_t *et, int aesbits, bool encrypt,
 {
   size_t aes_key_bytes = aesbits / 8;
   aes_raw_set_key(&et->kb, key, aesbits, encrypt);
-  polyval_key_init(&et->ku, key + aes_key_bytes);
+  polyvalx_init(&et->ku, key + aes_key_bytes);
 }
 
 /** Helper: Compute polyval(KU, H | CMD | X_R). */
 static inline void
-compute_et_mask(polyval_key_t *pvk, const et_tweak_t tweak, uint8_t *t_out)
+compute_et_mask(polyvalx_t *pvk, const et_tweak_t tweak, uint8_t *t_out)
 {
   // block 0: tweak.h
   // block 1: one byte of command, first 15 bytes of x_r
   // block 2...: remainder of x_r, zero-padded.
-  polyval_t pv;
+  polyvalx_reset(pvk);
   uint8_t block1[16];
   block1[0] = tweak.uiv.cmd;
   memcpy(block1+1, tweak.x_r, 15);
-  polyval_init_from_key(&pv, pvk);
-  polyval_add_block(&pv, tweak.uiv.h);
-  polyval_add_block(&pv, block1);
-  polyval_add_zpad(&pv, tweak.x_r + 15, ET_TWEAK_LEN_X_R - 15);
-  polyval_get_tag(&pv, t_out);
+  polyvalx_add_block(pvk, tweak.uiv.h);
+  polyvalx_add_block(pvk, block1);
+  polyvalx_add_zpad(pvk, tweak.x_r + 15, ET_TWEAK_LEN_X_R - 15);
+  polyvalx_get_tag(pvk, t_out);
 }
 /** XOR the 16 byte block from inp into out. */
 static void
@@ -148,9 +147,10 @@ STATIC int
 cgo_prf_init(cgo_prf_t *prf, int aesbits,
              const uint8_t *key)
 {
+  const uint8_t iv[16] = {0};
   size_t aes_key_bytes = aesbits / 8;
   memset(prf,0, sizeof(*prf));
-  prf->k = aes_raw_new(key, aesbits, true);
+  prf->k = aes_new_cipher(key, iv, aesbits);
   polyval_key_init(&prf->b, key + aes_key_bytes);
   return 0;
 }
@@ -162,7 +162,7 @@ cgo_prf_set_key(cgo_prf_t *prf, int aesbits,
                 const uint8_t *key)
 {
   size_t aes_key_bytes = aesbits / 8;
-  aes_raw_set_key(&prf->k, key, aesbits, true);
+  aes_cipher_set_key(prf->k, key, aesbits);
   polyval_key_init(&prf->b, key + aes_key_bytes);
 }
 /**
@@ -184,7 +184,15 @@ cgo_prf_xor_t0(cgo_prf_t *prf, const uint8_t *input,
   polyval_get_tag(&pv, hash);
   hash[15] &= 0xC0; // Clear the low six bits.
 
-  aes_raw_counter_xor(prf->k, hash, 0, data, PRF_T0_DATA_LEN);
+  aes_cipher_set_iv_aligned(prf->k, hash);
+  aes_crypt_inplace(prf->k, (char*) data, PRF_T0_DATA_LEN);
+
+  // Re-align the cipher.
+  //
+  // This approach is faster than EVP_CIPHER_set_num!
+  const int ns = 16 - (PRF_T0_DATA_LEN % 0xf);
+  // We're not using the hash for anything, so it's okay to overwrite
+  aes_crypt_inplace(prf->k, (char*)hash,  ns);
 }
 /**
  * Generate 'n' bytes of the PRF's results on 'input', for position t=1,
@@ -203,9 +211,18 @@ cgo_prf_gen_t1(cgo_prf_t *prf, const uint8_t *input,
   polyval_add_block(&pv, input);
   polyval_get_tag(&pv, hash);
   hash[15] &= 0xC0; // Clear the low six bits.
+  hash[15] += T1_OFFSET; // Can't overflow!
 
   memset(buf, 0, n);
-  aes_raw_counter_xor(prf->k, hash, T1_OFFSET, buf, n);
+  aes_cipher_set_iv_aligned(prf->k, hash);
+  aes_crypt_inplace(prf->k, (char*)buf, n);
+
+  // Re-align the cipher.
+  size_t ns = 16-(n&0x0f);
+  if (ns) {
+    // We're not using the hash for anything, so it's okay to overwrite
+    aes_crypt_inplace(prf->k, (char*) hash, ns);
+  }
 }
 /**
  * Release any storage held in 'prf'.
@@ -215,7 +232,7 @@ cgo_prf_gen_t1(cgo_prf_t *prf, const uint8_t *input,
 STATIC void
 cgo_prf_clear(cgo_prf_t *prf)
 {
-  aes_raw_free(prf->k);
+  aes_cipher_free(prf->k);
 }
 
 static int

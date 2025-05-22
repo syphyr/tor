@@ -194,7 +194,7 @@ bmul(uint32_t *hi, uint32_t *lo, uint32_t x, uint32_t y)
 #endif
 
 static void
-pv_mul_y_h(polyval_t *pv)
+pv_mul_y_h_ctmul(polyval_t *pv)
 {
 	uint32_t *yw = pv->y.v;
 	const uint32_t *hw = pv->key.h.v;

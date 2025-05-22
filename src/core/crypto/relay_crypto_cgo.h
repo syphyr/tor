@@ -77,23 +77,18 @@ typedef struct cgo_et_t {
    */
   aes_raw_t *kb;
   /**
-   * Polyval key.
+   * Polyval instance, with expanded key.
    */
-  polyval_key_t ku;
+  polyvalx_t ku;
 } cgo_et_t;
 /**
  * Keyed pseudorandom function, based on polyval and AES-CTR.
  */
 typedef struct cgo_prf_t {
   /**
-   * AES key: may be 128, 192, or 256 bits.
-   *
-   * Even though we're going to be using this in counter mode,
-   * we don't make an aes_cnt_cipher_t here, since that type
-   * does not support efficient re-use of the key with multiple
-   * IVs.
+   * AES stream cipher: may be 128, 192, or 256 bits.
    */
-  aes_raw_t *k;
+  aes_cnt_cipher_t *k;
   /**
    * Polyval instance.
    */

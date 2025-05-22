@@ -16,12 +16,24 @@
 #if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) \
   || defined(_M_X64) || defined(_M_IX86) || defined(__i486)       \
   || defined(__i386__)
-/* Use intel intrinsics for carryless multiply.
- *
- * TODO: In theory we should detect whether we have the relevant instructions,
- * but they are all at least 15 years old.
+#define PV_INTEL_ARCH
+#endif
+
+#if defined(PV_INTEL_ARCH) && defined(__PCLMUL__)
+/* We're building for an architecture that always has the intel
+ * intrinsics for carryless multiply.
+ * No need for runtime detection.
  */
-#define PV_USE_PCLMUL
+#define PV_USE_PCLMUL_UNCONDITIONAL
+#define PCLMUL_ANY
+
+#elif defined(PV_INTEL_ARCH) && SIZEOF_VOID_P >= 8
+/* We _might_ have PCLMUL, or we might not.
+ * We need to detect it at runtime.
+ */
+#define PV_USE_PCLMUL_DETECT
+#define PCLMUL_ANY
+
 #elif SIZEOF_VOID_P >= 8
 /* It's a 64-bit architecture; use the generic 64-bit constant-time
  * implementation.
@@ -36,13 +48,26 @@
 #error "sizeof(void*) is implausibly weird."
 #endif
 
+#ifdef PCLMUL_ANY
+#include <emmintrin.h>
+
+#define POLYVAL_USE_EXPANDED_KEYS
+#endif
+
 /**
  * Declare a 128 bit integer type.
  # The exact representation will depend on which implementation we've chosen.
  */
-#ifdef PV_USE_PCLMUL
-#include <emmintrin.h>
+#if defined(PV_USE_PCLMUL_UNCONDITIONAL)
 typedef __m128i pv_u128_;
+#elif defined(PV_USE_PCLMUL_DETECT)
+typedef union pv_u128_ {
+  __m128i u128x1;
+  struct {
+    uint64_t lo;
+    uint64_t hi;
+  } u64x2;
+} pv_u128_;
 #elif defined(PV_USE_CTMUL64)
 typedef struct pv_u128_ {
   uint64_t lo;
@@ -116,5 +141,45 @@ void polyval_get_tag(const polyval_t *, uint8_t *tag_out);
  * retaining its key.
  */
 void polyval_reset(polyval_t *);
+
+/** If a faster-than-default polyval implementation is available, use it. */
+void polyval_detect_implementation(void);
+
+#ifdef POLYVAL_USE_EXPANDED_KEYS
+/* These variations are as for polyval_\*, but they use pre-expanded keys.
+ * They're appropriate when you know a key is likely to get used more than once
+ * on a large input.
+ */
+
+/** How many blocks to handle at once with an expanded key */
+#define PV_BLOCK_STRIDE 8
+typedef struct pv_expanded_key_t {
+  // powers of h in reverse order, down to 2.
+  // (in other words, contains
+  // h^PCLMUL_BLOCK_STRIDE .. H^2)
+  __m128i k[PV_BLOCK_STRIDE-1];
+} pv_expanded_key_t;
+typedef struct polyvalx_t {
+  polyval_t pv;
+  pv_expanded_key_t expanded;
+} polyvalx_t;
+
+void polyvalx_init(polyvalx_t *, const uint8_t *key);
+void polyvalx_init_from_key(polyvalx_t *, const polyval_key_t *key);
+void polyvalx_add_block(polyvalx_t *, const uint8_t *block);
+void polyvalx_add_zpad(polyvalx_t *, const uint8_t *data, size_t n);
+void polyvalx_get_tag(const polyvalx_t *, uint8_t *tag_out);
+void polyvalx_reset(polyvalx_t *);
+
+#else
+#define polyvalx_t polyval_t
+#define polyvalx_key_init polyval_key_init
+#define polyvalx_init polyval_init
+#define polyvalx_init_from_key polyval_init_from_key
+#define polyvalx_add_block polyval_add_block
+#define polyvalx_add_zpad polyval_add_zpad
+#define polyvalx_get_tag polyval_get_tag
+#define polyvalx_reset polyval_reset
+#endif
 
 #endif

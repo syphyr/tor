@@ -23,9 +23,18 @@ DISABLE_GCC_WARNING("-Wstrict-prototypes")
 #include <secerr.h>
 ENABLE_GCC_WARNING("-Wstrict-prototypes")
 
-aes_cnt_cipher_t *
-aes_new_cipher(const uint8_t *key, const uint8_t *iv,
-               int key_bits)
+struct aes_cnt_cipher_t {
+  PK11Context *context;
+  // We need to keep a copy of the key here since we can't set the IV only.
+  // It would be nice to fix that, but NSS doesn't see a huge number of
+  // users.
+  uint8_t kbytes;
+  uint8_t key[32];
+};
+
+static PK11Context *
+aes_new_cipher_internal(const uint8_t *key, const uint8_t *iv,
+                        int key_bits)
 {
   const CK_MECHANISM_TYPE ckm = CKM_AES_CTR;
   SECItem keyItem = { .type = siBuffer,
@@ -68,7 +77,18 @@ aes_new_cipher(const uint8_t *key, const uint8_t *iv,
     PK11_FreeSlot(slot);
 
   tor_assert(result);
-  return (aes_cnt_cipher_t *)result;
+  return result;
+}
+
+aes_cnt_cipher_t *
+aes_new_cipher(const uint8_t *key, const uint8_t *iv,
+                        int key_bits)
+{
+  aes_cnt_cipher_t *cipher = tor_malloc_zero(sizeof(*cipher));
+  cipher->context = aes_new_cipher_internal(key, iv, key_bits);
+  cipher->kbytes = key_bits / 8;
+  memcpy(cipher->key, key, cipher->kbytes);
+  return cipher;
 }
 
 void
@@ -76,7 +96,34 @@ aes_cipher_free_(aes_cnt_cipher_t *cipher)
 {
   if (!cipher)
     return;
-  PK11_DestroyContext((PK11Context*) cipher, PR_TRUE);
+  PK11_DestroyContext(cipher->context, PR_TRUE);
+  memwipe(cipher, 0, sizeof(*cipher));
+  tor_free(cipher);
+}
+
+void
+aes_cipher_set_iv_aligned(aes_cnt_cipher_t *cipher, const uint8_t *iv)
+{
+  // For NSS, I could not find a method to change the IV
+  // of an existing context.  Maybe I missed one?
+  PK11_DestroyContext(cipher->context, PR_TRUE);
+  cipher->context = aes_new_cipher_internal(cipher->key, iv,
+                                            8*(int)cipher->kbytes);
+}
+
+void
+aes_cipher_set_key(aes_cnt_cipher_t *cipher,
+                   const uint8_t *key, int key_bits)
+{
+  const uint8_t iv[16] = {0};
+  // For NSS, I could not find a method to change the key
+  // of an existing context. Maybe I missed one?
+  PK11_DestroyContext(cipher->context, PR_TRUE);
+  memwipe(cipher->key, 0, sizeof(cipher->key));
+
+  cipher->context = aes_new_cipher_internal(key, iv, key_bits);
+  cipher->kbytes = key_bits / 8;
+  memcpy(cipher->key, key, cipher->kbytes);
 }
 
 void
@@ -85,27 +132,13 @@ aes_crypt_inplace(aes_cnt_cipher_t *cipher, char *data_, size_t len_)
   tor_assert(len_ <= INT_MAX);
 
   SECStatus s;
-  PK11Context *ctx = (PK11Context*)cipher;
   unsigned char *data = (unsigned char *)data_;
   int len = (int) len_;
   int result_len = 0;
 
-  s = PK11_CipherOp(ctx, data, &result_len, len, data, len);
+  s = PK11_CipherOp(cipher->context, data, &result_len, len, data, len);
   tor_assert(s == SECSuccess);
   tor_assert(result_len == len);
-}
-
-int
-evaluate_evp_for_aes(int force_value)
-{
-  (void)force_value;
-  return 0;
-}
-
-int
-evaluate_ctr_for_aes(void)
-{
-  return 0;
 }
 
 aes_raw_t *
@@ -185,38 +218,4 @@ aes_raw_decrypt(const aes_raw_t *cipher, uint8_t *block)
 {
   /* This is the same function call for NSS. */
   aes_raw_encrypt(cipher, block);
-}
-
-static inline void
-xor_bytes(uint8_t *outp, const uint8_t *inp, size_t n)
-{
-  for (size_t i = 0; i < n; ++i) {
-    outp[i] ^= inp[i];
-  }
-}
-
-void
-aes_raw_counter_xor(const aes_raw_t *cipher,
-                    const uint8_t *iv, uint32_t iv_offset,
-                    uint8_t *data, size_t n)
-{
-  uint8_t counter[16];
-  uint8_t buf[16];
-
-  memcpy(counter, iv, 16);
-  aes_ctr_add_iv_offset(counter, iv_offset);
-
-  while (n) {
-    memcpy(buf, counter, 16);
-    aes_raw_encrypt(cipher, buf);
-    if (n >= 16) {
-      xor_bytes(data, buf, 16);
-      n -= 16;
-      data += 16;
-    } else {
-      xor_bytes(data, buf, n);
-      break;
-    }
-    aes_ctr_add_iv_offset(counter, 1);
-  }
 }
