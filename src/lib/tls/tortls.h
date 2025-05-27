@@ -111,7 +111,6 @@ int tor_tls_get_buffer_sizes(tor_tls_t *tls,
 
 MOCK_DECL(double, tls_get_write_overhead_ratio, (void));
 
-int tor_tls_get_num_server_handshakes(tor_tls_t *tls);
 MOCK_DECL(int,tor_tls_cert_matches_key,(const tor_tls_t *tls,
                                         const struct tor_x509_cert_t *cert));
 MOCK_DECL(int,tor_tls_export_key_material,(
