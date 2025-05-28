@@ -720,11 +720,12 @@ sendme_record_cell_digest_on_circ(circuit_t *circ, crypt_path_t *cpath)
   record_cell_digest_on_circ(circ, sendme_digest);
 }
 
-/* Called once we decrypted a cell and recognized it. Record the cell digest
- * as the next sendme digest only if the next cell we'll send on the circuit
+/* Called once we decrypted a cell and recognized it. Save the cell digest
+ * as the next sendme digest in the cpath's relay_crypto_t,
+ * only if the next cell we'll send on the circuit
  * is expected to be a SENDME. */
 void
-sendme_record_received_cell_digest(circuit_t *circ, crypt_path_t *cpath)
+sendme_save_received_cell_digest(circuit_t *circ, crypt_path_t *cpath)
 {
   tor_assert(circ);
 
@@ -737,18 +738,19 @@ sendme_record_received_cell_digest(circuit_t *circ, crypt_path_t *cpath)
 
   if (cpath) {
     /* Record incoming digest. */
-    cpath_sendme_record_cell_digest(cpath, false);
+    cpath_sendme_save_cell_digest(cpath, false);
   } else {
     /* Record forward digest. */
-    relay_crypto_record_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, true);
+    tor1_save_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, true);
   }
 }
 
-/* Called once we encrypted a cell. Record the cell digest as the next sendme
- * digest only if the next cell we expect to receive is a SENDME so we can
- * match the digests. */
+/* Called once we encrypted a cell. Save the cell digest as the next sendme
+ * as the next sendme digest in the cpath's relay_crypto_t
+ * only if the we expect to receive a SENDME matching this cell's digest.
+ */
 void
-sendme_record_sending_cell_digest(circuit_t *circ, crypt_path_t *cpath)
+sendme_save_sending_cell_digest(circuit_t *circ, crypt_path_t *cpath)
 {
   tor_assert(circ);
 
@@ -759,10 +761,10 @@ sendme_record_sending_cell_digest(circuit_t *circ, crypt_path_t *cpath)
 
   if (cpath) {
     /* Record the forward digest. */
-    cpath_sendme_record_cell_digest(cpath, true);
+    cpath_sendme_save_cell_digest(cpath, true);
   } else {
     /* Record the incoming digest. */
-    relay_crypto_record_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, false);
+    tor1_save_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, false);
   }
 
  end:

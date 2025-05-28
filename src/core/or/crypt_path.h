@@ -27,7 +27,7 @@ cpath_crypt_cell(const crypt_path_t *cpath, uint8_t *payload, bool is_decrypt);
 struct crypto_digest_t *
 cpath_get_incoming_digest(const crypt_path_t *cpath);
 
-void cpath_sendme_record_cell_digest(crypt_path_t *cpath,
+void cpath_sendme_save_cell_digest(crypt_path_t *cpath,
                                      bool is_foward_digest);
 
 void

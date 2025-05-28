@@ -109,7 +109,10 @@ tor1_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in)
   crypto_cipher_crypt_inplace(cipher, (char*) in, CELL_PAYLOAD_SIZE);
 }
 
-/** Return the sendme_digest within the <b>crypto</b> object. */
+/** Return the sendme_digest within the <b>crypto</b> object.
+ *
+ * Before calling this function, you must call relay_crypto_save_sendme_digest.
+ */
 uint8_t *
 relay_crypto_get_sendme_digest(relay_crypto_t *crypto)
 {
@@ -117,11 +120,15 @@ relay_crypto_get_sendme_digest(relay_crypto_t *crypto)
   return crypto->sendme_digest;
 }
 
-/** Record the cell digest, indicated by is_foward_digest or not, as the
- * SENDME cell digest. */
+/** Save the cell digest, indicated by is_foward_digest or not, as the
+ * SENDME cell digest inside this relay_crypto_t.
+ *
+ * This function must be called before relay_crypto_get_sendme_digest
+ * will work correctly.
+ */
 void
-relay_crypto_record_sendme_digest(relay_crypto_t *crypto,
-                                  bool is_foward_digest)
+tor1_save_sendme_digest(relay_crypto_t *crypto,
+                          bool is_foward_digest)
 {
   struct crypto_digest_t *digest;
 
@@ -233,7 +240,7 @@ relay_encrypt_cell_outbound(cell_t *cell,
   cpath_set_cell_forward_digest(layer_hint, cell);
 
   /* Record cell digest as the SENDME digest if need be. */
-  sendme_record_sending_cell_digest(TO_CIRCUIT(circ), layer_hint);
+  sendme_save_sending_cell_digest(TO_CIRCUIT(circ), layer_hint);
 
   thishop = layer_hint;
   /* moving from farthest to nearest hop */
@@ -260,7 +267,7 @@ relay_encrypt_cell_inbound(cell_t *cell,
   tor1_set_digest_v0(or_circ->crypto.b_digest, cell);
 
   /* Record cell digest as the SENDME digest if need be. */
-  sendme_record_sending_cell_digest(TO_CIRCUIT(or_circ), NULL);
+  sendme_save_sending_cell_digest(TO_CIRCUIT(or_circ), NULL);
 
   /* encrypt one layer */
   tor1_crypt_one_payload(or_circ->crypto.b_crypto, cell->payload);

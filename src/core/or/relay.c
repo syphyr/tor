@@ -267,7 +267,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
 
     /* Recognized cell, the cell digest has been updated, we'll record it for
      * the SENDME if need be. */
-    sendme_record_received_cell_digest(circ, layer_hint);
+    sendme_save_received_cell_digest(circ, layer_hint);
 
     relay_msg_t msg_buf;
     if (relay_msg_decode_cell_in_place(format, cell, &msg_buf) < 0) {
