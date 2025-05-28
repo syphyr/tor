@@ -42,7 +42,7 @@ relay_crypto_get_sendme_tag(relay_crypto_t *crypto,
 {
   tor_assert(crypto);
   *len_out = DIGEST_LEN;
-  return crypto->tor1.sendme_digest;
+  return crypto->c.tor1.sendme_digest;
 }
 
 /** Do the appropriate en/decryptions for <b>cell</b> arriving on
@@ -87,7 +87,7 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
         tor_assert(thishop);
 
         bool rec = tor1_crypt_client_backward(
-                                       &thishop->pvt_crypto.tor1, cell);
+                                       &thishop->pvt_crypto.c.tor1, cell);
         if (rec) {
           *recognized = 1;
           *layer_hint = thishop;
@@ -101,13 +101,13 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
     } else {
       /* We're in the middle. Encrypt one layer. */
       relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
-      tor1_crypt_relay_backward(&crypto->tor1, cell);
+      tor1_crypt_relay_backward(&crypto->c.tor1, cell);
     }
   } else /* cell_direction == CELL_DIRECTION_OUT */ {
     /* We're in the middle. Decrypt one layer. */
     relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
 
-    bool rec = tor1_crypt_relay_forward(&crypto->tor1, cell);
+    bool rec = tor1_crypt_relay_forward(&crypto->c.tor1, cell);
     if (rec) {
       *recognized = 1;
       return 0;
@@ -130,11 +130,11 @@ relay_encrypt_cell_outbound(cell_t *cell,
 {
   crypt_path_t *thishop = layer_hint;
 
-  tor1_crypt_client_originate(&thishop->pvt_crypto.tor1, cell);
+  tor1_crypt_client_originate(&thishop->pvt_crypto.c.tor1, cell);
   thishop = thishop->prev;
 
   while (thishop != circ->cpath->prev) {
-    tor1_crypt_client_forward(&thishop->pvt_crypto.tor1, cell);
+    tor1_crypt_client_forward(&thishop->pvt_crypto.c.tor1, cell);
     thishop = thishop->prev;
   }
 }
@@ -150,7 +150,7 @@ void
 relay_encrypt_cell_inbound(cell_t *cell,
                            or_circuit_t *or_circ)
 {
-  tor1_crypt_relay_originate(&or_circ->crypto.tor1, cell);
+  tor1_crypt_relay_originate(&or_circ->crypto.c.tor1, cell);
 }
 
 /**
@@ -160,7 +160,7 @@ relay_encrypt_cell_inbound(cell_t *cell,
 void
 relay_crypto_clear(relay_crypto_t *crypto)
 {
-  tor1_crypt_clear(&crypto->tor1);
+  tor1_crypt_clear(&crypto->c.tor1);
 }
 
 /** Initialize <b>crypto</b> from the key material in key_data.
@@ -188,13 +188,16 @@ relay_crypto_init(relay_crypto_alg_t alg,
   switch (alg) {
     /* Tor1 cases: the booleans are "reverse" and "is_hs_v3". */
     case RELAY_CRYPTO_ALG_TOR1:
-      return tor1_crypt_init(&crypto->tor1, key_data, key_data_len,
+      crypto->kind = RCK_TOR1;
+      return tor1_crypt_init(&crypto->c.tor1, key_data, key_data_len,
                              false, false);
     case RELAY_CRYPTO_ALG_TOR1_HSC:
-      return tor1_crypt_init(&crypto->tor1, key_data, key_data_len,
+      crypto->kind = RCK_TOR1;
+      return tor1_crypt_init(&crypto->c.tor1, key_data, key_data_len,
                              false, true);
     case RELAY_CRYPTO_ALG_TOR1_HSS:
-      return tor1_crypt_init(&crypto->tor1, key_data, key_data_len,
+      crypto->kind = RCK_TOR1;
+      return tor1_crypt_init(&crypto->c.tor1, key_data, key_data_len,
                              true, true);
   }
   tor_assert_unreached();
@@ -222,5 +225,5 @@ relay_crypto_key_material_len(relay_crypto_alg_t alg)
 void
 relay_crypto_assert_ok(const relay_crypto_t *crypto)
 {
-  tor1_crypt_assert_ok(&crypto->tor1);
+  tor1_crypt_assert_ok(&crypto->c.tor1);
 }

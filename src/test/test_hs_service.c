@@ -225,13 +225,13 @@ test_e2e_rend_circuit_setup(void *arg)
 
   /* Check the digest algo */
   tt_int_op(crypto_digest_get_algorithm(
-                              or_circ->cpath->pvt_crypto.tor1.f_digest),
+                              or_circ->cpath->pvt_crypto.c.tor1.f_digest),
             OP_EQ, DIGEST_SHA3_256);
   tt_int_op(crypto_digest_get_algorithm(
-                              or_circ->cpath->pvt_crypto.tor1.b_digest),
+                              or_circ->cpath->pvt_crypto.c.tor1.b_digest),
             OP_EQ, DIGEST_SHA3_256);
-  tt_assert(or_circ->cpath->pvt_crypto.tor1.f_crypto);
-  tt_assert(or_circ->cpath->pvt_crypto.tor1.b_crypto);
+  tt_assert(or_circ->cpath->pvt_crypto.c.tor1.f_crypto);
+  tt_assert(or_circ->cpath->pvt_crypto.c.tor1.b_crypto);
 
   /* Ensure that circ purpose was changed */
   tt_int_op(or_circ->base_.purpose, OP_EQ, CIRCUIT_PURPOSE_S_REND_JOINED);

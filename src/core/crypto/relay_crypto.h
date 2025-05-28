@@ -26,8 +26,6 @@ typedef enum relay_crypto_alg_t {
   RELAY_CRYPTO_ALG_TOR1_HSS,
 } relay_crypto_alg_t;
 
-#define relay_crypto_alg_bitfield_t ENUM_BF(relay_crypto_alg_t)
-
 /** Largest possible return value for relay_crypto_key_material_len. */
 /* This is 2x the length needed for a single cgo direction with 256-bit AES
  */

@@ -13,9 +13,17 @@
 #define RELAY_CRYPTO_ST_H
 
 #include "core/crypto/tor1_crypt_st.h"
+#include "core/crypto/relay_crypto_cgo.h"
+
+typedef enum relay_crypto_kind_t {
+  RCK_TOR1,
+} relay_crypto_kind_t;
 
 struct relay_crypto_t {
-  struct tor1_crypt_t tor1;
+  relay_crypto_kind_t kind;
+  union {
+    struct tor1_crypt_t tor1;
+  } c;
 };
 
 #endif /* !defined(RELAY_CRYPTO_ST_H) */
