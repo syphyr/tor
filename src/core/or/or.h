@@ -894,6 +894,8 @@ typedef enum {
 
 typedef struct onion_handshake_state_t onion_handshake_state_t;
 typedef struct relay_crypto_t relay_crypto_t;
+// XXXX Temporary alias.
+typedef struct relay_crypto_t tor1_crypt_t;
 typedef struct crypt_path_t crypt_path_t;
 typedef struct crypt_path_reference_t crypt_path_reference_t;
 

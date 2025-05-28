@@ -39,7 +39,6 @@ int sendme_note_stream_data_packaged(edge_connection_t *conn, size_t len);
 void sendme_record_cell_digest_on_circ(circuit_t *circ, crypt_path_t *cpath);
 /* Record cell digest as the SENDME digest. */
 void sendme_save_received_cell_digest(circuit_t *circ, crypt_path_t *cpath);
-void sendme_save_sending_cell_digest(circuit_t *circ, crypt_path_t *cpath);
 
 /* Private section starts. */
 #ifdef SENDME_PRIVATE

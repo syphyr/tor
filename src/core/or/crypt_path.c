@@ -175,35 +175,6 @@ cpath_free(crypt_path_t *victim)
   tor_free(victim);
 }
 
-/********************** cpath crypto API *******************************/
-
-/** Encrypt or decrypt <b>payload</b> using the crypto of <b>cpath</b>. Actual
- *  operation decided by <b>is_decrypt</b>.  */
-void
-cpath_crypt_cell(const crypt_path_t *cpath, uint8_t *payload, bool is_decrypt)
-{
-  if (is_decrypt) {
-    tor1_crypt_one_payload(cpath->pvt_crypto.b_crypto, payload);
-  } else {
-    tor1_crypt_one_payload(cpath->pvt_crypto.f_crypto, payload);
-  }
-}
-
-/** Getter for the incoming digest of <b>cpath</b>. */
-struct crypto_digest_t *
-cpath_get_incoming_digest(const crypt_path_t *cpath)
-{
-  return cpath->pvt_crypto.b_digest;
-}
-
-/** Set the right integrity digest on the outgoing <b>cell</b> based on the
- *  cell payload and update the forward digest of <b>cpath</b>. */
-void
-cpath_set_cell_forward_digest(crypt_path_t *cpath, cell_t *cell)
-{
-  tor1_set_digest_v0(cpath->pvt_crypto.f_digest, cell);
-}
-
 /************ cpath sendme API ***************************/
 
 /** Return the sendme_digest of this <b>cpath</b>. */

@@ -727,6 +727,7 @@ sendme_record_cell_digest_on_circ(circuit_t *circ, crypt_path_t *cpath)
 void
 sendme_save_received_cell_digest(circuit_t *circ, crypt_path_t *cpath)
 {
+  // XXXX: all sendme_save functions probably belong inside tor1_*
   tor_assert(circ);
 
   /* Only record if the next cell is expected to be a SENDME. */
@@ -743,30 +744,4 @@ sendme_save_received_cell_digest(circuit_t *circ, crypt_path_t *cpath)
     /* Record forward digest. */
     tor1_save_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, true);
   }
-}
-
-/* Called once we encrypted a cell. Save the cell digest as the next sendme
- * as the next sendme digest in the cpath's relay_crypto_t
- * only if the we expect to receive a SENDME matching this cell's digest.
- */
-void
-sendme_save_sending_cell_digest(circuit_t *circ, crypt_path_t *cpath)
-{
-  tor_assert(circ);
-
-  /* Only record if the next cell is expected to be a SENDME. */
-  if (!circuit_sent_cell_for_sendme(circ, cpath)) {
-    goto end;
-  }
-
-  if (cpath) {
-    /* Record the forward digest. */
-    cpath_sendme_save_cell_digest(cpath, true);
-  } else {
-    /* Record the incoming digest. */
-    tor1_save_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, false);
-  }
-
- end:
-  return;
 }

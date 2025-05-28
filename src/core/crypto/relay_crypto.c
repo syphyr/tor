@@ -25,8 +25,13 @@
 #include "core/or/or_circuit_st.h"
 #include "core/or/origin_circuit_st.h"
 
+#include "core/or/congestion_control_common.h" // XXXX refactor.
+
 /* TODO CGO: This file will be largely incorrect when we have
  * CGO crypto. */
+
+// XXXX: Remove this definition once I'm done refactoring.
+#define pvt_crypto crypto_crypt_path_private_field
 
 /* Offset of digest within relay cell body for v0 cells. */
 #define V0_DIGEST_OFFSET 5
@@ -109,6 +114,73 @@ tor1_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in)
   crypto_cipher_crypt_inplace(cipher, (char*) in, CELL_PAYLOAD_SIZE);
 }
 
+/* XXXX DOCDOC */
+void
+tor1_crypt_client_originate(relay_crypto_t *tor1,
+                            cell_t *cell,
+                            bool record_sendme_digest)
+{
+  tor1_set_digest_v0(tor1->f_digest, cell);
+  if (record_sendme_digest) {
+    tor1_save_sendme_digest(tor1, true);
+  }
+  tor1_crypt_one_payload(tor1->f_crypto, cell->payload);
+}
+
+/* XXXX DOCDOC */
+void
+tor1_crypt_relay_originate(relay_crypto_t *tor1,
+                           cell_t *cell,
+                           bool save_sendme_digest)
+{
+  tor1_set_digest_v0(tor1->b_digest, cell);
+  if (save_sendme_digest) {
+    tor1_save_sendme_digest(tor1, false);
+  }
+  tor1_crypt_one_payload(tor1->b_crypto, cell->payload);
+}
+
+/* XXXX DOCDOC */
+void
+tor1_crypt_client_forward(relay_crypto_t *tor1, cell_t *cell)
+{
+  tor1_crypt_one_payload(tor1->f_crypto, cell->payload);
+}
+
+/* XXXX DOCDOC */
+void
+tor1_crypt_relay_backward(relay_crypto_t *tor1, cell_t *cell)
+{
+  tor1_crypt_one_payload(tor1->b_crypto, cell->payload);
+}
+
+/* XXXX DOCDOC */
+bool
+tor1_crypt_relay_forward(relay_crypto_t *tor1, cell_t *cell)
+{
+  tor1_crypt_one_payload(tor1->f_crypto, cell->payload);
+  if (relay_cell_is_recognized_v0(cell)) {
+    if (tor1_relay_digest_matches_v0(tor1->f_digest, cell)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/* XXXX DOCDOC */
+bool
+tor1_crypt_client_backward(relay_crypto_t *tor1, cell_t *cell)
+{
+  tor1_crypt_one_payload(tor1->b_crypto, cell->payload);
+
+  if (relay_cell_is_recognized_v0(cell)) {
+    if (tor1_relay_digest_matches_v0(tor1->b_digest, cell)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Return the sendme_digest within the <b>crypto</b> object.
  *
  * Before calling this function, you must call relay_crypto_save_sendme_digest.
@@ -184,41 +256,31 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
       do { /* Remember: cpath is in forward order, that is, first hop first. */
         tor_assert(thishop);
 
-        /* decrypt one layer */
-        cpath_crypt_cell(thishop, cell->payload, true);
+        bool rec = tor1_crypt_client_backward(&thishop->pvt_crypto, cell);
 
-        if (relay_cell_is_recognized_v0(cell)) {
-          /* it's possibly recognized. have to check digest to be sure. */
-          if (tor1_relay_digest_matches_v0(cpath_get_incoming_digest(thishop),
-                                      cell)) {
-            *recognized = 1;
-            *layer_hint = thishop;
-            return 0;
-          }
+        if (rec) {
+          *recognized = 1;
+          *layer_hint = thishop;
+          return 0;
         }
-
         thishop = thishop->next;
       } while (thishop != cpath && thishop->state == CPATH_STATE_OPEN);
       log_fn(LOG_PROTOCOL_WARN, LD_OR,
              "Incoming cell at client not recognized. Closing.");
       return -1;
     } else {
-      relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
       /* We're in the middle. Encrypt one layer. */
-      tor1_crypt_one_payload(crypto->b_crypto, cell->payload);
+      relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
+      tor1_crypt_relay_backward(crypto, cell);
     }
   } else /* cell_direction == CELL_DIRECTION_OUT */ {
     /* We're in the middle. Decrypt one layer. */
     relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
 
-    tor1_crypt_one_payload(crypto->f_crypto, cell->payload);
-
-    if (relay_cell_is_recognized_v0(cell)) {
-      /* it's possibly recognized. have to check digest to be sure. */
-      if (tor1_relay_digest_matches_v0(crypto->f_digest, cell)) {
-        *recognized = 1;
-        return 0;
-      }
+    bool rec = tor1_crypt_relay_forward(crypto, cell);
+    if (rec) {
+      *recognized = 1;
+      return 0;
     }
   }
   return 0;
@@ -236,21 +298,18 @@ relay_encrypt_cell_outbound(cell_t *cell,
                             origin_circuit_t *circ,
                             crypt_path_t *layer_hint)
 {
-  crypt_path_t *thishop; /* counter for repeated crypts */
-  cpath_set_cell_forward_digest(layer_hint, cell);
+  crypt_path_t *thishop = layer_hint;
 
-  /* Record cell digest as the SENDME digest if need be. */
-  sendme_save_sending_cell_digest(TO_CIRCUIT(circ), layer_hint);
+  bool save_sendme =
+    circuit_sent_cell_for_sendme(TO_CIRCUIT(circ), thishop);
 
-  thishop = layer_hint;
-  /* moving from farthest to nearest hop */
-  do {
-    tor_assert(thishop);
-    log_debug(LD_OR,"encrypting a layer of the relay cell.");
-    cpath_crypt_cell(thishop, cell->payload, false);
+  tor1_crypt_client_originate(&thishop->pvt_crypto, cell, save_sendme);
+  thishop = thishop->prev;
 
+  while (thishop != circ->cpath->prev) {
+    tor1_crypt_client_forward(&thishop->pvt_crypto, cell);
     thishop = thishop->prev;
-  } while (thishop != circ->cpath->prev);
+  }
 }
 
 /**
@@ -264,13 +323,9 @@ void
 relay_encrypt_cell_inbound(cell_t *cell,
                            or_circuit_t *or_circ)
 {
-  tor1_set_digest_v0(or_circ->crypto.b_digest, cell);
-
-  /* Record cell digest as the SENDME digest if need be. */
-  sendme_save_sending_cell_digest(TO_CIRCUIT(or_circ), NULL);
-
-  /* encrypt one layer */
-  tor1_crypt_one_payload(or_circ->crypto.b_crypto, cell->payload);
+  bool save_sendme =
+    circuit_sent_cell_for_sendme(TO_CIRCUIT(or_circ), NULL);
+  tor1_crypt_relay_originate(&or_circ->crypto, cell, save_sendme);
 }
 
 /**
