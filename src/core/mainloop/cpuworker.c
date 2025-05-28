@@ -498,15 +498,18 @@ cpuworker_onion_handshake_threadfn(void *state_, void *work_)
   rpl.handshake_type = cc->handshake_type;
   if (req.timed)
     tor_gettimeofday(&tv_start);
+  size_t keys_len = sizeof(rpl.keys);
   n = onion_skin_server_handshake(cc->handshake_type,
                                   cc->onionskin, cc->handshake_len,
                                   onion_keys,
                                   &req.circ_ns_params,
                                   cell_out->reply,
                                   sizeof(cell_out->reply),
-                                  rpl.keys, CPATH_KEY_MATERIAL_LEN,
+                                  rpl.keys, &keys_len,
                                   rpl.rend_auth_material,
                                   &rpl.circ_params);
+  // XXXX Will be wrong for cgo.
+  tor_assert(keys_len == CPATH_KEY_MATERIAL_LEN);
   if (n < 0) {
     /* failure */
     log_debug(LD_OR,"onion_skin_server_handshake failed.");

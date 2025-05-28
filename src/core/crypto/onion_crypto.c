@@ -259,6 +259,9 @@ negotiate_v3_ntor_server_circ_params(const uint8_t *param_request_msg,
  * <b>reply_out</b>, generate <b>keys_out_len</b> bytes worth of key material
  * in <b>keys_out_len</b>, a hidden service nonce to <b>rend_nonce_out</b>,
  * and return the length of the reply. On failure, return -1.
+ *
+ * Requires that *keys_len_out of bytes are allocated at keys_out;
+ * adjusts *keys_out_len to the number of bytes actually genarated.
  */
 int
 onion_skin_server_handshake(int type,
@@ -267,12 +270,19 @@ onion_skin_server_handshake(int type,
                       const circuit_params_t *our_ns_params,
                       uint8_t *reply_out,
                       size_t reply_out_maxlen,
-     // XXXX keys_out_len will depend on the algorithm we're negotiating.
-                      uint8_t *keys_out, size_t keys_out_len,
+                      uint8_t *keys_out, size_t *keys_len_out,
                       uint8_t *rend_nonce_out,
                       circuit_params_t *params_out)
 {
   int r = -1;
+
+  relay_crypto_alg_t relay_alg = RELAY_CRYPTO_ALG_TOR1;
+  size_t keys_out_needed = relay_crypto_key_material_len(relay_alg);
+  if (BUG(*keys_len_out < keys_out_needed)) {
+    return -1;
+  }
+  *keys_len_out = keys_out_needed;
+
   memset(params_out, 0, sizeof(*params_out));
 
   switch (type) {
@@ -283,7 +293,8 @@ onion_skin_server_handshake(int type,
       return -1;
     if (onionskin_len != CREATE_FAST_LEN)
       return -1;
-    if (fast_server_handshake(onion_skin, reply_out, keys_out, keys_out_len)<0)
+    if (fast_server_handshake(onion_skin, reply_out, keys_out,
+                              keys_out_needed)<0)
       return -1;
     r = CREATED_FAST_LEN;
     memcpy(rend_nonce_out, reply_out+DIGEST_LEN, DIGEST_LEN);
@@ -294,7 +305,7 @@ onion_skin_server_handshake(int type,
     if (onionskin_len < NTOR_ONIONSKIN_LEN)
       return -1;
     {
-      size_t keys_tmp_len = keys_out_len + DIGEST_LEN;
+      size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
       tor_assert(keys_tmp_len <= MAX_KEYS_TMP_LEN);
       uint8_t keys_tmp[MAX_KEYS_TMP_LEN];
 
@@ -307,14 +318,14 @@ onion_skin_server_handshake(int type,
         return -1;
       }
 
-      memcpy(keys_out, keys_tmp, keys_out_len);
-      memcpy(rend_nonce_out, keys_tmp+keys_out_len, DIGEST_LEN);
+      memcpy(keys_out, keys_tmp, keys_out_needed);
+      memcpy(rend_nonce_out, keys_tmp+keys_out_needed, DIGEST_LEN);
       memwipe(keys_tmp, 0, sizeof(keys_tmp));
       r = NTOR_REPLY_LEN;
     }
     break;
   case ONION_HANDSHAKE_TYPE_NTOR_V3: {
-    size_t keys_tmp_len = keys_out_len + DIGEST_LEN;
+    size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
     tor_assert(keys_tmp_len <= MAX_KEYS_TMP_LEN);
     uint8_t keys_tmp[MAX_KEYS_TMP_LEN];
     uint8_t *client_msg = NULL;
@@ -367,8 +378,8 @@ onion_skin_server_handshake(int type,
       return -1;
     }
 
-    memcpy(keys_out, keys_tmp, keys_out_len);
-    memcpy(rend_nonce_out, keys_tmp+keys_out_len, DIGEST_LEN);
+    memcpy(keys_out, keys_tmp, keys_out_needed);
+    memcpy(rend_nonce_out, keys_tmp+keys_out_needed, DIGEST_LEN);
     memcpy(reply_out, server_handshake, server_handshake_len);
     memwipe(keys_tmp, 0, keys_tmp_len);
     memwipe(server_handshake, 0, server_handshake_len);
@@ -430,23 +441,35 @@ negotiate_v3_ntor_client_circ_params(const uint8_t *param_response_msg,
 
 /** Perform the final (client-side) step of a circuit-creation handshake of
  * type <b>type</b>, using our state in <b>handshake_state</b> and the
- * server's response in <b>reply</b>. On success, generate <b>keys_out_len</b>
- * bytes worth of key material in <b>keys_out_len</b>, set
+ * server's response in <b>reply</b>. On success, generate an appropriate
+ * amount of key material in <b>keys_out</b>,
+ * set <b>keys_out_len</b> to the amount generated, set
  * <b>rend_authenticator_out</b> to the "KH" field that can be used to
  * establish introduction points at this hop, and return 0. On failure,
  * return -1, and set *msg_out to an error message if this is worth
- * complaining to the user about. */
+ * complaining to the user about.
+ *
+ * Requires that *keys_len_out of bytes are allocated at keys_out;
+ * adjusts *keys_out_len to the number of bytes actually genarated.
+ */
 int
 onion_skin_client_handshake(int type,
                       const onion_handshake_state_t *handshake_state,
                       const uint8_t *reply, size_t reply_len,
-                      uint8_t *keys_out, size_t keys_out_len,
+                      uint8_t *keys_out, size_t *keys_len_out,
                       uint8_t *rend_authenticator_out,
                       circuit_params_t *params_out,
                       const char **msg_out)
 {
   if (handshake_state->tag != type)
     return -1;
+
+  relay_crypto_alg_t relay_alg = RELAY_CRYPTO_ALG_TOR1;
+  size_t keys_out_needed = relay_crypto_key_material_len(relay_alg);
+  if (BUG(*keys_len_out < keys_out_needed)) {
+    return -1;
+  }
+  *keys_len_out = keys_out_needed;
 
   memset(params_out, 0, sizeof(*params_out));
 
@@ -460,7 +483,7 @@ onion_skin_client_handshake(int type,
       return -1;
     }
     if (fast_client_handshake(handshake_state->u.fast, reply,
-                              keys_out, keys_out_len, msg_out) < 0)
+                              keys_out, keys_out_needed, msg_out) < 0)
       return -1;
 
     memcpy(rend_authenticator_out, reply+DIGEST_LEN, DIGEST_LEN);
@@ -472,7 +495,7 @@ onion_skin_client_handshake(int type,
       return -1;
     }
     {
-      size_t keys_tmp_len = keys_out_len + DIGEST_LEN;
+      size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
       uint8_t *keys_tmp = tor_malloc(keys_tmp_len);
       if (onion_skin_ntor_client_handshake(handshake_state->u.ntor,
                                         reply,
@@ -480,14 +503,14 @@ onion_skin_client_handshake(int type,
         tor_free(keys_tmp);
         return -1;
       }
-      memcpy(keys_out, keys_tmp, keys_out_len);
-      memcpy(rend_authenticator_out, keys_tmp + keys_out_len, DIGEST_LEN);
+      memcpy(keys_out, keys_tmp, keys_out_needed);
+      memcpy(rend_authenticator_out, keys_tmp + keys_out_needed, DIGEST_LEN);
       memwipe(keys_tmp, 0, keys_tmp_len);
       tor_free(keys_tmp);
     }
     return 0;
   case ONION_HANDSHAKE_TYPE_NTOR_V3: {
-    size_t keys_tmp_len = keys_out_len + DIGEST_LEN;
+    size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
     uint8_t *keys_tmp = tor_malloc(keys_tmp_len);
     uint8_t *server_msg = NULL;
     size_t server_msg_len = 0;
@@ -512,8 +535,8 @@ onion_skin_client_handshake(int type,
     }
     tor_free(server_msg);
 
-    memcpy(keys_out, keys_tmp, keys_out_len);
-    memcpy(rend_authenticator_out, keys_tmp + keys_out_len, DIGEST_LEN);
+    memcpy(keys_out, keys_tmp, keys_out_needed);
+    memcpy(rend_authenticator_out, keys_tmp + keys_out_needed, DIGEST_LEN);
     memwipe(keys_tmp, 0, keys_tmp_len);
     tor_free(keys_tmp);
 

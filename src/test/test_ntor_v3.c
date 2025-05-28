@@ -218,18 +218,20 @@ run_full_handshake(circuit_params_t *serv_params_in,
 
   server_keys.junk_keypair = &handshake_state.u.ntor3->client_keypair;
 
+  size_t serv_keylen = sizeof(serv_keys);
+  size_t client_keylen = sizeof(serv_keys);
   reply_len = onion_skin_server_handshake(ONION_HANDSHAKE_TYPE_NTOR_V3,
                               onionskin, onionskin_len,
                               &server_keys, serv_params_in,
                               serv_reply, sizeof(serv_reply),
-                              serv_keys, sizeof(serv_keys),
+                              serv_keys, &serv_keylen,
                               rend_nonce, serv_params_out);
   tt_int_op(reply_len, OP_NE, -1);
 
   tt_int_op(onion_skin_client_handshake(ONION_HANDSHAKE_TYPE_NTOR_V3,
                               &handshake_state,
                               serv_reply, reply_len,
-                              client_keys, sizeof(client_keys),
+                              client_keys, &client_keylen,
                               rend_auth, client_params_out,
                               NULL), OP_EQ, 0);
 

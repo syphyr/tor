@@ -1281,15 +1281,18 @@ circuit_finish_handshake(origin_circuit_t *circ,
   circuit_params_t params;
   {
     const char *msg = NULL;
+    size_t keylen = sizeof(keys);
     if (onion_skin_client_handshake(hop->handshake_state.tag,
                                     &hop->handshake_state,
                                     reply->reply, reply->handshake_len,
-                                    (uint8_t*)keys, sizeof(keys),
+                                    (uint8_t*)keys, &keylen,
                                     (uint8_t*)hop->rend_circ_nonce,
                                     &params,
                                     &msg) < 0) {
       if (msg)
         log_warn(LD_CIRC,"onion_skin_client_handshake failed: %s", msg);
+      // XXXX This will be wrong for CGO.
+      tor_assert(keylen == sizeof(keys));
       return -END_CIRC_REASON_TORPROTOCOL;
     }
   }
