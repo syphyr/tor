@@ -22,11 +22,10 @@
 #include "core/or/or_circuit_st.h"
 #include "core/or/origin_circuit_st.h"
 
-/* TODO CGO: This file will be largely incorrect when we have
- * CGO crypto. */
-
 // XXXX: Remove this definition once I'm done refactoring.
 #define pvt_crypto crypto_crypt_path_private_field
+
+#define CGO_AES_BITS 128
 
 /** Return the sendme tag within the <b>crypto</b> object,
  * along with its length.
@@ -41,8 +40,80 @@ relay_crypto_get_sendme_tag(relay_crypto_t *crypto,
                             size_t *len_out)
 {
   tor_assert(crypto);
-  *len_out = DIGEST_LEN;
-  return crypto->c.tor1.sendme_digest;
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      *len_out = DIGEST_LEN;
+      return crypto->c.tor1.sendme_digest;
+    case RCK_CGO:
+      *len_out = CGO_TAG_LEN;
+      return crypto->c.cgo.last_tag;
+  }
+  tor_assert_unreached();
+}
+
+/**
+ * Handle a single layer of client-side backward encryption
+ * with crypto of an arbitary type.
+ */
+static inline bool
+relay_crypt_client_backward(relay_crypto_t *crypto, cell_t *cell)
+{
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      return tor1_crypt_client_backward(&crypto->c.tor1, cell);
+    case RCK_CGO: {
+      const uint8_t *tag = NULL;
+      cgo_crypt_client_backward(crypto->c.cgo.back, cell, &tag);
+      if (tag != NULL) {
+        memcpy(crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+        return true;
+      } else {
+        return false;
+      }
+    }
+  }
+  tor_assert_unreached();
+}
+
+/**
+ * Handle a relay-side forward encryption
+ * with crypto of an arbitary type.
+ */
+static inline bool
+relay_crypt_relay_forward(relay_crypto_t *crypto, cell_t *cell)
+{
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      return tor1_crypt_relay_forward(&crypto->c.tor1, cell);
+    case RCK_CGO: {
+      const uint8_t *tag = NULL;
+      cgo_crypt_relay_forward(crypto->c.cgo.fwd, cell, &tag);
+      if (tag != NULL) {
+        memcpy(crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+        return true;
+      } else {
+        return false;
+      }
+    }
+  }
+  tor_assert_unreached();
+}
+
+/**
+ * Handle relay-side backward encryption with crypto of an arbitary type.
+ */
+static inline void
+relay_crypt_relay_backward(relay_crypto_t *crypto, cell_t *cell)
+{
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      tor1_crypt_relay_backward(&crypto->c.tor1, cell);
+      break;
+    case RCK_CGO: {
+      cgo_crypt_relay_backward(crypto->c.cgo.back, cell);
+      break;
+    }
+  }
 }
 
 /** Do the appropriate en/decryptions for <b>cell</b> arriving on
@@ -86,8 +157,7 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
       do { /* Remember: cpath is in forward order, that is, first hop first. */
         tor_assert(thishop);
 
-        bool rec = tor1_crypt_client_backward(
-                                       &thishop->pvt_crypto.c.tor1, cell);
+        bool rec = relay_crypt_client_backward(&thishop->pvt_crypto, cell);
         if (rec) {
           *recognized = 1;
           *layer_hint = thishop;
@@ -101,19 +171,52 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
     } else {
       /* We're in the middle. Encrypt one layer. */
       relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
-      tor1_crypt_relay_backward(&crypto->c.tor1, cell);
+      relay_crypt_relay_backward(crypto, cell);
     }
   } else /* cell_direction == CELL_DIRECTION_OUT */ {
     /* We're in the middle. Decrypt one layer. */
     relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
 
-    bool rec = tor1_crypt_relay_forward(&crypto->c.tor1, cell);
+    bool rec = relay_crypt_relay_forward(crypto, cell);
     if (rec) {
       *recognized = 1;
       return 0;
     }
   }
   return 0;
+}
+
+/** Originate a client cell with a relay_crypt_t of arbitrary type. */
+static inline void
+relay_crypt_client_originate(relay_crypto_t *crypto, cell_t *cell)
+{
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      tor1_crypt_client_originate(&crypto->c.tor1, cell);
+      break;
+    case RCK_CGO: {
+      const uint8_t *tag = NULL;
+      cgo_crypt_client_originate(crypto->c.cgo.fwd, cell, &tag);
+      tor_assert(tag);
+      memcpy(crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+      break;
+    }
+  }
+}
+
+/** Perform forward-direction client encryption with a relay_crypt_t
+ * of arbitrary type. */
+static inline void
+relay_crypt_client_forward(relay_crypto_t *crypto, cell_t *cell)
+{
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      tor1_crypt_client_forward(&crypto->c.tor1, cell);
+      break;
+    case RCK_CGO:
+      cgo_crypt_client_forward(crypto->c.cgo.fwd, cell);
+      break;
+  }
 }
 
 /**
@@ -130,11 +233,11 @@ relay_encrypt_cell_outbound(cell_t *cell,
 {
   crypt_path_t *thishop = layer_hint;
 
-  tor1_crypt_client_originate(&thishop->pvt_crypto.c.tor1, cell);
+  relay_crypt_client_originate(&thishop->pvt_crypto, cell);
   thishop = thishop->prev;
 
   while (thishop != circ->cpath->prev) {
-    tor1_crypt_client_forward(&thishop->pvt_crypto.c.tor1, cell);
+    relay_crypt_client_forward(&thishop->pvt_crypto, cell);
     thishop = thishop->prev;
   }
 }
@@ -150,7 +253,19 @@ void
 relay_encrypt_cell_inbound(cell_t *cell,
                            or_circuit_t *or_circ)
 {
-  tor1_crypt_relay_originate(&or_circ->crypto.c.tor1, cell);
+  relay_crypto_t *crypto = &or_circ->crypto;
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      tor1_crypt_relay_originate(&crypto->c.tor1, cell);
+      break;
+    case RCK_CGO: {
+      const uint8_t *tag = NULL;
+      cgo_crypt_relay_originate(crypto->c.cgo.back, cell, &tag);
+      tor_assert(tag);
+      memcpy(&crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+      break;
+    }
+  }
 }
 
 /**
@@ -160,7 +275,43 @@ relay_encrypt_cell_inbound(cell_t *cell,
 void
 relay_crypto_clear(relay_crypto_t *crypto)
 {
-  tor1_crypt_clear(&crypto->c.tor1);
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      tor1_crypt_clear(&crypto->c.tor1);
+      break;
+    case RCK_CGO:
+      cgo_crypt_free(crypto->c.cgo.fwd);
+      cgo_crypt_free(crypto->c.cgo.back);
+      break;
+  }
+}
+
+static int
+cgo_pair_init(cgo_pair_t *pair, bool is_relay,
+              const uint8_t *key_material, size_t key_data_len)
+{
+  memset(pair, 0, sizeof(*pair));
+  const int aes_bits = CGO_AES_BITS;
+  const size_t single_cgo_len = cgo_key_material_len(aes_bits);
+  if (BUG(key_data_len != single_cgo_len * 2)) {
+    return -1;
+  }
+
+  cgo_mode_t fwd_mode, back_mode;
+  if (is_relay) {
+    fwd_mode = CGO_MODE_RELAY_FORWARD;
+    back_mode = CGO_MODE_RELAY_BACKWARD;
+  } else {
+    fwd_mode = CGO_MODE_CLIENT_FORWARD;
+    back_mode = CGO_MODE_CLIENT_BACKWARD;
+  }
+
+  pair->fwd = cgo_crypt_new(fwd_mode, aes_bits,
+                            key_material, single_cgo_len);
+  pair->back = cgo_crypt_new(back_mode, aes_bits,
+                             key_material + single_cgo_len, single_cgo_len);
+
+  return 0;
 }
 
 /** Initialize <b>crypto</b> from the key material in key_data.
@@ -199,6 +350,14 @@ relay_crypto_init(relay_crypto_alg_t alg,
       crypto->kind = RCK_TOR1;
       return tor1_crypt_init(&crypto->c.tor1, key_data, key_data_len,
                              true, true);
+    case RELAY_CRYPTO_ALG_CGO_CLIENT:
+      crypto->kind = RCK_CGO;
+      return cgo_pair_init(&crypto->c.cgo, false,
+                           (const uint8_t *)key_data, key_data_len);
+    case RELAY_CRYPTO_ALG_CGO_RELAY:
+      crypto->kind = RCK_CGO;
+      return cgo_pair_init(&crypto->c.cgo, true,
+                           (const uint8_t *)key_data, key_data_len);
   }
   tor_assert_unreached();
 }
@@ -217,6 +376,9 @@ relay_crypto_key_material_len(relay_crypto_alg_t alg)
     case RELAY_CRYPTO_ALG_TOR1_HSC:
     case RELAY_CRYPTO_ALG_TOR1_HSS:
       return tor1_key_material_len(true);
+    case RELAY_CRYPTO_ALG_CGO_CLIENT:
+    case RELAY_CRYPTO_ALG_CGO_RELAY:
+      return cgo_key_material_len(CGO_AES_BITS) * 2;
   }
   return -1;
 }
@@ -225,5 +387,11 @@ relay_crypto_key_material_len(relay_crypto_alg_t alg)
 void
 relay_crypto_assert_ok(const relay_crypto_t *crypto)
 {
-  tor1_crypt_assert_ok(&crypto->c.tor1);
+  switch (crypto->kind) {
+    case RCK_TOR1:
+      tor1_crypt_assert_ok(&crypto->c.tor1);
+      break;
+    case RCK_CGO:
+      break;
+  }
 }

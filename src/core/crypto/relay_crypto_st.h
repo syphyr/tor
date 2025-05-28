@@ -17,12 +17,23 @@
 
 typedef enum relay_crypto_kind_t {
   RCK_TOR1,
+  RCK_CGO,
 } relay_crypto_kind_t;
+
+typedef struct cgo_pair_t {
+  // NOTE: Using pointers here is a bit awkward; we may want to refactor
+  // eventually.
+  cgo_crypt_t *fwd;
+  cgo_crypt_t *back;
+  /* The last tag that we got when originating or recognizing a message */
+  uint8_t last_tag[CGO_TAG_LEN];
+} cgo_pair_t;
 
 struct relay_crypto_t {
   relay_crypto_kind_t kind;
   union {
     struct tor1_crypt_t tor1;
+    cgo_pair_t cgo;
   } c;
 };
 

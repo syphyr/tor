@@ -24,6 +24,10 @@ typedef enum relay_crypto_alg_t {
    * the shared virtual HS hop created with an INTRODUCE/RENVEZVOUS
    * handshake. */
   RELAY_CRYPTO_ALG_TOR1_HSS,
+  /** CGO crypto, as used at a client */
+  RELAY_CRYPTO_ALG_CGO_CLIENT,
+  /** CGO crypto, as used at a relay */
+  RELAY_CRYPTO_ALG_CGO_RELAY,
 } relay_crypto_alg_t;
 
 /** Largest possible return value for relay_crypto_key_material_len. */
