@@ -21,6 +21,7 @@
 #include "lib/arch/bytes.h"
 #include "ext/polyval/polyval.h"
 #include "core/crypto/relay_crypto_cgo.h"
+#include "core/crypto/relay_crypto.h"
 #include "core/or/cell_st.h"
 
 #if 0
@@ -361,7 +362,9 @@ size_t
 cgo_key_material_len(int aesbits)
 {
   tor_assert(aesbits == 128 || aesbits == 192 || aesbits == 256);
-  return (cgo_uiv_keylen(aesbits) + CGO_TAG_LEN);
+  size_t r = (cgo_uiv_keylen(aesbits) + CGO_TAG_LEN);
+  tor_assert(r * 2 <= MAX_RELAY_KEY_MATERIAL_LEN);
+  return r;
 }
 
 /**

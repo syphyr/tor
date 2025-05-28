@@ -41,6 +41,7 @@
 #include "lib/crypt_ops/crypto_util.h"
 #include "feature/relay/routerkeys.h"
 #include "core/or/congestion_control_common.h"
+#include "core/crypto/relay_crypto.h"
 
 #include "core/or/circuitbuild.h"
 
@@ -247,9 +248,10 @@ negotiate_v3_ntor_server_circ_params(const uint8_t *param_request_msg,
 }
 
 /* This is the maximum value for keys_out_len passed to
- * onion_skin_server_handshake, plus 16. We can make it bigger if needed:
+ * onion_skin_server_handshake, plus 20 for the rend_nonce.
+ * We can make it bigger if needed:
  * It just defines how many bytes to stack-allocate. */
-#define MAX_KEYS_TMP_LEN 128
+#define MAX_KEYS_TMP_LEN (MAX_RELAY_KEY_MATERIAL_LEN + DIGEST_LEN)
 
 /** Perform the second (server-side) step of a circuit-creation handshake of
  * type <b>type</b>, responding to the client request in <b>onion_skin</b>
@@ -265,6 +267,7 @@ onion_skin_server_handshake(int type,
                       const circuit_params_t *our_ns_params,
                       uint8_t *reply_out,
                       size_t reply_out_maxlen,
+     // XXXX keys_out_len will depend on the algorithm we're negotiating.
                       uint8_t *keys_out, size_t keys_out_len,
                       uint8_t *rend_nonce_out,
                       circuit_params_t *params_out)

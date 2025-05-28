@@ -188,6 +188,23 @@ relay_crypto_init(relay_crypto_t *crypto,
   return tor1_crypt_init(crypto, key_data, key_data_len, reverse, is_hs_v3);
 }
 
+/** Return the amount of key material we need to initialize
+ * the given relay crypto algorithm.
+ *
+ * Return -1 if the algorithm is unrecognized.
+ */
+ssize_t
+relay_crypto_key_material_len(relay_crypto_alg_t alg)
+{
+  switch (alg) {
+    case RELAY_CRYPTO_ALG_TOR1:
+      return tor1_key_material_len(false);
+    case RELAY_CRYPTO_ALG_TOR1_HS:
+      return tor1_key_material_len(true);
+  }
+  return -1;
+}
+
 /** Assert that <b>crypto</b> is valid and set. */
 void
 relay_crypto_assert_ok(const relay_crypto_t *crypto)

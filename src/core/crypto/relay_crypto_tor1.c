@@ -191,10 +191,20 @@ tor1_crypt_client_backward(tor1_crypt_t *tor1, cell_t *cell)
   return false;
 }
 
+/** Return the number of bytes that tor1_crypt_init expects. */
+size_t
+tor1_key_material_len(bool is_hs)
+{
+  if (is_hs)
+    return HS_NTOR_KEY_EXPANSION_KDF_OUT_LEN;
+  else
+    return CPATH_KEY_MATERIAL_LEN;
+}
+
 /** Initialize <b>crypto</b> from the key material in key_data.
  *
  * If <b>is_hs_v3</b> is set, this cpath will be used for next gen hidden
- * service circuits and <b>key_data</b> must be at least
+ * service circuits and <b>key_data</b> must be
  * HS_NTOR_KEY_EXPANSION_KDF_OUT_LEN bytes in length.
  *
  * If <b>is_hs_v3</b> is not set, key_data must contain CPATH_KEY_MATERIAL_LEN

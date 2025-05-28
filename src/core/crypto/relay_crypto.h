@@ -12,6 +12,20 @@
 #ifndef TOR_RELAY_CRYPTO_H
 #define TOR_RELAY_CRYPTO_H
 
+typedef enum relay_crypto_alg_t {
+  RELAY_CRYPTO_ALG_TOR1,
+  RELAY_CRYPTO_ALG_TOR1_HS,
+} relay_crypto_alg_t;
+
+#define relay_crypto_alg_bitfield_t ENUM_BF(relay_crypto_alg_t)
+
+/** Largest possible return value for relay_crypto_key_material_len. */
+/* This is 2x the length needed for a single cgo direction with 256-bit AES
+ */
+#define MAX_RELAY_KEY_MATERIAL_LEN 224
+
+ssize_t relay_crypto_key_material_len(relay_crypto_alg_t alg);
+
 int relay_crypto_init(relay_crypto_t *crypto,
                       const char *key_data, size_t key_data_len,
                       int reverse, int is_hs_v3);

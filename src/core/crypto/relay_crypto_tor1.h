@@ -21,6 +21,7 @@ bool tor1_crypt_relay_forward(tor1_crypt_t *tor1, cell_t *cell);
 bool tor1_crypt_client_backward(tor1_crypt_t *tor1, cell_t *cell);
 void tor1_crypt_client_forward(tor1_crypt_t *tor1, cell_t *cell);
 
+size_t tor1_key_material_len(bool is_hs);
 int tor1_crypt_init(relay_crypto_t *crypto,
                     const char *key_data, size_t key_data_len,
                     int reverse, int is_hs_v3);
