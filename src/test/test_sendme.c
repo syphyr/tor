@@ -153,7 +153,7 @@ test_v1_build_cell(void *arg)
   smartlist_add(circ->sendme_last_digests, tor_memdup(digest, sizeof(digest)));
 
   /* SENDME v1 payload is 3 bytes + 20 bytes digest. See spec. */
-  ret = build_cell_payload_v1(digest, payload);
+  ret = build_cell_payload_v1(digest, 20, payload);
   tt_int_op(ret, OP_EQ, 23);
 
   /* Validation. */

@@ -255,6 +255,8 @@ test_crypto_cgo_uiv_testvec(void *arg)
   cgo_uiv_clear(&uiv);
 }
 
+#include "core/or/relay_crypto_st.h"
+
 static void
 test_crypto_cgo_uiv_update_testvec(void *arg)
 {

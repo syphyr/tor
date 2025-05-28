@@ -28,7 +28,8 @@
 // XXXX: Remove this definition once I'm done refactoring.
 #define pvt_crypto crypto_crypt_path_private_field
 
-/** Return the sendme_digest within the <b>crypto</b> object.
+/** Return the sendme tag within the <b>crypto</b> object,
+ * along with its length.
  *
  * This is the digest from the most recent cell that we originated
  * or recognized, _in either direction_.
@@ -36,9 +37,11 @@
  * this digest.
  */
 const uint8_t *
-relay_crypto_get_sendme_digest(relay_crypto_t *crypto)
+relay_crypto_get_sendme_tag(relay_crypto_t *crypto,
+                            size_t *len_out)
 {
   tor_assert(crypto);
+  *len_out = DIGEST_LEN;
   return crypto->sendme_digest;
 }
 

@@ -65,7 +65,8 @@ STATIC int get_accept_min_version(void);
 
 STATIC bool cell_version_can_be_handled(uint8_t cell_version);
 
-STATIC ssize_t build_cell_payload_v1(const uint8_t *cell_digest,
+STATIC ssize_t build_cell_payload_v1(const uint8_t *cell_tag,
+                                     size_t tag_len,
                                      uint8_t *payload);
 STATIC bool sendme_is_valid(const circuit_t *circ,
                             const uint8_t *cell_payload,

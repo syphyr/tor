@@ -27,6 +27,7 @@ void relay_crypto_clear(relay_crypto_t *crypto);
 
 void relay_crypto_assert_ok(const relay_crypto_t *crypto);
 
-const uint8_t *relay_crypto_get_sendme_digest(relay_crypto_t *crypto);
+const uint8_t *relay_crypto_get_sendme_tag(relay_crypto_t *crypto,
+                                           size_t *len_out);
 
 #endif /* !defined(TOR_RELAY_CRYPTO_H) */

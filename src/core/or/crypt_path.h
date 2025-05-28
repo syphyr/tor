@@ -25,7 +25,7 @@ crypt_path_t *cpath_get_next_non_open_hop(crypt_path_t *cpath);
 
 void cpath_sendme_circuit_record_inbound_cell(crypt_path_t *cpath);
 
-const uint8_t *cpath_get_sendme_digest(crypt_path_t *cpath);
+const uint8_t *cpath_get_sendme_tag(crypt_path_t *cpath, size_t *len_out);
 
 #if defined(TOR_UNIT_TESTS)
 unsigned int cpath_get_n_hops(crypt_path_t **head_ptr);

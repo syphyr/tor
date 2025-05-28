@@ -177,11 +177,12 @@ cpath_free(crypt_path_t *victim)
 
 /************ cpath sendme API ***************************/
 
-/** Return the sendme_digest of this <b>cpath</b>. */
+/** Return the sendme tag of this <b>cpath</b>,
+ * along with its length. */
 const uint8_t *
-cpath_get_sendme_digest(crypt_path_t *cpath)
+cpath_get_sendme_tag(crypt_path_t *cpath, size_t *len_out)
 {
-  return relay_crypto_get_sendme_digest(&cpath->pvt_crypto);
+  return relay_crypto_get_sendme_tag(&cpath->pvt_crypto, len_out);
 }
 
 /************ other cpath functions ***************************/
