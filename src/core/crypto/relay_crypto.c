@@ -38,31 +38,33 @@
 #define V0_DIGEST_LEN 4
 #define V0_RECOGNIZED_OFFSET 1
 
-/** Update digest{ from the payload of cell. Assign integrity part to
- * cell.
+/** Update digest from the payload of cell. Assign integrity part to
+ * cell.  Record full 20-byte digest in `buf`.
  */
-void
-tor1_set_digest_v0(crypto_digest_t *digest, cell_t *cell)
+static void
+tor1_set_digest_v0(crypto_digest_t *digest, cell_t *cell, uint8_t *buf)
 {
-  char integrity[V0_DIGEST_LEN];
-
   crypto_digest_add_bytes(digest, (char*)cell->payload, CELL_PAYLOAD_SIZE);
-  crypto_digest_get_digest(digest, integrity, V0_DIGEST_LEN);
+  crypto_digest_get_digest(digest, (char*)buf, DIGEST_LEN);
 //  log_fn(LOG_DEBUG,"Putting digest of %u %u %u %u into relay cell.",
 //    integrity[0], integrity[1], integrity[2], integrity[3]);
-  memcpy(cell->payload + V0_DIGEST_OFFSET, integrity, V0_DIGEST_LEN);
+  memcpy(cell->payload + V0_DIGEST_OFFSET, buf, V0_DIGEST_LEN);
 }
 
 /** Does the digest for this circuit indicate that this cell is for us?
  *
  * Update digest from the payload of cell (with the integrity part set
- * to 0). If the integrity part is valid, return 1, else restore digest
+ * to 0). If the integrity part is valid,
+ * return 1 and save the full digest in the 20-byte buffer `buf`,
+ * else restore digest
  * and cell to their original state and return 0.
  */
 static int
-tor1_relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell)
+tor1_relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell,
+                             uint8_t *buf)
 {
   uint32_t received_integrity, calculated_integrity;
+  uint8_t calculated_digest[DIGEST_LEN];
   crypto_digest_checkpoint_t backup_digest;
 
   CTASSERT(sizeof(uint32_t) == V0_DIGEST_LEN);
@@ -77,8 +79,8 @@ tor1_relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell)
 //    received_integrity[2], received_integrity[3]);
 
   crypto_digest_add_bytes(digest, (char*) cell->payload, CELL_PAYLOAD_SIZE);
-  crypto_digest_get_digest(digest, (char*) &calculated_integrity,
-                           V0_DIGEST_LEN);
+  crypto_digest_get_digest(digest, (char*) calculated_digest, DIGEST_LEN);
+  calculated_integrity = get_uint32(calculated_digest);
 
   int rv = 1;
 
@@ -91,6 +93,8 @@ tor1_relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell)
     memcpy(cell->payload + V0_DIGEST_OFFSET, &received_integrity,
            V0_DIGEST_LEN);
     rv = 0;
+  } else {
+    memcpy(buf, calculated_digest, DIGEST_LEN);
   }
 
   memwipe(&backup_digest, 0, sizeof(backup_digest));
@@ -117,26 +121,18 @@ tor1_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in)
 /* XXXX DOCDOC */
 void
 tor1_crypt_client_originate(relay_crypto_t *tor1,
-                            cell_t *cell,
-                            bool record_sendme_digest)
+                            cell_t *cell)
 {
-  tor1_set_digest_v0(tor1->f_digest, cell);
-  if (record_sendme_digest) {
-    tor1_save_sendme_digest(tor1, true);
-  }
+  tor1_set_digest_v0(tor1->f_digest, cell, tor1->sendme_digest);
   tor1_crypt_one_payload(tor1->f_crypto, cell->payload);
 }
 
 /* XXXX DOCDOC */
 void
 tor1_crypt_relay_originate(relay_crypto_t *tor1,
-                           cell_t *cell,
-                           bool save_sendme_digest)
+                           cell_t *cell)
 {
-  tor1_set_digest_v0(tor1->b_digest, cell);
-  if (save_sendme_digest) {
-    tor1_save_sendme_digest(tor1, false);
-  }
+  tor1_set_digest_v0(tor1->b_digest, cell, tor1->sendme_digest);
   tor1_crypt_one_payload(tor1->b_crypto, cell->payload);
 }
 
@@ -160,7 +156,8 @@ tor1_crypt_relay_forward(relay_crypto_t *tor1, cell_t *cell)
 {
   tor1_crypt_one_payload(tor1->f_crypto, cell->payload);
   if (relay_cell_is_recognized_v0(cell)) {
-    if (tor1_relay_digest_matches_v0(tor1->f_digest, cell)) {
+    if (tor1_relay_digest_matches_v0(tor1->f_digest, cell,
+                                     tor1->sendme_digest)) {
       return true;
     }
   }
@@ -174,7 +171,8 @@ tor1_crypt_client_backward(relay_crypto_t *tor1, cell_t *cell)
   tor1_crypt_one_payload(tor1->b_crypto, cell->payload);
 
   if (relay_cell_is_recognized_v0(cell)) {
-    if (tor1_relay_digest_matches_v0(tor1->b_digest, cell)) {
+    if (tor1_relay_digest_matches_v0(tor1->b_digest, cell,
+                                     tor1->sendme_digest)) {
       return true;
     }
   }
@@ -183,36 +181,16 @@ tor1_crypt_client_backward(relay_crypto_t *tor1, cell_t *cell)
 
 /** Return the sendme_digest within the <b>crypto</b> object.
  *
- * Before calling this function, you must call relay_crypto_save_sendme_digest.
+ * This is the digest from the most recent cell that we originated
+ * or recognized, _in either direction_.
+ * Calls to any encryption function on `crypto` may invalidate
+ * this digest.
  */
-uint8_t *
+const uint8_t *
 relay_crypto_get_sendme_digest(relay_crypto_t *crypto)
 {
   tor_assert(crypto);
   return crypto->sendme_digest;
-}
-
-/** Save the cell digest, indicated by is_foward_digest or not, as the
- * SENDME cell digest inside this relay_crypto_t.
- *
- * This function must be called before relay_crypto_get_sendme_digest
- * will work correctly.
- */
-void
-tor1_save_sendme_digest(relay_crypto_t *crypto,
-                          bool is_foward_digest)
-{
-  struct crypto_digest_t *digest;
-
-  tor_assert(crypto);
-
-  digest = crypto->b_digest;
-  if (is_foward_digest) {
-    digest = crypto->f_digest;
-  }
-
-  crypto_digest_get_digest(digest, (char *) crypto->sendme_digest,
-                           sizeof(crypto->sendme_digest));
 }
 
 /** Do the appropriate en/decryptions for <b>cell</b> arriving on
@@ -300,10 +278,7 @@ relay_encrypt_cell_outbound(cell_t *cell,
 {
   crypt_path_t *thishop = layer_hint;
 
-  bool save_sendme =
-    circuit_sent_cell_for_sendme(TO_CIRCUIT(circ), thishop);
-
-  tor1_crypt_client_originate(&thishop->pvt_crypto, cell, save_sendme);
+  tor1_crypt_client_originate(&thishop->pvt_crypto, cell);
   thishop = thishop->prev;
 
   while (thishop != circ->cpath->prev) {
@@ -323,9 +298,7 @@ void
 relay_encrypt_cell_inbound(cell_t *cell,
                            or_circuit_t *or_circ)
 {
-  bool save_sendme =
-    circuit_sent_cell_for_sendme(TO_CIRCUIT(or_circ), NULL);
-  tor1_crypt_relay_originate(&or_circ->crypto, cell, save_sendme);
+  tor1_crypt_relay_originate(&or_circ->crypto, cell);
 }
 
 /**

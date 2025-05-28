@@ -27,23 +27,17 @@ void relay_crypto_clear(relay_crypto_t *crypto);
 
 void relay_crypto_assert_ok(const relay_crypto_t *crypto);
 
-uint8_t *relay_crypto_get_sendme_digest(relay_crypto_t *crypto);
-
-void tor1_save_sendme_digest(tor1_crypt_t *crypto,
-                             bool is_foward_digest);
+const uint8_t *relay_crypto_get_sendme_digest(relay_crypto_t *crypto);
 
 void tor1_crypt_client_originate(tor1_crypt_t *tor1,
-                            cell_t *cell,
-                            bool record_sendme_digest);
+                                 cell_t *cell);
 void tor1_crypt_relay_originate(tor1_crypt_t *tor1,
-                           cell_t *cell,
-                           bool record_sendme_digest);
+                                cell_t *cell);
 void tor1_crypt_relay_backward(tor1_crypt_t *tor1, cell_t *cell);
 bool tor1_crypt_relay_forward(tor1_crypt_t *tor1, cell_t *cell);
 bool tor1_crypt_client_backward(tor1_crypt_t *tor1, cell_t *cell);
 void tor1_crypt_client_forward(tor1_crypt_t *tor1, cell_t *cell);
 
 void tor1_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in);
-void tor1_set_digest_v0(crypto_digest_t *digest, cell_t *cell);
 
 #endif /* !defined(TOR_RELAY_CRYPTO_H) */

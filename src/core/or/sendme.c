@@ -338,7 +338,8 @@ record_cell_digest_on_circ(circuit_t *circ, const uint8_t *sendme_digest)
  * low in the stack when decrypting or encrypting a cell. The window is only
  * updated once the cell is actually put in the outbuf.
  */
-STATIC bool
+// XXXX Todo remove if truly not needed.
+ATTR_UNUSED STATIC bool
 circuit_sendme_cell_is_next(int deliver_window, int sendme_inc)
 {
   /* Are we at the limit of the increment and if not, we don't expect next
@@ -697,7 +698,7 @@ sendme_note_stream_data_packaged(edge_connection_t *conn, size_t len)
 void
 sendme_record_cell_digest_on_circ(circuit_t *circ, crypt_path_t *cpath)
 {
-  uint8_t *sendme_digest;
+  const uint8_t *sendme_digest;
 
   tor_assert(circ);
 
@@ -718,30 +719,4 @@ sendme_record_cell_digest_on_circ(circuit_t *circ, crypt_path_t *cpath)
   }
 
   record_cell_digest_on_circ(circ, sendme_digest);
-}
-
-/* Called once we decrypted a cell and recognized it. Save the cell digest
- * as the next sendme digest in the cpath's relay_crypto_t,
- * only if the next cell we'll send on the circuit
- * is expected to be a SENDME. */
-void
-sendme_save_received_cell_digest(circuit_t *circ, crypt_path_t *cpath)
-{
-  // XXXX: all sendme_save functions probably belong inside tor1_*
-  tor_assert(circ);
-
-  /* Only record if the next cell is expected to be a SENDME. */
-  if (!circuit_sendme_cell_is_next(cpath ? cpath->deliver_window :
-                                           circ->deliver_window,
-                                   sendme_get_inc_count(circ, cpath))) {
-    return;
-  }
-
-  if (cpath) {
-    /* Record incoming digest. */
-    cpath_sendme_save_cell_digest(cpath, false);
-  } else {
-    /* Record forward digest. */
-    tor1_save_sendme_digest(&TO_OR_CIRCUIT(circ)->crypto, true);
-  }
 }

@@ -21,14 +21,11 @@ cpath_free(crypt_path_t *victim);
 
 void cpath_extend_linked_list(crypt_path_t **head_ptr, crypt_path_t *new_hop);
 
-void cpath_sendme_save_cell_digest(crypt_path_t *cpath,
-                                     bool is_foward_digest);
-
 crypt_path_t *cpath_get_next_non_open_hop(crypt_path_t *cpath);
 
 void cpath_sendme_circuit_record_inbound_cell(crypt_path_t *cpath);
 
-uint8_t *cpath_get_sendme_digest(crypt_path_t *cpath);
+const uint8_t *cpath_get_sendme_digest(crypt_path_t *cpath);
 
 #if defined(TOR_UNIT_TESTS)
 unsigned int cpath_get_n_hops(crypt_path_t **head_ptr);

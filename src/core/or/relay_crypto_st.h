@@ -30,7 +30,11 @@ struct relay_crypto_t {
   /** Digest state for cells heading away from the OR at this step. */
   struct crypto_digest_t *b_digest;
 
-  /** Digest used for the next SENDME cell if any. */
+  /** Digest used for the next SENDME cell if any.
+   *
+   * This digest is updated every time a cell is _originated_ or _recognized_
+   * in either direction.  Any operation with this object may
+   * invalidate this digest. */
   uint8_t sendme_digest[DIGEST_LEN];
 };
 #undef crypto_cipher_t

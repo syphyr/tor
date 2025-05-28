@@ -178,20 +178,10 @@ cpath_free(crypt_path_t *victim)
 /************ cpath sendme API ***************************/
 
 /** Return the sendme_digest of this <b>cpath</b>. */
-uint8_t *
+const uint8_t *
 cpath_get_sendme_digest(crypt_path_t *cpath)
 {
   return relay_crypto_get_sendme_digest(&cpath->pvt_crypto);
-}
-
-/** Save the cell digest, indicated by is_foward_digest or not, as the
- * SENDME cell digest inside the cpath's relay_crypto_t.
- */
-void
-cpath_sendme_save_cell_digest(crypt_path_t *cpath, bool is_foward_digest)
-{
-  tor_assert(cpath);
-  tor1_save_sendme_digest(&cpath->pvt_crypto, is_foward_digest);
 }
 
 /************ other cpath functions ***************************/
