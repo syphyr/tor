@@ -181,12 +181,23 @@ relay_crypto_clear(relay_crypto_t *crypto)
  * Return 0 if init was successful, else -1 if it failed.
  */
 int
-relay_crypto_init(relay_crypto_t *crypto,
-                  const char *key_data, size_t key_data_len,
-                  int reverse, int is_hs_v3)
+relay_crypto_init(relay_crypto_alg_t alg,
+                  relay_crypto_t *crypto,
+                  const char *key_data, size_t key_data_len)
 {
-  return tor1_crypt_init(&crypto->tor1,
-                         key_data, key_data_len, reverse, is_hs_v3);
+  switch (alg) {
+    /* Tor1 cases: the booleans are "reverse" and "is_hs_v3". */
+    case RELAY_CRYPTO_ALG_TOR1:
+      return tor1_crypt_init(&crypto->tor1, key_data, key_data_len,
+                             false, false);
+    case RELAY_CRYPTO_ALG_TOR1_HSC:
+      return tor1_crypt_init(&crypto->tor1, key_data, key_data_len,
+                             false, true);
+    case RELAY_CRYPTO_ALG_TOR1_HSS:
+      return tor1_crypt_init(&crypto->tor1, key_data, key_data_len,
+                             true, true);
+  }
+  tor_assert_unreached();
 }
 
 /** Return the amount of key material we need to initialize
@@ -200,7 +211,8 @@ relay_crypto_key_material_len(relay_crypto_alg_t alg)
   switch (alg) {
     case RELAY_CRYPTO_ALG_TOR1:
       return tor1_key_material_len(false);
-    case RELAY_CRYPTO_ALG_TOR1_HS:
+    case RELAY_CRYPTO_ALG_TOR1_HSC:
+    case RELAY_CRYPTO_ALG_TOR1_HSS:
       return tor1_key_material_len(true);
   }
   return -1;

@@ -12,9 +12,18 @@
 #ifndef TOR_RELAY_CRYPTO_H
 #define TOR_RELAY_CRYPTO_H
 
+/** Enumeration to identify which relay crypto algorithm is in use. */
 typedef enum relay_crypto_alg_t {
+  /** Tor1 relay crypto, as used for ordinary circuit hops. */
   RELAY_CRYPTO_ALG_TOR1,
-  RELAY_CRYPTO_ALG_TOR1_HS,
+  /** Tor1 relay crypto, as used as an onion service client for
+   * the shared virtual HS hop created with an INTRODUCE/RENVEZVOUS
+   * handshake. */
+  RELAY_CRYPTO_ALG_TOR1_HSC,
+  /** Tor1 relay crypto, as used as an onion service for
+   * the shared virtual HS hop created with an INTRODUCE/RENVEZVOUS
+   * handshake. */
+  RELAY_CRYPTO_ALG_TOR1_HSS,
 } relay_crypto_alg_t;
 
 #define relay_crypto_alg_bitfield_t ENUM_BF(relay_crypto_alg_t)
@@ -26,9 +35,9 @@ typedef enum relay_crypto_alg_t {
 
 ssize_t relay_crypto_key_material_len(relay_crypto_alg_t alg);
 
-int relay_crypto_init(relay_crypto_t *crypto,
-                      const char *key_data, size_t key_data_len,
-                      int reverse, int is_hs_v3);
+int relay_crypto_init(relay_crypto_alg_t alg,
+                      relay_crypto_t *crypto,
+                      const char *key_data, size_t key_data_len);
 
 int relay_decrypt_cell(circuit_t *circ, cell_t *cell,
                        cell_direction_t cell_direction,

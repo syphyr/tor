@@ -148,14 +148,13 @@ cpath_assert_layer_ok(const crypt_path_t *cp)
  * Return 0 if init was successful, else -1 if it failed.
  */
 int
-cpath_init_circuit_crypto(crypt_path_t *cpath,
-                          const char *key_data, size_t key_data_len,
-                          int reverse, int is_hs_v3)
+cpath_init_circuit_crypto(relay_crypto_alg_t alg,
+                          crypt_path_t *cpath,
+                          const char *key_data, size_t key_data_len)
 {
 
   tor_assert(cpath);
-  return relay_crypto_init(&cpath->pvt_crypto, key_data, key_data_len,
-                           reverse, is_hs_v3);
+  return relay_crypto_init(alg, &cpath->pvt_crypto, key_data, key_data_len);
 }
 
 /** Deallocate space associated with the cpath node <b>victim</b>. */

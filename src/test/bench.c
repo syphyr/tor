@@ -548,8 +548,8 @@ bench_cell_ops_tor1(void)
   char keys[CPATH_KEY_MATERIAL_LEN];
   crypto_rand(keys, sizeof(keys));
   size_t keylen = sizeof(keys);
-  relay_crypto_init(&or_circ->crypto,
-                    keys, keylen, false, false);
+  relay_crypto_init(RELAY_CRYPTO_ALG_TOR1,
+                    &or_circ->crypto, keys, keylen);
 
   reset_perftime();
 
