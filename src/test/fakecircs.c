@@ -22,7 +22,7 @@
 #include "core/or/conflux.h"
 #include "core/or/crypt_path.h"
 #include "core/or/relay.h"
-#include "core/or/relay_crypto_st.h"
+#include "core/crypto/relay_crypto_st.h"
 
 #include "test/fakecircs.h"
 

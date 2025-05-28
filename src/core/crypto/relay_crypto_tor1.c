@@ -17,7 +17,7 @@
 #include "lib/cc/ctassert.h"
 
 #include "core/or/cell_st.h"
-#include "core/or/relay_crypto_st.h"
+#include "core/crypto/relay_crypto_st.h"
 
 /* Offset of digest within relay cell body for v0 cells. */
 #define V0_DIGEST_OFFSET 5

@@ -18,5 +18,6 @@ noinst_HEADERS +=					\
 	src/core/crypto/onion_ntor.h			\
 	src/core/crypto/onion_ntor_v3.h			\
 	src/core/crypto/relay_crypto.h                  \
+	src/core/crypto/relay_crypto_st.h               \
         src/core/crypto/relay_crypto_cgo.h              \
 	src/core/crypto/relay_crypto_tor1.h
