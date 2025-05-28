@@ -37,7 +37,7 @@
  * cell.
  */
 void
-relay_set_digest_v0(crypto_digest_t *digest, cell_t *cell)
+tor1_set_digest_v0(crypto_digest_t *digest, cell_t *cell)
 {
   char integrity[V0_DIGEST_LEN];
 
@@ -55,7 +55,7 @@ relay_set_digest_v0(crypto_digest_t *digest, cell_t *cell)
  * and cell to their original state and return 0.
  */
 static int
-relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell)
+tor1_relay_digest_matches_v0(crypto_digest_t *digest, cell_t *cell)
 {
   uint32_t received_integrity, calculated_integrity;
   crypto_digest_checkpoint_t backup_digest;
@@ -104,7 +104,7 @@ relay_cell_is_recognized_v0(const cell_t *cell)
  * Note that we use the same operation for encrypting and for decrypting.
  */
 void
-relay_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in)
+tor1_crypt_one_payload(crypto_cipher_t *cipher, uint8_t *in)
 {
   crypto_cipher_crypt_inplace(cipher, (char*) in, CELL_PAYLOAD_SIZE);
 }
@@ -182,7 +182,7 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
 
         if (relay_cell_is_recognized_v0(cell)) {
           /* it's possibly recognized. have to check digest to be sure. */
-          if (relay_digest_matches_v0(cpath_get_incoming_digest(thishop),
+          if (tor1_relay_digest_matches_v0(cpath_get_incoming_digest(thishop),
                                       cell)) {
             *recognized = 1;
             *layer_hint = thishop;
@@ -198,17 +198,17 @@ relay_decrypt_cell(circuit_t *circ, cell_t *cell,
     } else {
       relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
       /* We're in the middle. Encrypt one layer. */
-      relay_crypt_one_payload(crypto->b_crypto, cell->payload);
+      tor1_crypt_one_payload(crypto->b_crypto, cell->payload);
     }
   } else /* cell_direction == CELL_DIRECTION_OUT */ {
     /* We're in the middle. Decrypt one layer. */
     relay_crypto_t *crypto = &TO_OR_CIRCUIT(circ)->crypto;
 
-    relay_crypt_one_payload(crypto->f_crypto, cell->payload);
+    tor1_crypt_one_payload(crypto->f_crypto, cell->payload);
 
     if (relay_cell_is_recognized_v0(cell)) {
       /* it's possibly recognized. have to check digest to be sure. */
-      if (relay_digest_matches_v0(crypto->f_digest, cell)) {
+      if (tor1_relay_digest_matches_v0(crypto->f_digest, cell)) {
         *recognized = 1;
         return 0;
       }
@@ -257,13 +257,13 @@ void
 relay_encrypt_cell_inbound(cell_t *cell,
                            or_circuit_t *or_circ)
 {
-  relay_set_digest_v0(or_circ->crypto.b_digest, cell);
+  tor1_set_digest_v0(or_circ->crypto.b_digest, cell);
 
   /* Record cell digest as the SENDME digest if need be. */
   sendme_record_sending_cell_digest(TO_CIRCUIT(or_circ), NULL);
 
   /* encrypt one layer */
-  relay_crypt_one_payload(or_circ->crypto.b_crypto, cell->payload);
+  tor1_crypt_one_payload(or_circ->crypto.b_crypto, cell->payload);
 }
 
 /**

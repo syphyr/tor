@@ -183,9 +183,9 @@ void
 cpath_crypt_cell(const crypt_path_t *cpath, uint8_t *payload, bool is_decrypt)
 {
   if (is_decrypt) {
-    relay_crypt_one_payload(cpath->pvt_crypto.b_crypto, payload);
+    tor1_crypt_one_payload(cpath->pvt_crypto.b_crypto, payload);
   } else {
-    relay_crypt_one_payload(cpath->pvt_crypto.f_crypto, payload);
+    tor1_crypt_one_payload(cpath->pvt_crypto.f_crypto, payload);
   }
 }
 
@@ -201,7 +201,7 @@ cpath_get_incoming_digest(const crypt_path_t *cpath)
 void
 cpath_set_cell_forward_digest(crypt_path_t *cpath, cell_t *cell)
 {
-  relay_set_digest_v0(cpath->pvt_crypto.f_digest, cell);
+  tor1_set_digest_v0(cpath->pvt_crypto.f_digest, cell);
 }
 
 /************ cpath sendme API ***************************/
