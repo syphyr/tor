@@ -189,7 +189,7 @@ test_v1_build_cell(void *arg)
   teardown_capture_of_logs();
 
   /* Record the cell digest into the circuit, cell should validate. */
-  memcpy(or_circ->crypto.sendme_digest, digest, sizeof(digest));
+  memcpy(or_circ->crypto.tor1.sendme_digest, digest, sizeof(digest));
   circ->package_window = CIRCWINDOW_INCREMENT + 1;
   sendme_record_cell_digest_on_circ(circ, NULL);
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 1);
