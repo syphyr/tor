@@ -176,15 +176,21 @@ onion_skin_create(int type,
     r = NTOR_ONIONSKIN_LEN;
     break;
   case ONION_HANDSHAKE_TYPE_NTOR_V3:
-    if (!extend_info_supports_ntor_v3(node))
+    if (!extend_info_supports_ntor_v3(node)) {
+      log_warn(LD_BUG, "Chose ntorv3 handshake, but no support at node");
       return -1;
-    if (ed25519_public_key_is_zero(&node->ed_identity))
+    }
+    if (ed25519_public_key_is_zero(&node->ed_identity)) {
+      log_warn(LD_BUG, "Chose ntorv3 handshake, but no ed id");
       return -1;
+    }
     size_t msg_len = 0;
     uint8_t *msg = NULL;
     if (client_circ_negotiation_message(node, &msg, &msg_len,
-                                        &state_out->chosen_params) < 0)
+                                        &state_out->chosen_params) < 0) {
+      log_warn(LD_BUG, "Could not create circuit negotiation msg");
       return -1;
+    }
     uint8_t *onion_skin = NULL;
     size_t onion_skin_len = 0;
     int status = onion_skin_ntor3_create(
@@ -196,9 +202,10 @@ onion_skin_create(int type,
                              &onion_skin, &onion_skin_len);
     tor_free(msg);
     if (status < 0) {
+      log_warn(LD_BUG, "onion skin create failed");
       return -1;
     }
-    if (onion_skin_len > onion_skin_out_maxlen) {
+    IF_BUG_ONCE(onion_skin_len > onion_skin_out_maxlen) {
       tor_free(onion_skin);
       return -1;
     }
