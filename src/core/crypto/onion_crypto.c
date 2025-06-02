@@ -42,6 +42,7 @@
 #include "feature/relay/routerkeys.h"
 #include "core/or/congestion_control_common.h"
 #include "core/crypto/relay_crypto.h"
+#include "core/or/protover.h"
 
 #include "core/or/circuitbuild.h"
 
@@ -50,6 +51,9 @@
 
 #include "trunnel/congestion_control.h"
 #include "trunnel/extension.h"
+#include "trunnel/subproto_request.h"
+
+#define EXT_TYPE_SUBPROTO 3
 
 static const uint8_t NTOR3_CIRC_VERIFICATION[] = "circuit extend";
 static const size_t NTOR3_CIRC_VERIFICATION_LEN = 14;
@@ -217,6 +221,76 @@ onion_skin_create(int type,
   return r;
 }
 
+static bool
+subproto_requests_in_order(const trn_subproto_request_t *a,
+                           const trn_subproto_request_t *b)
+{
+  if (a->protocol_id < b->protocol_id) {
+    return true;
+  } else if (a->protocol_id == b->protocol_id) {
+    return (a->proto_cap_number < b->proto_cap_number);
+  } else {
+    return false;
+  }
+}
+
+/**
+ * Process the SUBPROTO extension, as an OR.
+ *
+ * This extension declares one or more subproto capabilities that the
+ * relay must implement, and tells it to enable them.
+ */
+static int
+relay_process_subproto_ext(const trn_extension_t *ext,
+                           circuit_params_t *params_out)
+{
+  const trn_extension_field_t *field;
+  trn_subproto_request_ext_t *req = NULL;
+  int res = -1;
+
+  field = trn_extension_find(ext, EXT_TYPE_SUBPROTO);
+  if (!field) {
+    // Nothing to do.
+    res = 0;
+    goto done;
+  }
+
+  const uint8_t *f = trn_extension_field_getconstarray_field(field);
+  size_t len = trn_extension_field_getlen_field(field);
+
+  if (trn_subproto_request_ext_parse(&req, f, len) < 0) {
+    goto done;
+  }
+
+  const trn_subproto_request_t *prev = NULL;
+  size_t n_requests = trn_subproto_request_ext_getlen_reqs(req);
+  for (unsigned i = 0; i < n_requests; ++i) {
+    const trn_subproto_request_t *cur =
+      trn_subproto_request_ext_getconst_reqs(req, i);
+    if (prev && !subproto_requests_in_order(prev, cur)) {
+      // The requests were not properly sorted and deduplicated.
+      goto done;
+    }
+
+    if (cur->protocol_id == PRT_RELAY &&
+        cur->proto_cap_number == PROTOVER_RELAY_CRYPT_CGO) {
+      // XXXX CGO: Should we test if CGO is enabled at the relay?
+      params_out->crypto_alg = RELAY_CRYPTO_ALG_CGO_RELAY;
+      params_out->cell_fmt = RELAY_CELL_FORMAT_V1;
+    } else {
+      // Unless a protocol capability is explicitly supported for use
+      // with this extension, we _must_ reject when it appears.
+      goto done;
+    }
+  }
+
+  res = 0;
+
+ done:
+  trn_subproto_request_ext_free(req);
+  return res;
+}
+
 /**
  * Takes a param request message from the client, compares it to our
  * consensus parameters, and creates a reply message and output
@@ -251,6 +325,10 @@ negotiate_v3_ntor_server_circ_params(const uint8_t *param_request_msg,
     goto err;
   }
   params_out->cc_enabled = ret && our_ns_params->cc_enabled;
+  ret = relay_process_subproto_ext(ext, params_out);
+  if (ret < 0) {
+    goto err;
+  }
 
   /* Build the response. */
   ret = congestion_control_build_ext_response(our_ns_params, params_out,
@@ -259,6 +337,13 @@ negotiate_v3_ntor_server_circ_params(const uint8_t *param_request_msg,
     goto err;
   }
   params_out->sendme_inc_cells = our_ns_params->sendme_inc_cells;
+
+  if (params_out->cell_fmt != RELAY_CELL_FORMAT_V0 &&
+      !params_out->cc_enabled) {
+    // The V1 cell format is incompatible with pre-CC circuits,
+    // since it has no way to encode stream-level SENDME messages.
+    goto err;
+  }
 
   /* Success. */
   ret = 0;
