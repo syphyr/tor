@@ -831,6 +831,9 @@ typedef struct protover_summary_flags_t {
 
   /** True iff this router supports conflux. */
   unsigned int supports_conflux : 1;
+
+  /** True iff this router supports CGO. */
+  unsigned int supports_cgo : 1;
 } protover_summary_flags_t;
 
 typedef struct routerinfo_t routerinfo_t;
