@@ -1258,7 +1258,7 @@ int
 circuit_finish_handshake(origin_circuit_t *circ,
                          const created_cell_t *reply)
 {
-  char keys[CPATH_KEY_MATERIAL_LEN];
+  char keys[MAX_RELAY_KEY_MATERIAL_LEN];
   crypt_path_t *hop;
   int rv;
 
@@ -1279,9 +1279,10 @@ circuit_finish_handshake(origin_circuit_t *circ,
   tor_assert(hop->state == CPATH_STATE_AWAITING_KEYS);
 
   circuit_params_t params;
+  size_t keylen = sizeof(keys);
   {
     const char *msg = NULL;
-    size_t keylen = sizeof(keys);
+
     if (onion_skin_client_handshake(hop->handshake_state.tag,
                                     &hop->handshake_state,
                                     reply->reply, reply->handshake_len,
@@ -1291,18 +1292,16 @@ circuit_finish_handshake(origin_circuit_t *circ,
                                     &msg) < 0) {
       if (msg)
         log_warn(LD_CIRC,"onion_skin_client_handshake failed: %s", msg);
-      // XXXX This will be wrong for CGO.
-      tor_assert(keylen == sizeof(keys));
       return -END_CIRC_REASON_TORPROTOCOL;
     }
   }
 
   onion_handshake_state_release(&hop->handshake_state);
-
-  if (cpath_init_circuit_crypto(RELAY_CRYPTO_ALG_TOR1,
-                                hop, keys, sizeof(keys))<0) {
+  if (cpath_init_circuit_crypto(params.crypto_alg,
+                                hop, keys, keylen)<0) {
     return -END_CIRC_REASON_TORPROTOCOL;
   }
+  hop->relay_cell_format = params.cell_fmt;
 
   if (params.cc_enabled) {
     int circ_len = circuit_get_cpath_len(circ);

@@ -57,6 +57,18 @@ static const size_t NTOR3_CIRC_VERIFICATION_LEN = 14;
 #define NTOR3_VERIFICATION_ARGS \
   NTOR3_CIRC_VERIFICATION, NTOR3_CIRC_VERIFICATION_LEN
 
+/** Set `params` to a set of defaults.
+ *
+ * These defaults will only change later on if we're using a handshake that has
+ * parameter negotiation. */
+static void
+circuit_params_init(circuit_params_t *params)
+{
+  memset(params, 0, sizeof(*params));
+  params->crypto_alg = RELAY_CRYPTO_ALG_TOR1;
+  params->cell_fmt = RELAY_CELL_FORMAT_V0;
+}
+
 /** Return a new server_onion_keys_t object with all of the keys
  * and other info we might need to do onion handshakes.  (We make a copy of
  * our keys for each cpuworker to avoid race conditions with the main thread,
@@ -283,7 +295,7 @@ onion_skin_server_handshake(int type,
   }
   *keys_len_out = keys_out_needed;
 
-  memset(params_out, 0, sizeof(*params_out));
+  circuit_params_init(params_out);
 
   switch (type) {
   case ONION_HANDSHAKE_TYPE_TAP:
@@ -471,7 +483,7 @@ onion_skin_client_handshake(int type,
   }
   *keys_len_out = keys_out_needed;
 
-  memset(params_out, 0, sizeof(*params_out));
+  circuit_params_init(params_out);
 
   switch (type) {
   case ONION_HANDSHAKE_TYPE_TAP:

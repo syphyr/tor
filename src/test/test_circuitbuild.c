@@ -1532,6 +1532,7 @@ test_onionskin_answer(void *arg)
   /* Circuit must be non-NULL */
   tor_capture_bugs_(1);
   tt_int_op(onionskin_answer(NULL, created_cell,
+                             RELAY_CRYPTO_ALG_TOR1,
                              keys, CPATH_KEY_MATERIAL_LEN,
                              rend_circ_nonce), OP_EQ, -1);
   tt_int_op(smartlist_len(tor_get_captured_bug_log_()), OP_EQ, 1);
@@ -1543,6 +1544,7 @@ test_onionskin_answer(void *arg)
   /* Created cell must be non-NULL */
   tor_capture_bugs_(1);
   tt_int_op(onionskin_answer(or_circ, NULL,
+                             RELAY_CRYPTO_ALG_TOR1,
                              keys, CPATH_KEY_MATERIAL_LEN,
                              rend_circ_nonce), OP_EQ, -1);
   tt_int_op(smartlist_len(tor_get_captured_bug_log_()), OP_EQ, 1);
@@ -1554,6 +1556,7 @@ test_onionskin_answer(void *arg)
   /* Keys must be non-NULL */
   tor_capture_bugs_(1);
   tt_int_op(onionskin_answer(or_circ, created_cell,
+                             RELAY_CRYPTO_ALG_TOR1,
                              NULL, CPATH_KEY_MATERIAL_LEN,
                              rend_circ_nonce), OP_EQ, -1);
   tt_int_op(smartlist_len(tor_get_captured_bug_log_()), OP_EQ, 1);
@@ -1565,6 +1568,7 @@ test_onionskin_answer(void *arg)
   /* The rend circuit nonce must be non-NULL */
   tor_capture_bugs_(1);
   tt_int_op(onionskin_answer(or_circ, created_cell,
+                             RELAY_CRYPTO_ALG_TOR1,
                              keys, CPATH_KEY_MATERIAL_LEN,
                              NULL), OP_EQ, -1);
   tt_int_op(smartlist_len(tor_get_captured_bug_log_()), OP_EQ, 1);
@@ -1579,6 +1583,7 @@ test_onionskin_answer(void *arg)
 
   /* Fail when formatting the created cell */
   tt_int_op(onionskin_answer(or_circ, created_cell,
+                             RELAY_CRYPTO_ALG_TOR1,
                              keys, CPATH_KEY_MATERIAL_LEN,
                              rend_circ_nonce), OP_EQ, -1);
   expect_log_msg("couldn't format created cell (type=0, len=0).\n");

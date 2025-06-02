@@ -535,6 +535,7 @@ circuit_extend(const relay_msg_t *rmsg, struct circuit_t *circ)
 int
 onionskin_answer(struct or_circuit_t *circ,
                  const created_cell_t *created_cell,
+                 relay_crypto_alg_t crypto_alg,
                  const char *keys, size_t keys_len,
                  const uint8_t *rend_circ_nonce)
 {
@@ -556,9 +557,6 @@ onionskin_answer(struct or_circuit_t *circ,
     return -1;
   }
 
-  // XXXX: This will be wrong for cgo.
-  tor_assert(keys_len == CPATH_KEY_MATERIAL_LEN);
-
   if (created_cell_format(&cell, created_cell) < 0) {
     log_warn(LD_BUG,"couldn't format created cell (type=%d, len=%d).",
              (int)created_cell->cell_type, (int)created_cell->handshake_len);
@@ -571,7 +569,7 @@ onionskin_answer(struct or_circuit_t *circ,
   log_debug(LD_CIRC,"init digest forward 0x%.8x, backward 0x%.8x.",
             (unsigned int)get_uint32(keys),
             (unsigned int)get_uint32(keys+20));
-  if (relay_crypto_init(RELAY_CRYPTO_ALG_TOR1,
+  if (relay_crypto_init(crypto_alg,
                         &circ->crypto, keys, keys_len)<0) {
     log_warn(LD_BUG,"Circuit initialization failed.");
     return -1;

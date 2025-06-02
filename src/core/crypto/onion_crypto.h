@@ -13,6 +13,7 @@
 #define TOR_ONION_CRYPTO_H
 
 #include "lib/crypt_ops/crypto_ed25519.h"
+#include "core/crypto/relay_crypto.h"
 
 typedef struct server_onion_keys_t {
   uint8_t my_identity[DIGEST_LEN];
@@ -34,6 +35,11 @@ typedef struct circuit_params_t {
   bool cc_enabled;
   /** The number of cells in a sendme increment. Only used if cc_enabled=1. */
   uint8_t sendme_inc_cells;
+
+  /** Which algorithm did we negotiate? */
+  relay_crypto_alg_t crypto_alg;
+  /** Which cell format did we negotiate? */
+  relay_cell_fmt_t cell_fmt;
 } circuit_params_t;
 
 int onion_skin_create(int type,

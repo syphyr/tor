@@ -15,6 +15,7 @@
 #include "lib/cc/torint.h"
 #include "lib/log/log.h"
 #include "core/or/relay_msg_st.h"
+#include "core/crypto/relay_crypto.h"
 
 #include "app/config/config.h"
 
@@ -39,6 +40,7 @@ int circuit_extend(const relay_msg_t *msg, struct circuit_t *circ);
 
 int onionskin_answer(struct or_circuit_t *circ,
                      const struct created_cell_t *created_cell,
+                     relay_crypto_alg_t crypto_alg,
                      const char *keys, size_t keys_len,
                      const uint8_t *rend_circ_nonce);
 
@@ -56,11 +58,13 @@ circuit_extend(const relay_msg_t *msg, struct circuit_t *circ)
 static inline int
 onionskin_answer(struct or_circuit_t *circ,
                  const struct created_cell_t *created_cell,
+                 relay_crypto_alg_t crypto_alg,
                  const char *keys, size_t keys_len,
                  const uint8_t *rend_circ_nonce)
 {
   (void)circ;
   (void)created_cell;
+  (void)crypto_alg;
   (void)keys;
   (void)keys_len;
   (void)rend_circ_nonce;
