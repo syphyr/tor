@@ -116,11 +116,8 @@ cpath_assert_layer_ok(const crypt_path_t *cp)
       relay_crypto_assert_ok(&cp->pvt_crypto);
       FALLTHROUGH;
     case CPATH_STATE_CLOSED:
-      /*XXXX Assert that there's no handshake_state either. */
-      tor_assert(!cp->rend_dh_handshake_state);
       break;
     case CPATH_STATE_AWAITING_KEYS:
-      /* tor_assert(cp->dh_handshake_state); */
       break;
     default:
       log_fn(LOG_ERR, LD_BUG, "Unexpected state %d", cp->state);
@@ -166,7 +163,6 @@ cpath_free(crypt_path_t *victim)
 
   relay_crypto_clear(&victim->pvt_crypto);
   onion_handshake_state_release(&victim->handshake_state);
-  crypto_dh_free(victim->rend_dh_handshake_state);
   extend_info_free(victim->extend_info);
   congestion_control_free(victim->ccontrol);
 

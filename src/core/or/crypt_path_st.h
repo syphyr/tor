@@ -13,13 +13,11 @@
 #define CRYPT_PATH_ST_H
 
 #include "core/crypto/relay_crypto_st.h"
-struct crypto_dh_t;
 
 #define CRYPT_PATH_MAGIC 0x70127012u
 
 struct fast_handshake_state_t;
 struct ntor_handshake_state_t;
-struct crypto_dh_t;
 struct onion_handshake_state_t {
   /** One of `ONION_HANDSHAKE_TYPE_*`.  Determines which member of the union
    * is accessible. */
@@ -54,9 +52,6 @@ struct crypt_path_t {
   /** Current state of the handshake as performed with the OR at this
    * step. */
   onion_handshake_state_t handshake_state;
-  /** Diffie-hellman handshake state for performing an introduction
-   * operations */
-  struct crypto_dh_t *rend_dh_handshake_state;
 
   /** Negotiated key material shared with the OR at this step. */
   char rend_circ_nonce[DIGEST_LEN];/* KH in tor-spec.txt */
