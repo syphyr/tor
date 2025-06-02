@@ -998,25 +998,17 @@ congestion_control_dispatch_cc_alg(congestion_control_t *cc,
  * Build an extension field request to negotiate congestion control.
  *
  * If congestion control is enabled, field TRUNNEL_EXT_TYPE_CC_FIELD_REQUEST
- * is created in msg_out. It is a single 0-length field that signifies that we
- * want to use congestion control. The length of msg_out is provided via
- * msg_len_out.
+ * added to ext. It is a single 0-length field that signifies that we
+ * want to use congestion control.
  *
- * If congestion control is not enabled, a payload with 0 extensions is created
- * and returned.
+ * If congestion control is not enabled, no extension is added.
  *
  * If there is a failure building the request, -1 is returned, else 0.
- *
- * *msg_out must be freed if the return value is 0.
  */
 int
-congestion_control_build_ext_request(uint8_t **msg_out, size_t *msg_len_out)
+congestion_control_build_ext_request(trn_extension_t *ext)
 {
-  uint8_t *request = NULL;
-  trn_extension_t *ext = NULL;
   trn_extension_field_t *field = NULL;
-
-  ext = trn_extension_new();
 
   /* With congestion control enabled, add the request, else it is an empty
    * request in the payload. */
@@ -1032,30 +1024,9 @@ congestion_control_build_ext_request(uint8_t **msg_out, size_t *msg_len_out)
 
     /* Build final extension. */
     trn_extension_add_fields(ext, field);
-    trn_extension_set_num(ext, 1);
   }
 
-  /* Encode extension. */
-  ssize_t ret = trn_extension_encoded_len(ext);
-  if (BUG(ret < 0)) {
-    goto err;
-  }
-  size_t request_len = ret;
-  request = tor_malloc_zero(request_len);
-  ret = trn_extension_encode(request, request_len, ext);
-  if (BUG(ret < 0)) {
-    tor_free(request);
-    goto err;
-  }
-  *msg_out = request;
-  *msg_len_out = request_len;
-
-  /* Free everything, we've encoded the request now. */
-  ret = 0;
-
- err:
-  trn_extension_free(ext);
-  return (int)ret;
+  return 0;
 }
 
 /**

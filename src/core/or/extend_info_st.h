@@ -40,6 +40,11 @@ struct extend_info_t {
    * and it also supports supports NtorV3 _and_ negotiation
    * of congestion control parameters */
   bool exit_supports_congestion_control;
+  /**
+   * True if this hop supports CGO relay message enryption,
+   * and we intend to use it.
+   */
+  bool enable_cgo;
 };
 
 #endif /* !defined(EXTEND_INFO_ST_H) */

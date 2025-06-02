@@ -182,7 +182,8 @@ onion_skin_create(int type,
       return -1;
     size_t msg_len = 0;
     uint8_t *msg = NULL;
-    if (client_circ_negotiation_message(node, &msg, &msg_len) < 0)
+    if (client_circ_negotiation_message(node, &msg, &msg_len,
+                                        &state_out->chosen_params) < 0)
       return -1;
     uint8_t *onion_skin = NULL;
     size_t onion_skin_len = 0;

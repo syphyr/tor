@@ -66,9 +66,9 @@ void congestion_control_new_consensus_params(const networkstatus_t *ns);
 
 bool congestion_control_enabled(void);
 
-int congestion_control_build_ext_request(uint8_t **msg_out,
-                                         size_t *msg_len_out);
 struct trn_extension_st;
+int congestion_control_build_ext_request(struct trn_extension_st *ext);
+
 int congestion_control_parse_ext_request(const struct trn_extension_st *ext);
 int congestion_control_build_ext_response(const circuit_params_t *our_params,
                                           const circuit_params_t *circ_params,

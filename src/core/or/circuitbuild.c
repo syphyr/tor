@@ -52,6 +52,7 @@
 #include "core/or/relay.h"
 #include "core/or/trace_probes_circuit.h"
 #include "core/or/crypt_path.h"
+#include "core/or/protover.h"
 #include "feature/client/bridges.h"
 #include "feature/client/circpathbias.h"
 #include "feature/client/entrynodes.h"
@@ -84,6 +85,7 @@
 
 #include "trunnel/extension.h"
 #include "trunnel/congestion_control.h"
+#include "trunnel/subproto_request.h"
 
 static int circuit_send_first_onion_skin(origin_circuit_t *circ);
 static int circuit_build_no_more_hops(origin_circuit_t *circ);
@@ -882,6 +884,9 @@ circuit_pick_create_handshake(uint8_t *cell_type_out,
    * and only when it is enabled. */
   if (ei->exit_supports_congestion_control &&
       congestion_control_enabled())
+    *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR_V3;
+  else if (ei->enable_cgo)
+    // XXXX CGO: provide an enable option?
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR_V3;
   else
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR;
@@ -2636,6 +2641,80 @@ circuit_upgrade_circuits_from_guard_wait(void)
   smartlist_free(to_upgrade);
 }
 
+// TODO: Find a better place to declare this; it's duplicated in
+// onion_crypto.c
+#define EXT_TYPE_SUBPROTO 3
+
+/** Add a request for the CGO subprotocol capability to ext.
+ *
+ * NOTE: If we need to support other subprotocol extensions,
+ * do not add separate functions! Instead rename this function
+ * and adapt it as appropriate.
+ */
+static int
+build_cgo_subproto_request(trn_extension_t *ext)
+{
+  trn_extension_field_t *fld = NULL;
+  trn_subproto_request_t *req = NULL;
+  trn_subproto_request_ext_t *req_ext = NULL;
+  int r = 0;
+
+  fld = trn_extension_field_new();
+  req_ext = trn_subproto_request_ext_new();
+
+  req = trn_subproto_request_new();
+  req->protocol_id = PRT_RELAY;
+  req->proto_cap_number = PROTOVER_RELAY_CRYPT_CGO;
+  trn_subproto_request_ext_add_reqs(req_ext, req);
+  req = NULL; // prevent double-free
+
+  // TODO: If we add other capabilities here, we need to make
+  // sure they are correctly sorted.
+
+  ssize_t len = trn_subproto_request_ext_encoded_len(req_ext);
+  if (BUG(len<0))
+    goto err;
+  if (BUG(len > UINT8_MAX))
+    goto err;
+
+  trn_extension_field_setlen_field(fld, len);
+  trn_extension_field_set_field_type(fld, EXT_TYPE_SUBPROTO);
+  trn_extension_field_set_field_len(fld, len);
+  uint8_t *out = trn_extension_field_getarray_field(fld);
+  ssize_t len2 = trn_subproto_request_ext_encode(out, len, req_ext);
+  if (BUG(len != len2))
+    goto err;
+
+  trn_extension_add_fields(ext, fld);
+  fld = NULL; // prevent double-free
+
+  // We succeeded!
+  r = 0;
+
+ err:
+  trn_subproto_request_ext_free(req_ext);
+  trn_subproto_request_free(req);
+  trn_extension_field_free(fld);
+
+  return r;
+}
+
+/** Helper: Comparison function to sort extensions. */
+static int
+ext_cmp(const void *a, const void *b)
+{
+  const trn_extension_field_t *fa = *(trn_extension_field_t **)a;
+  const trn_extension_field_t *fb = *(trn_extension_field_t **)b;
+  uint8_t ta = trn_extension_field_get_field_type(fa);
+  uint8_t tb = trn_extension_field_get_field_type(fb);
+  if (ta < tb)
+    return -1;
+  else if (ta == tb)
+    return 0;
+  else
+    return 1;
+}
+
 /**
  * Try to generate a circuit-negotiation message for communication with a
  * given relay.  Assumes we are using ntor v3, or some later version that
@@ -2647,13 +2726,53 @@ circuit_upgrade_circuits_from_guard_wait(void)
 int
 client_circ_negotiation_message(const extend_info_t *ei,
                                 uint8_t **msg_out,
-                                size_t *msg_len_out)
+                                size_t *msg_len_out,
+                                circuit_params_t *params_out)
 {
-  tor_assert(ei && msg_out && msg_len_out);
+  tor_assert(ei && msg_out && msg_len_out && params_out);
+  bool cc_enabled = false;
 
-  if (!ei->exit_supports_congestion_control) {
-    return -1;
+  *msg_out = NULL;
+
+  trn_extension_t *ext = trn_extension_new();
+
+  if (ei->exit_supports_congestion_control &&
+      congestion_control_enabled()) {
+    if (congestion_control_build_ext_request(ext) < 0) {
+      goto err;
+    }
+    cc_enabled = true;
   }
 
-  return congestion_control_build_ext_request(msg_out, msg_len_out);
+  if (cc_enabled && ei->enable_cgo) {
+    if (build_cgo_subproto_request(ext) < 0) {
+      goto err;
+    }
+    params_out->cell_fmt = RELAY_CELL_FORMAT_V1;
+    params_out->crypto_alg = RELAY_CRYPTO_ALG_CGO_CLIENT;
+  }
+
+  size_t n_fields = trn_extension_getlen_fields(ext);
+  qsort(trn_extension_getarray_fields(ext),
+        n_fields, sizeof(trn_extension_field_t *),
+        ext_cmp);
+
+  trn_extension_set_num(ext, n_fields);
+
+  ssize_t total_len = trn_extension_encoded_len(ext);
+  if (BUG(total_len < 0))
+    goto err;
+
+  *msg_out = tor_malloc_zero(total_len);
+  *msg_len_out = total_len;
+  if (BUG(trn_extension_encode(*msg_out, total_len, ext) < 0)) {
+    goto err;
+  }
+  trn_extension_free(ext);
+
+  return 0;
+ err:
+  trn_extension_free(ext);
+  tor_free(*msg_out);
+  return -1;
 }
