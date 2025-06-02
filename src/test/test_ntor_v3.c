@@ -192,6 +192,7 @@ run_full_handshake(circuit_params_t *serv_params_in,
   uint8_t client_keys[CELL_PAYLOAD_SIZE];
   uint8_t rend_auth[DIGEST_LEN];
 
+  info.supports_ntor_v3 = true;
   info.exit_supports_congestion_control = 1;
 
   unhex(relay_onion_key.seckey.secret_key,

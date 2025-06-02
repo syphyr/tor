@@ -36,6 +36,8 @@ struct extend_info_t {
   tor_addr_port_t orports[EXTEND_INFO_MAX_ADDRS];
   /** Ntor onion key for this hop. */
   curve25519_public_key_t curve25519_onion_key;
+  /** True if this hop supports ntor v3. */
+  bool supports_ntor_v3;
   /** True if this hop is to be used as an _exit_,
    * and it also supports supports NtorV3 _and_ negotiation
    * of congestion control parameters */
