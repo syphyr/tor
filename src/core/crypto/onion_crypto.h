@@ -69,4 +69,10 @@ void server_onion_keys_free_(server_onion_keys_t *keys);
 #define server_onion_keys_free(keys) \
   FREE_AND_NULL(server_onion_keys_t, server_onion_keys_free_, (keys))
 
+struct trn_extension_st;
+struct trn_extension_field_st;
+const struct trn_extension_field_st *trn_extension_find(
+                                        const struct trn_extension_st *ext,
+                                        uint8_t ext_type);
+
 #endif /* !defined(TOR_ONION_CRYPTO_H) */

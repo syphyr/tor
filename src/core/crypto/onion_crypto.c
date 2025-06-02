@@ -563,3 +563,30 @@ onion_skin_client_handshake(int type,
     return -1;
   }
 }
+
+/**
+ * If there is an extension field of type `ext_type` in `ext`,
+ * return that field.  Otherwise return NULL.
+ */
+const trn_extension_field_t *
+trn_extension_find(const trn_extension_t *ext, uint8_t ext_type)
+{
+  IF_BUG_ONCE(!ext) {
+    return NULL;
+  }
+  size_t n_fields = trn_extension_get_num(ext);
+  if (n_fields == 0)
+    return NULL;
+
+  for (unsigned i = 0; i < n_fields; ++i) {
+    const trn_extension_field_t *field = trn_extension_getconst_fields(ext, i);
+    IF_BUG_ONCE(field == NULL) {
+      return NULL;
+    }
+    if (trn_extension_field_get_field_type(field) == ext_type) {
+      return field;
+    }
+  }
+
+  return NULL;
+}

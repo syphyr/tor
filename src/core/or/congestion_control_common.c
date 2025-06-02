@@ -1073,7 +1073,6 @@ congestion_control_parse_ext_request(const uint8_t *msg, const size_t msg_len)
 {
   ssize_t ret = 0;
   trn_extension_t *ext = NULL;
-  size_t num_fields = 0;
 
   /* Parse extension from payload. */
   ret = trn_extension_parse(&ext, msg, msg_len);
@@ -1081,28 +1080,13 @@ congestion_control_parse_ext_request(const uint8_t *msg, const size_t msg_len)
     goto end;
   }
 
-  /* No extension implies no support for congestion control. In this case, we
-   * simply return 0 to indicate CC is disabled. */
-  if ((num_fields = trn_extension_get_num(ext)) == 0) {
+  if (trn_extension_find(ext, TRUNNEL_EXT_TYPE_CC_FIELD_REQUEST) == NULL) {
+    /* No extension implies no support for congestion control. In this case, we
+     * simply return 0 to indicate CC is disabled. */
     ret = 0;
-    goto end;
-  }
-
-  /* Go over all fields. If any field is TRUNNEL_EXT_TYPE_CC_FIELD_REQUEST,
-   * then congestion control is enabled. Ignore unknown fields. */
-  for (size_t f = 0; f < num_fields; f++) {
-    const trn_extension_field_t *field = trn_extension_get_fields(ext, f);
-    if (field == NULL) {
-      ret = -1;
-      goto end;
-    }
-
+  } else {
     /* For congestion control to be enabled, we only need the field type. */
-    if (trn_extension_field_get_field_type(field) ==
-        TRUNNEL_EXT_TYPE_CC_FIELD_REQUEST) {
-      ret = 1;
-      break;
-    }
+    ret = 1;
   }
 
  end:
@@ -1233,8 +1217,8 @@ congestion_control_parse_ext_response(const uint8_t *msg,
                                       circuit_params_t *params_out)
 {
   ssize_t ret = 0;
-  size_t num_fields = 0;
   trn_extension_t *ext = NULL;
+  const trn_extension_field_t *field = NULL;
   trn_extension_field_cc_t *cc_field = NULL;
 
   /* We will only accept this response (and this circuit) if sendme_inc
@@ -1250,24 +1234,11 @@ congestion_control_parse_ext_response(const uint8_t *msg,
     goto end;
   }
 
-  if ((num_fields = trn_extension_get_num(ext)) == 0) {
+  field = trn_extension_find(ext, TRUNNEL_EXT_TYPE_CC_FIELD_RESPONSE);
+
+  if (field == 0) {
     ret = 0;
-    goto end;
-  }
-
-  /* Go over all fields. If any field is TRUNNEL_EXT_TYPE_CC_FIELD_RESPONSE,
-   * then congestion control is enabled. Ignore unknown fields. */
-  for (size_t f = 0; f < num_fields; f++) {
-    const trn_extension_field_t *field = trn_extension_get_fields(ext, f);
-    if (field == NULL) {
-      ret = -1;
-      goto end;
-    }
-
-    /* Only examine TRUNNEL_EXT_TYPE_CC_FIELD_RESPONSE; ignore other fields */
-    if (trn_extension_field_get_field_type(field) ==
-        TRUNNEL_EXT_TYPE_CC_FIELD_RESPONSE) {
-
+  } else {
       /* Parse the field into the congestion control field. */
       ret = trn_extension_field_cc_parse(&cc_field,
                 trn_extension_field_getconstarray_field(field),
@@ -1286,8 +1257,6 @@ congestion_control_parse_ext_response(const uint8_t *msg,
       /* All good. Get value and break */
       params_out->sendme_inc_cells = sendme_inc_cells;
       ret = 1;
-      break;
-    }
   }
 
  end:
