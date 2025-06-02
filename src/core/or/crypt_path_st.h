@@ -13,6 +13,7 @@
 #define CRYPT_PATH_ST_H
 
 #include "core/crypto/relay_crypto_st.h"
+#include "core/crypto/onion_crypto.h"
 
 #define CRYPT_PATH_MAGIC 0x70127012u
 
@@ -22,6 +23,9 @@ struct onion_handshake_state_t {
   /** One of `ONION_HANDSHAKE_TYPE_*`.  Determines which member of the union
    * is accessible. */
   uint16_t tag;
+  /** Initial circuit parameters (selected during first stage of negotiation;
+   * may be changed based on response from relay). */
+  circuit_params_t chosen_params;
   union {
     struct fast_handshake_state_t *fast;
     struct ntor_handshake_state_t *ntor;

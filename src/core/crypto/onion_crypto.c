@@ -147,6 +147,8 @@ onion_skin_create(int type,
 {
   int r = -1;
 
+  circuit_params_init(&state_out->chosen_params);
+
   switch (type) {
   case ONION_HANDSHAKE_TYPE_TAP:
     return -1;
@@ -483,7 +485,8 @@ onion_skin_client_handshake(int type,
   }
   *keys_len_out = keys_out_needed;
 
-  circuit_params_init(params_out);
+  memcpy(params_out, &handshake_state->chosen_params,
+         sizeof(circuit_params_t));
 
   switch (type) {
   case ONION_HANDSHAKE_TYPE_TAP:
