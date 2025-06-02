@@ -1069,16 +1069,9 @@ congestion_control_build_ext_request(uint8_t **msg_out, size_t *msg_len_out)
  * WARNING: Called from CPU worker! Must not access any global state.
  */
 int
-congestion_control_parse_ext_request(const uint8_t *msg, const size_t msg_len)
+congestion_control_parse_ext_request(const trn_extension_t *ext)
 {
   ssize_t ret = 0;
-  trn_extension_t *ext = NULL;
-
-  /* Parse extension from payload. */
-  ret = trn_extension_parse(&ext, msg, msg_len);
-  if (ret < 0) {
-    goto end;
-  }
 
   if (trn_extension_find(ext, TRUNNEL_EXT_TYPE_CC_FIELD_REQUEST) == NULL) {
     /* No extension implies no support for congestion control. In this case, we
@@ -1089,8 +1082,6 @@ congestion_control_parse_ext_request(const uint8_t *msg, const size_t msg_len)
     ret = 1;
   }
 
- end:
-  trn_extension_free(ext);
   return (int)ret;
 }
 
@@ -1212,12 +1203,10 @@ congestion_control_validate_sendme_increment(uint8_t sendme_inc)
 /** Return 1 if CC is enabled which also will set the SENDME increment into our
  * params_out. Return 0 if CC is disabled. Else, return -1 on error. */
 int
-congestion_control_parse_ext_response(const uint8_t *msg,
-                                      const size_t msg_len,
+congestion_control_parse_ext_response(const trn_extension_t *ext,
                                       circuit_params_t *params_out)
 {
   ssize_t ret = 0;
-  trn_extension_t *ext = NULL;
   const trn_extension_field_t *field = NULL;
   trn_extension_field_cc_t *cc_field = NULL;
 
@@ -1227,12 +1216,6 @@ congestion_control_parse_ext_response(const uint8_t *msg,
    * changes over smaller increments once every 4 hours. Exits that
    * violate this range should just not be used. */
 #define MAX_SENDME_INC_NEGOTIATE_FACTOR 2
-
-  /* Parse extension from payload. */
-  ret = trn_extension_parse(&ext, msg, msg_len);
-  if (ret < 0) {
-    goto end;
-  }
 
   field = trn_extension_find(ext, TRUNNEL_EXT_TYPE_CC_FIELD_RESPONSE);
 
@@ -1260,7 +1243,6 @@ congestion_control_parse_ext_response(const uint8_t *msg,
   }
 
  end:
-  trn_extension_free(ext);
   trn_extension_field_cc_free(cc_field);
 
   return (int)ret;

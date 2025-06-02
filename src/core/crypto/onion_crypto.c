@@ -236,11 +236,17 @@ negotiate_v3_ntor_server_circ_params(const uint8_t *param_request_msg,
                                      uint8_t **resp_msg_out,
                                      size_t *resp_msg_len_out)
 {
-  int ret;
+  int ret = -1;
+  trn_extension_t *ext = NULL;
+
+  ssize_t len =
+    trn_extension_parse(&ext, param_request_msg, param_request_len);
+  if (len < 0) {
+    goto err;
+  }
 
   /* Parse request. */
-  ret = congestion_control_parse_ext_request(param_request_msg,
-                                             param_request_len);
+  ret = congestion_control_parse_ext_request(ext);
   if (ret < 0) {
     goto err;
   }
@@ -258,6 +264,7 @@ negotiate_v3_ntor_server_circ_params(const uint8_t *param_request_msg,
   ret = 0;
 
  err:
+  trn_extension_free(ext);
   return ret;
 }
 
@@ -427,11 +434,19 @@ negotiate_v3_ntor_client_circ_params(const uint8_t *param_response_msg,
                                      size_t param_response_len,
                                      circuit_params_t *params_out)
 {
-  int ret = congestion_control_parse_ext_response(param_response_msg,
-                                                  param_response_len,
-                                                  params_out);
+  int ret = -1;
+  trn_extension_t *ext = NULL;
+
+  ssize_t len =
+    trn_extension_parse(&ext, param_response_msg, param_response_len);
+  if (len < 0) {
+    goto err;
+  }
+
+  ret = congestion_control_parse_ext_response(ext,
+                                              params_out);
   if (ret < 0) {
-    return -1;
+    goto err;
   }
 
   /* If congestion control came back enabled, but we didn't ask for it
@@ -446,11 +461,13 @@ negotiate_v3_ntor_client_circ_params(const uint8_t *param_response_msg,
    * new one.
    */
   if (ret && !congestion_control_enabled()) {
-    return -1;
+    goto err;
   }
   params_out->cc_enabled = ret;
 
-  return 0;
+ err:
+  trn_extension_free(ext);
+  return ret;
 }
 
 /** Perform the final (client-side) step of a circuit-creation handshake of
