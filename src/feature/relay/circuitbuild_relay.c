@@ -566,9 +566,6 @@ onionskin_answer(struct or_circuit_t *circ,
 
   circuit_set_state(TO_CIRCUIT(circ), CIRCUIT_STATE_OPEN);
 
-  log_debug(LD_CIRC,"init digest forward 0x%.8x, backward 0x%.8x.",
-            (unsigned int)get_uint32(keys),
-            (unsigned int)get_uint32(keys+20));
   if (relay_crypto_init(crypto_alg,
                         &circ->crypto, keys, keys_len)<0) {
     log_warn(LD_BUG,"Circuit initialization failed.");
