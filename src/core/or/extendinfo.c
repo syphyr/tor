@@ -61,6 +61,11 @@ extend_info_new(const char *nickname,
       pv->supports_congestion_control;
   }
 
+  if (pv) {
+    // XXXX cgo Decide whether to set this!
+    info->enable_cgo = pv->supports_cgo;
+  }
+
   return info;
 }
 
