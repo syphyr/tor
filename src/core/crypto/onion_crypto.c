@@ -392,10 +392,6 @@ onion_skin_server_handshake(int type,
 
   relay_crypto_alg_t relay_alg = RELAY_CRYPTO_ALG_TOR1;
   size_t keys_out_needed = relay_crypto_key_material_len(relay_alg);
-  if (BUG(*keys_len_out < keys_out_needed)) {
-    return -1;
-  }
-  *keys_len_out = keys_out_needed;
 
   circuit_params_init(params_out);
 
@@ -407,6 +403,9 @@ onion_skin_server_handshake(int type,
       return -1;
     if (onionskin_len != CREATE_FAST_LEN)
       return -1;
+    if (BUG(*keys_len_out < keys_out_needed)) {
+      return -1;
+    }
     if (fast_server_handshake(onion_skin, reply_out, keys_out,
                               keys_out_needed)<0)
       return -1;
@@ -418,6 +417,9 @@ onion_skin_server_handshake(int type,
       return -1;
     if (onionskin_len < NTOR_ONIONSKIN_LEN)
       return -1;
+    if (BUG(*keys_len_out < keys_out_needed)) {
+      return -1;
+    }
     {
       size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
       tor_assert(keys_tmp_len <= MAX_KEYS_TMP_LEN);
@@ -439,8 +441,6 @@ onion_skin_server_handshake(int type,
     }
     break;
   case ONION_HANDSHAKE_TYPE_NTOR_V3: {
-    size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
-    tor_assert(keys_tmp_len <= MAX_KEYS_TMP_LEN);
     uint8_t keys_tmp[MAX_KEYS_TMP_LEN];
     uint8_t *client_msg = NULL;
     size_t client_msg_len = 0;
@@ -471,6 +471,16 @@ onion_skin_server_handshake(int type,
       return -1;
     }
     tor_free(client_msg);
+    /* Now we know what we negotiated,
+       so we can use the right lengths. */
+    relay_alg = params_out->crypto_alg;
+    keys_out_needed = relay_crypto_key_material_len(relay_alg);
+
+    if (BUG(*keys_len_out < keys_out_needed)) {
+      return -1;
+    }
+    size_t keys_tmp_len = keys_out_needed + DIGEST_LEN;
+    tor_assert(keys_tmp_len <= MAX_KEYS_TMP_LEN);
 
     uint8_t *server_handshake = NULL;
     size_t server_handshake_len = 0;
@@ -511,6 +521,7 @@ onion_skin_server_handshake(int type,
     return -1;
     /* LCOV_EXCL_STOP */
   }
+  *keys_len_out = keys_out_needed;
 
   return r;
 }
@@ -588,15 +599,16 @@ onion_skin_client_handshake(int type,
   if (handshake_state->tag != type)
     return -1;
 
-  relay_crypto_alg_t relay_alg = RELAY_CRYPTO_ALG_TOR1;
+  memcpy(params_out, &handshake_state->chosen_params,
+         sizeof(circuit_params_t));
+
+  // at this point, we know the crypto algorithm we want to use
+  relay_crypto_alg_t relay_alg = params_out->crypto_alg;
   size_t keys_out_needed = relay_crypto_key_material_len(relay_alg);
   if (BUG(*keys_len_out < keys_out_needed)) {
     return -1;
   }
   *keys_len_out = keys_out_needed;
-
-  memcpy(params_out, &handshake_state->chosen_params,
-         sizeof(circuit_params_t));
 
   switch (type) {
   case ONION_HANDSHAKE_TYPE_TAP:
