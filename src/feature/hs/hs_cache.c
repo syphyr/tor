@@ -191,8 +191,10 @@ cache_store_v3_as_dir(hs_cache_dir_descriptor_t *desc)
       goto err;
     }
     /* We now know that the descriptor we just received is a new one so
+     * preserve the downloaded counter from the old entry and then
      * remove the entry we currently have from our cache so we can then
      * store the new one. */
+    desc->n_downloaded = cache_entry->n_downloaded;
     remove_v3_desc_as_dir(cache_entry);
     hs_cache_decrement_allocation(cache_get_dir_entry_size(cache_entry));
     cache_dir_desc_free(cache_entry);
