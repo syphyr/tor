@@ -9,6 +9,9 @@
  * @brief Header for relay_crypto.c
  **/
 
+// For access to cpath pvt_crypto field.
+#define CRYPT_PATH_PRIVATE
+
 #include "core/or/or.h"
 #include "core/or/circuitlist.h"
 #include "core/or/crypt_path.h"
@@ -21,9 +24,6 @@
 
 #include "core/or/or_circuit_st.h"
 #include "core/or/origin_circuit_st.h"
-
-// XXXX: Remove this definition once I'm done refactoring.
-#define pvt_crypto crypto_crypt_path_private_field
 
 #define CGO_AES_BITS 128
 
