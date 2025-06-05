@@ -347,9 +347,9 @@ record_cell_digest_on_circ(circuit_t *circ,
   // make sure we don't have heap overflow bugs.
   uint8_t *tag;
   if (tag_len == SHORT_TAG_LEN) {
-    tag = tor_malloc(sizeof(LONG_TAG_LEN));
+    tag = tor_malloc_zero(LONG_TAG_LEN);
     memcpy(tag, sendme_tag, tag_len);
-    memset(tag+SHORT_TAG_LEN, 0, LONG_TAG_LEN - SHORT_TAG_LEN);
+    // (The final bytes were initialized to zero.)
   } else if (tag_len == LONG_TAG_LEN) {
     tag = tor_memdup(sendme_tag, LONG_TAG_LEN);
   } else {
