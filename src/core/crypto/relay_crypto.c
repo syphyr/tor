@@ -42,10 +42,10 @@ relay_crypto_get_sendme_tag(relay_crypto_t *crypto,
   tor_assert(crypto);
   switch (crypto->kind) {
     case RCK_TOR1:
-      *len_out = DIGEST_LEN;
+      *len_out = SENDME_TAG_LEN_TOR1;
       return crypto->c.tor1.sendme_digest;
     case RCK_CGO:
-      *len_out = CGO_TAG_LEN;
+      *len_out = SENDME_TAG_LEN_CGO;
       return crypto->c.cgo.last_tag;
   }
   tor_assert_unreached();
@@ -65,7 +65,7 @@ relay_crypt_client_backward(relay_crypto_t *crypto, cell_t *cell)
       const uint8_t *tag = NULL;
       cgo_crypt_client_backward(crypto->c.cgo.back, cell, &tag);
       if (tag != NULL) {
-        memcpy(crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+        memcpy(crypto->c.cgo.last_tag, tag, SENDME_TAG_LEN_CGO);
         return true;
       } else {
         return false;
@@ -89,7 +89,7 @@ relay_crypt_relay_forward(relay_crypto_t *crypto, cell_t *cell)
       const uint8_t *tag = NULL;
       cgo_crypt_relay_forward(crypto->c.cgo.fwd, cell, &tag);
       if (tag != NULL) {
-        memcpy(crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+        memcpy(crypto->c.cgo.last_tag, tag, SENDME_TAG_LEN_CGO);
         return true;
       } else {
         return false;
@@ -198,7 +198,7 @@ relay_crypt_client_originate(relay_crypto_t *crypto, cell_t *cell)
       const uint8_t *tag = NULL;
       cgo_crypt_client_originate(crypto->c.cgo.fwd, cell, &tag);
       tor_assert(tag);
-      memcpy(crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+      memcpy(crypto->c.cgo.last_tag, tag, SENDME_TAG_LEN_CGO);
       break;
     }
   }
@@ -262,7 +262,7 @@ relay_encrypt_cell_inbound(cell_t *cell,
       const uint8_t *tag = NULL;
       cgo_crypt_relay_originate(crypto->c.cgo.back, cell, &tag);
       tor_assert(tag);
-      memcpy(&crypto->c.cgo.last_tag, tag, CGO_TAG_LEN);
+      memcpy(&crypto->c.cgo.last_tag, tag, SENDME_TAG_LEN_CGO);
       break;
     }
   }

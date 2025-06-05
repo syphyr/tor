@@ -27,16 +27,13 @@
 #include "lib/ctime/di_ops.h"
 #include "trunnel/sendme_cell.h"
 
-#define SHORT_TAG_LEN 16
-#define LONG_TAG_LEN 20
-
 /**
  * Return true iff tag_len is some length we recognize.
  */
 static inline bool
 tag_len_ok(size_t tag_len)
 {
-  return tag_len == SHORT_TAG_LEN || tag_len == LONG_TAG_LEN;
+  return tag_len == SENDME_TAG_LEN_CGO || tag_len == SENDME_TAG_LEN_TOR1;
 }
 
 /* Return the minimum version given by the consensus (if any) that should be
@@ -346,12 +343,12 @@ record_cell_digest_on_circ(circuit_t *circ,
   // We always allocate the largest possible tag here to
   // make sure we don't have heap overflow bugs.
   uint8_t *tag;
-  if (tag_len == SHORT_TAG_LEN) {
-    tag = tor_malloc_zero(LONG_TAG_LEN);
+  if (tag_len == SENDME_TAG_LEN_CGO) {
+    tag = tor_malloc_zero(SENDME_TAG_LEN_TOR1);
     memcpy(tag, sendme_tag, tag_len);
     // (The final bytes were initialized to zero.)
-  } else if (tag_len == LONG_TAG_LEN) {
-    tag = tor_memdup(sendme_tag, LONG_TAG_LEN);
+  } else if (tag_len == SENDME_TAG_LEN_TOR1) {
+    tag = tor_memdup(sendme_tag, SENDME_TAG_LEN_TOR1);
   } else {
     tor_assert_unreached();
   }

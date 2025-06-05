@@ -26,7 +26,7 @@ typedef struct cgo_pair_t {
   cgo_crypt_t *fwd;
   cgo_crypt_t *back;
   /* The last tag that we got when originating or recognizing a message */
-  uint8_t last_tag[CGO_TAG_LEN];
+  uint8_t last_tag[SENDME_TAG_LEN_CGO];
 } cgo_pair_t;
 
 struct relay_crypto_t {

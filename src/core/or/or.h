@@ -451,6 +451,11 @@ typedef enum {
 /** Amount to increment a stream window when we get a stream SENDME. */
 #define STREAMWINDOW_INCREMENT 50
 
+/** Length for authenticated sendme tag with tor1 encryption. */
+#define SENDME_TAG_LEN_TOR1 20
+/** Length for authenticated sendme tag with cgo encryption. */
+#define SENDME_TAG_LEN_CGO 16
+
 /** Maximum number of queued cells on a circuit for which we are the
  * midpoint before we give up and kill it.  This must be >= circwindow
  * to avoid killing innocent circuits, and >= circwindow*2 to give

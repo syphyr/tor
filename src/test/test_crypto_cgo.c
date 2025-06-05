@@ -335,7 +335,7 @@ test_crypto_cgo_fwd(void *arg)
     for (int trial = 0; trial < 64; ++trial) {
       int target_hop = crypto_rand_int(3);
       cell_t cell, cell_orig;
-      uint8_t tag_client[CGO_TAG_LEN];
+      uint8_t tag_client[SENDME_TAG_LEN_CGO];
       const uint8_t *tagp = NULL;
 
       memset(&cell, 0, sizeof(cell));
@@ -344,14 +344,14 @@ test_crypto_cgo_fwd(void *arg)
       } else {
         cell.command = CELL_RELAY_EARLY;
       }
-      crypto_rand((char*) cell.payload+CGO_TAG_LEN,
-                  sizeof(cell.payload)-CGO_TAG_LEN);
+      crypto_rand((char*) cell.payload+SENDME_TAG_LEN_CGO,
+                  sizeof(cell.payload)-SENDME_TAG_LEN_CGO);
       memcpy(&cell_orig, &cell, sizeof(cell));
 
       // First the client encrypts the cell...
       cgo_crypt_client_originate(client[target_hop], &cell, &tagp);
       tt_assert(tagp);
-      memcpy(tag_client, tagp, CGO_TAG_LEN);
+      memcpy(tag_client, tagp, SENDME_TAG_LEN_CGO);
       for (int i = target_hop - 1; i >= 0; --i) {
         cgo_crypt_client_forward(client[i], &cell);
       }
@@ -363,16 +363,16 @@ test_crypto_cgo_fwd(void *arg)
         cgo_crypt_relay_forward(relays[i], &cell, &tagp);
         if (tagp) {
           tt_int_op(i, OP_EQ, target_hop);
-          tt_mem_op(tagp, OP_EQ, tag_client, CGO_TAG_LEN);
+          tt_mem_op(tagp, OP_EQ, tag_client, SENDME_TAG_LEN_CGO);
           cell_recognized = true;
           break;
         }
       }
       tt_assert(cell_recognized);
       tt_int_op(cell.command, OP_EQ, cell_orig.command);
-      tt_mem_op(cell.payload + CGO_TAG_LEN, OP_EQ,
-                cell_orig.payload + CGO_TAG_LEN,
-                sizeof(cell.payload) - CGO_TAG_LEN);
+      tt_mem_op(cell.payload + SENDME_TAG_LEN_CGO, OP_EQ,
+                cell_orig.payload + SENDME_TAG_LEN_CGO,
+                sizeof(cell.payload) - SENDME_TAG_LEN_CGO);
     }
     for (int i = 0; i < N_HOPS; ++i) {
       cgo_crypt_free(client[i]);
@@ -416,19 +416,19 @@ test_crypto_cgo_rev(void *arg)
     for (int trial = 0; trial < 64; ++trial) {
       int origin_hop = crypto_rand_int(3);
       cell_t cell, cell_orig;
-      uint8_t tag_relay[CGO_TAG_LEN];
+      uint8_t tag_relay[SENDME_TAG_LEN_CGO];
       const uint8_t *tagp = NULL;
 
       memset(&cell, 0, sizeof(cell));
       cell.command = CELL_RELAY;
-      crypto_rand((char*) cell.payload+CGO_TAG_LEN,
-                  sizeof(cell.payload)-CGO_TAG_LEN);
+      crypto_rand((char*) cell.payload+SENDME_TAG_LEN_CGO,
+                  sizeof(cell.payload)-SENDME_TAG_LEN_CGO);
       memcpy(&cell_orig, &cell, sizeof(cell));
 
       // First the specified relay encrypts the cell...
       cgo_crypt_relay_originate(relays[origin_hop], &cell, &tagp);
       tt_assert(tagp);
-      memcpy(tag_relay, tagp, CGO_TAG_LEN);
+      memcpy(tag_relay, tagp, SENDME_TAG_LEN_CGO);
       for (int i = origin_hop - 1; i >= 0; --i) {
         cgo_crypt_relay_backward(relays[i], &cell);
       }
@@ -440,16 +440,16 @@ test_crypto_cgo_rev(void *arg)
         cgo_crypt_client_backward(client[i], &cell, &tagp);
         if (tagp) {
           tt_int_op(i, OP_EQ, origin_hop);
-          tt_mem_op(tagp, OP_EQ, tag_relay, CGO_TAG_LEN);
+          tt_mem_op(tagp, OP_EQ, tag_relay, SENDME_TAG_LEN_CGO);
           cell_recognized = true;
           break;
         }
       }
       tt_assert(cell_recognized);
       tt_int_op(cell.command, OP_EQ, cell_orig.command);
-      tt_mem_op(cell.payload + CGO_TAG_LEN, OP_EQ,
-                cell_orig.payload + CGO_TAG_LEN,
-                sizeof(cell.payload) - CGO_TAG_LEN);
+      tt_mem_op(cell.payload + SENDME_TAG_LEN_CGO, OP_EQ,
+                cell_orig.payload + SENDME_TAG_LEN_CGO,
+                sizeof(cell.payload) - SENDME_TAG_LEN_CGO);
     }
     for (int i = 0; i < N_HOPS; ++i) {
       cgo_crypt_free(client[i]);
@@ -474,7 +474,8 @@ test_crypto_cgo_relay_testvec(void *arg)
   for (int i = 0; i < (int)ARRAY_LENGTH(CGO_RELAY_TESTVECS); ++i) {
     const struct cgo_relay_testvec *tv = &CGO_RELAY_TESTVECS[i];
     const int aesbits = 128;
-    uint8_t keys[80], expect_keys[80], expect_tprime[CGO_TAG_LEN], cmd[1];
+    uint8_t keys[80], expect_keys[80], expect_tprime[SENDME_TAG_LEN_CGO],
+      cmd[1];
     cell_t cell;
     cell_t expect_cell;
     tt_int_op(sizeof(keys), OP_EQ, cgo_key_material_len(aesbits));
@@ -527,7 +528,8 @@ test_crypto_cgo_relay_originate_testvec(void *arg)
     const struct cgo_relay_originate_testvec *tv =
       &CGO_RELAY_ORIGINATE_TESTVECS[i];
     const int aesbits = 128;
-    uint8_t keys[80], expect_keys[80], expect_tprime[CGO_TAG_LEN], cmd[1];
+    uint8_t keys[80], expect_keys[80], expect_tprime[SENDME_TAG_LEN_CGO],
+      cmd[1];
     cell_t cell;
     cell_t expect_cell;
     tt_int_op(sizeof(keys), OP_EQ, cgo_key_material_len(aesbits));
@@ -575,7 +577,8 @@ test_crypto_cgo_client_originate_testvec(void *arg)
     const struct cgo_client_originate_testvec *tv =
       &CGO_CLIENT_ORIGINATE_TESTVECS[tv_i];
     const int aesbits = 128;
-    uint8_t keys[80], expect_keys[80], expect_tprime[CGO_TAG_LEN], cmd[1];
+    uint8_t keys[80], expect_keys[80], expect_tprime[SENDME_TAG_LEN_CGO],
+      cmd[1];
     cell_t cell;
     cell_t expect_cell;
     for (int i = 0; i < 3; ++i) {
