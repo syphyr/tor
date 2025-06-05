@@ -2943,6 +2943,11 @@ cell_queues_check_size(void)
         removed = hs_cache_handle_oom(bytes_to_remove);
         oom_stats_n_bytes_removed_hsdir += removed;
         alloc -= removed;
+        static ratelim_t hs_cache_oom_ratelim = RATELIM_INIT(600);
+        log_fn_ratelim(&hs_cache_oom_ratelim, LOG_NOTICE, LD_REND,
+               "HSDir cache exceeded limit (%zu > %"PRIu64" bytes). "
+               "Pruned %zu bytes during cell_queues_check_size.",
+               hs_cache_total, get_options()->MaxHSDirCacheBytes, removed);
       }
       if (geoip_client_cache_total > get_options()->MaxMemInQueues / 5) {
         const size_t bytes_to_remove =
