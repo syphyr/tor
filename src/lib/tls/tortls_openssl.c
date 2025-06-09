@@ -578,7 +578,12 @@ tor_tls_context_new(crypto_pk_t *identity, unsigned int key_lifetime,
       }
       int r = (int) SSL_CTX_set1_groups_list(result->ctx, list);
       if (r == 1) {
-        log_notice(LD_NET, "Set list of supported TLS groups to: %s", list);
+        static bool have_logged_already = false;
+        if (!have_logged_already) {
+          /* say it only once at startup, since the answer won't change */
+          log_notice(LD_NET, "Set list of supported TLS groups to: %s", list);
+          have_logged_already = true;
+        }
         success = true;
         break;
       }
