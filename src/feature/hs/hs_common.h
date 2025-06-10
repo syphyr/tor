@@ -52,7 +52,7 @@ struct ed25519_keypair_t;
 /** The default HS time period length */
 #define HS_TIME_PERIOD_LENGTH_DEFAULT 1440 /* 1440 minutes == one day */
 /** The minimum time period length as seen in prop224 section [TIME-PERIODS] */
-#define HS_TIME_PERIOD_LENGTH_MIN 30 /* minutes */
+#define HS_TIME_PERIOD_LENGTH_MIN 5 /* minutes */
 /** The minimum time period length as seen in prop224 section [TIME-PERIODS] */
 #define HS_TIME_PERIOD_LENGTH_MAX (60 * 24 * 10) /* 10 days or 14400 minutes */
 
@@ -83,7 +83,7 @@ struct ed25519_keypair_t;
 /** The default HS time period length */
 #define HS_TIME_PERIOD_LENGTH_DEFAULT 1440 /* 1440 minutes == one day */
 /** The minimum time period length as seen in prop224 section [TIME-PERIODS] */
-#define HS_TIME_PERIOD_LENGTH_MIN 30 /* minutes */
+#define HS_TIME_PERIOD_LENGTH_MIN 5 /* minutes */
 /** The minimum time period length as seen in prop224 section [TIME-PERIODS] */
 #define HS_TIME_PERIOD_LENGTH_MAX (60 * 24 * 10) /* 10 days or 14400 minutes */
 /** The time period rotation offset as seen in prop224 section
