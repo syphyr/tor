@@ -190,7 +190,7 @@ cgo_prf_xor_t0(cgo_prf_t *prf, const uint8_t *input,
   // Re-align the cipher.
   //
   // This approach is faster than EVP_CIPHER_set_num!
-  const int ns = 16 - (PRF_T0_DATA_LEN % 0xf);
+  const int ns = 16 - (PRF_T0_DATA_LEN & 0xf);
   // We're not using the hash for anything, so it's okay to overwrite
   aes_crypt_inplace(prf->k, (char*)hash,  ns);
 }
