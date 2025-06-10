@@ -282,7 +282,6 @@ relay_process_subproto_ext(const trn_extension_t *ext,
 
     if (cur->protocol_id == PRT_RELAY &&
         cur->proto_cap_number == PROTOVER_RELAY_CRYPT_CGO) {
-      // XXXX CGO: Should we test if CGO is enabled at the relay?
       params_out->crypto_alg = RELAY_CRYPTO_ALG_CGO_RELAY;
       params_out->cell_fmt = RELAY_CELL_FORMAT_V1;
     } else {

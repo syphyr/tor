@@ -63,8 +63,6 @@ extend_info_new(const char *nickname,
 
   if (pv) {
     info->supports_ntor_v3 = pv->supports_ntor_v3;
-
-    // XXXX cgo Decide whether to set this!
     info->enable_cgo = pv->supports_cgo;
   }
 

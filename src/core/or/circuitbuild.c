@@ -886,7 +886,6 @@ circuit_pick_create_handshake(uint8_t *cell_type_out,
       congestion_control_enabled())
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR_V3;
   else if (ei->enable_cgo)
-    // XXXX CGO: provide an enable option?
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR_V3;
   else
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR;
