@@ -7,7 +7,9 @@
  *        creating/parsing cells and handling the content.
  */
 
+// For access to cpath pvt_crypto field.
 #define SENDME_PRIVATE
+#define CRYPT_PATH_PRIVATE
 
 #include "core/or/or.h"
 
@@ -108,17 +110,18 @@ v1_tag_matches(const uint8_t *circ_digest,
  * cell we saw which tells us that the other side has in fact seen that cell.
  * See proposal 289 for more details. */
 static bool
-cell_v1_is_valid(const sendme_cell_t *cell, const uint8_t *circ_digest)
+cell_v1_is_valid(const sendme_cell_t *cell, const uint8_t *circ_digest,
+                 size_t circ_digest_len)
 {
   tor_assert(cell);
   tor_assert(circ_digest);
-
-  // XXXX TODO: make sure that length is the length we _expected_.
 
   size_t tag_len = sendme_cell_get_data_len(cell);
   if (! tag_len_ok(tag_len))
     return false;
   if (sendme_cell_getlen_data_v1_digest(cell) < tag_len)
+    return false;
+  if (tag_len != circ_digest_len)
     return false;
 
   const uint8_t *cell_digest = sendme_cell_getconstarray_data_v1_digest(cell);
@@ -174,8 +177,16 @@ cell_version_can_be_handled(uint8_t cell_version)
  * This is the main critical function to make sure we can continue to
  * send/recv cells on a circuit. If the SENDME is invalid, the circuit should
  * be marked for close by the caller. */
+/*
+ * NOTE: This function uses `layer_hint` to determine
+ * what the sendme tag length will be, and nothing else.
+ * Notably, we _don't_ keep a separate queue
+ * of expected tags for each layer!
+ */
 STATIC bool
-sendme_is_valid(const circuit_t *circ, const uint8_t *cell_payload,
+sendme_is_valid(const circuit_t *circ,
+                const crypt_path_t *layer_hint,
+                const uint8_t *cell_payload,
                 size_t cell_payload_len)
 {
   uint8_t cell_version;
@@ -204,6 +215,19 @@ sendme_is_valid(const circuit_t *circ, const uint8_t *cell_payload,
     goto invalid;
   }
 
+  /* Determine the expected tag length for this sendme. */
+  size_t circ_expects_tag_len;
+  if (layer_hint) {
+    circ_expects_tag_len =
+      relay_crypto_sendme_tag_len(&layer_hint->pvt_crypto);
+  } else if (CIRCUIT_IS_ORCIRC(circ)) {
+    const or_circuit_t *or_circ = CONST_TO_OR_CIRCUIT(circ);
+    circ_expects_tag_len = relay_crypto_sendme_tag_len(&or_circ->crypto);
+  } else {
+    tor_assert_nonfatal_unreached();
+    goto invalid;
+  }
+
   /* Pop the first element that was added (FIFO). We do that regardless of the
    * version so we don't accumulate on the circuit if v0 is used by the other
    * end point. */
@@ -216,12 +240,10 @@ sendme_is_valid(const circuit_t *circ, const uint8_t *cell_payload,
            "We received a SENDME but we have no cell digests to match. "
            "Closing circuit.");
     goto invalid;
-  }
-
-  /* Validate depending on the version now. */
+  }  /* Validate depending on the version now. */
   switch (cell_version) {
   case 0x01:
-    if (!cell_v1_is_valid(cell, circ_digest)) {
+    if (!cell_v1_is_valid(cell, circ_digest, circ_expects_tag_len)) {
       goto invalid;
     }
     break;
@@ -507,7 +529,7 @@ sendme_process_circuit_level(crypt_path_t *layer_hint,
 
   /* Validate the SENDME cell. Depending on the version, different validation
    * can be done. An invalid SENDME requires us to close the circuit. */
-  if (!sendme_is_valid(circ, cell_payload, cell_payload_len)) {
+  if (!sendme_is_valid(circ, layer_hint, cell_payload, cell_payload_len)) {
     return -END_CIRC_REASON_TORPROTOCOL;
   }
 

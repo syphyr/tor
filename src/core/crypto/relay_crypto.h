@@ -54,5 +54,6 @@ void relay_crypto_assert_ok(const relay_crypto_t *crypto);
 
 const uint8_t *relay_crypto_get_sendme_tag(relay_crypto_t *crypto,
                                            size_t *len_out);
+size_t relay_crypto_sendme_tag_len(const relay_crypto_t *crypto);
 
 #endif /* !defined(TOR_RELAY_CRYPTO_H) */

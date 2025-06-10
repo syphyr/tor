@@ -159,20 +159,22 @@ test_v1_build_cell(void *arg)
   /* Validation. */
 
   /* An empty payload means SENDME version 0 thus valid. */
-  tt_int_op(sendme_is_valid(circ, payload, 0), OP_EQ, true);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, 0), OP_EQ, true);
   /* Current phoney digest should have been popped. */
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 0);
 
   /* An unparseable cell means invalid. */
   setup_full_capture_of_logs(LOG_INFO);
-  tt_int_op(sendme_is_valid(circ, (const uint8_t *) "A", 1), OP_EQ, false);
+  tt_int_op(sendme_is_valid(circ, NULL, (const uint8_t *) "A", 1),
+            OP_EQ, false);
   expect_log_msg_containing("Unparseable SENDME cell received. "
                             "Closing circuit.");
   teardown_capture_of_logs();
 
   /* No cell digest recorded for this. */
   setup_full_capture_of_logs(LOG_INFO);
-  tt_int_op(sendme_is_valid(circ, payload, sizeof(payload)), OP_EQ, false);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, sizeof(payload)),
+            OP_EQ, false);
   expect_log_msg_containing("We received a SENDME but we have no cell digests "
                             "to match. Closing circuit.");
   teardown_capture_of_logs();
@@ -182,7 +184,8 @@ test_v1_build_cell(void *arg)
   sendme_record_cell_digest_on_circ(circ, NULL);
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 1);
   setup_full_capture_of_logs(LOG_INFO);
-  tt_int_op(sendme_is_valid(circ, payload, sizeof(payload)), OP_EQ, false);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, sizeof(payload)),
+            OP_EQ, false);
   /* After a validation, the last digests is always popped out. */
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 0);
   expect_log_msg_containing("SENDME v1 cell digest do not match.");
@@ -193,7 +196,8 @@ test_v1_build_cell(void *arg)
   circ->package_window = CIRCWINDOW_INCREMENT + 1;
   sendme_record_cell_digest_on_circ(circ, NULL);
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 1);
-  tt_int_op(sendme_is_valid(circ, payload, sizeof(payload)), OP_EQ, true);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, sizeof(payload)),
+            OP_EQ, true);
   /* After a validation, the last digests is always popped out. */
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 0);
 
