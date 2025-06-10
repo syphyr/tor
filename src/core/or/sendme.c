@@ -382,43 +382,6 @@ record_cell_digest_on_circ(circuit_t *circ,
  * Public API
  */
 
-/** Return true iff the next cell for the given cell window is expected to be
- * a SENDME.
- *
- * We are able to know that because the package or inflight window value minus
- * one cell (the possible SENDME cell) should be a multiple of the
- * cells-per-sendme increment value (set via consensus parameter, negotiated
- * for the circuit, and passed in as sendme_inc).
- *
- * This function is used when recording a cell digest and this is done quite
- * low in the stack when decrypting or encrypting a cell. The window is only
- * updated once the cell is actually put in the outbuf.
- */
-// XXXX Todo remove if truly not needed.
-ATTR_UNUSED STATIC bool
-circuit_sendme_cell_is_next(int deliver_window, int sendme_inc)
-{
-  /* Are we at the limit of the increment and if not, we don't expect next
-   * cell is a SENDME.
-   *
-   * We test against the window minus 1 because when we are looking if the
-   * next cell is a SENDME, the window (either package or deliver) hasn't been
-   * decremented just yet so when this is called, we are currently processing
-   * the "window - 1" cell.
-   *
-   * Because deliver_window starts at CIRCWINDOW_START and counts down,
-   * to get the actual number of received cells for this check, we must
-   * first convert to received cells, or the modulus operator will fail.
-   */
-  tor_assert(deliver_window <= CIRCWINDOW_START);
-  if (((CIRCWINDOW_START - (deliver_window - 1)) % sendme_inc) != 0) {
-    return false;
-  }
-
-  /* Next cell is expected to be a SENDME. */
-  return true;
-}
-
 /** Called when we've just received a relay data cell, when we've just
  * finished flushing all bytes to stream <b>conn</b>, or when we've flushed
  * *some* bytes to the stream <b>conn</b>.
