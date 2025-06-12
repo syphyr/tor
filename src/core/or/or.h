@@ -451,6 +451,11 @@ typedef enum {
 /** Amount to increment a stream window when we get a stream SENDME. */
 #define STREAMWINDOW_INCREMENT 50
 
+/** Length for authenticated sendme tag with tor1 encryption. */
+#define SENDME_TAG_LEN_TOR1 20
+/** Length for authenticated sendme tag with cgo encryption. */
+#define SENDME_TAG_LEN_CGO 16
+
 /** Maximum number of queued cells on a circuit for which we are the
  * midpoint before we give up and kill it.  This must be >= circwindow
  * to avoid killing innocent circuits, and >= circwindow*2 to give
@@ -829,8 +834,14 @@ typedef struct protover_summary_flags_t {
    * Requires both FlowCtrl=2 *and* Relay=4 */
   unsigned int supports_congestion_control : 1;
 
-  /** True iff this router supports conflux. Requires Relay=5 */
+  /** True iff this router supports conflux. */
   unsigned int supports_conflux : 1;
+
+  /** True iff this router supports CGO. */
+  unsigned int supports_cgo : 1;
+
+  /** True iff this router supports ntorv3 */
+  unsigned int supports_ntor_v3 : 1;
 } protover_summary_flags_t;
 
 typedef struct routerinfo_t routerinfo_t;

@@ -61,6 +61,11 @@ extend_info_new(const char *nickname,
       pv->supports_congestion_control;
   }
 
+  if (pv) {
+    info->supports_ntor_v3 = pv->supports_ntor_v3;
+    info->enable_cgo = pv->supports_cgo;
+  }
+
   return info;
 }
 
@@ -206,8 +211,7 @@ int
 extend_info_supports_ntor_v3(const extend_info_t *ei)
 {
   tor_assert(ei);
-  return extend_info_supports_ntor(ei) &&
-    ei->exit_supports_congestion_control;
+  return ei->supports_ntor_v3;
 }
 
 /* Does ei have an onion key which it would prefer to use?

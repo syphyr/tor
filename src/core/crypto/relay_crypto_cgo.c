@@ -21,6 +21,7 @@
 #include "lib/arch/bytes.h"
 #include "ext/polyval/polyval.h"
 #include "core/crypto/relay_crypto_cgo.h"
+#include "core/crypto/relay_crypto.h"
 #include "core/or/cell_st.h"
 
 #if 0
@@ -361,7 +362,9 @@ size_t
 cgo_key_material_len(int aesbits)
 {
   tor_assert(aesbits == 128 || aesbits == 192 || aesbits == 256);
-  return (cgo_uiv_keylen(aesbits) + CGO_TAG_LEN);
+  size_t r = (cgo_uiv_keylen(aesbits) + SENDME_TAG_LEN_CGO);
+  tor_assert(r * 2 <= MAX_RELAY_KEY_MATERIAL_LEN);
+  return r;
 }
 
 /**
@@ -388,8 +391,8 @@ cgo_crypt_new(cgo_mode_t mode, int aesbits, const uint8_t *keys, size_t keylen)
   r = cgo_uiv_init(&cgo->uiv, aesbits, encrypt, keys);
   tor_assert(r == 0);
   keys += cgo_uiv_keylen(aesbits);
-  memcpy(cgo->nonce, keys, CGO_TAG_LEN);
-  keys += CGO_TAG_LEN;
+  memcpy(cgo->nonce, keys, SENDME_TAG_LEN_CGO);
+  keys += SENDME_TAG_LEN_CGO;
   tor_assert(keys == end_of_keys);
 
   cgo->aes_bytes = aesbits / 8;
@@ -425,7 +428,7 @@ cgo_crypt_update(cgo_crypt_t *cgo, cgo_mode_t mode)
  * process an outbound cell from the client.
  *
  * If the cell is for this relay, set *'recognized_tag_out'
- * to point to a CGO_TAG_LEN value that should be used
+ * to point to a SENDME_TAG_LEN_CGO value that should be used
  * if we want to acknowledge this cell with an authenticated SENDME.
  *
  * The value of 'recognized_tag_out' will become invalid
@@ -442,10 +445,10 @@ cgo_crypt_relay_forward(cgo_crypt_t *cgo, cell_t *cell,
     .h = cgo->tprime,
     .cmd = cell->command,
   };
-  memcpy(cgo->last_tag_relay_fwd, cell->payload, CGO_TAG_LEN);
+  memcpy(cgo->last_tag_relay_fwd, cell->payload, SENDME_TAG_LEN_CGO);
   cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
-  memcpy(cgo->tprime, cell->payload, CGO_TAG_LEN);
-  if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
+  memcpy(cgo->tprime, cell->payload, SENDME_TAG_LEN_CGO);
+  if (tor_memeq(cell->payload, cgo->nonce, SENDME_TAG_LEN_CGO)) {
     cgo_crypt_update(cgo, CGO_MODE_RELAY_FORWARD);
     *recognized_tag_out = cgo->last_tag_relay_fwd;
   } else {
@@ -465,7 +468,7 @@ cgo_crypt_relay_backward(cgo_crypt_t *cgo, cell_t *cell)
     .cmd = cell->command,
   };
   cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
-  memcpy(cgo->tprime, cell->payload, CGO_TAG_LEN);
+  memcpy(cgo->tprime, cell->payload, SENDME_TAG_LEN_CGO);
 }
 
 /**
@@ -473,7 +476,7 @@ cgo_crypt_relay_backward(cgo_crypt_t *cgo, cell_t *cell)
  * encrypt an inbound message that we are originating, for the client.
  *
  * The provided cell must have its command value set,
- * and should have the first CGO_TAG_LEN bytes of its payload unused.
+ * and should have the first SENDME_TAG_LEN_CGO bytes of its payload unused.
  *
  * Set '*tag_out' to a value that we should expect
  * if we want an authenticated SENDME for this cell.
@@ -490,12 +493,12 @@ cgo_crypt_relay_originate(cgo_crypt_t *cgo, cell_t *cell,
     .h = cgo->tprime,
     .cmd = cell->command,
   };
-  memcpy(cell->payload, cgo->nonce, CGO_TAG_LEN);
+  memcpy(cell->payload, cgo->nonce, SENDME_TAG_LEN_CGO);
   cgo_uiv_encrypt(&cgo->uiv, h, cell->payload);
-  memcpy(&cgo->tprime, cell->payload, CGO_TAG_LEN);
-  memcpy(&cgo->nonce, cell->payload, CGO_TAG_LEN);
+  memcpy(&cgo->tprime, cell->payload, SENDME_TAG_LEN_CGO);
+  memcpy(&cgo->nonce, cell->payload, SENDME_TAG_LEN_CGO);
   if (tag_out) {
-    // tor_assert(tor_memeq(cgo->tprime, cell->payload, CGO_TAG_LEN));
+    // tor_assert(tor_memeq(cgo->tprime, cell->payload, SENDME_TAG_LEN_CGO));
     *tag_out = cgo->tprime;
   }
   cgo_crypt_update(cgo, CGO_MODE_RELAY_BACKWARD);
@@ -508,14 +511,14 @@ cgo_crypt_relay_originate(cgo_crypt_t *cgo, cell_t *cell,
 void
 cgo_crypt_client_forward(cgo_crypt_t *cgo, cell_t *cell)
 {
-  uint8_t tprime_new[CGO_TAG_LEN];
-  memcpy(tprime_new, cell->payload, CGO_TAG_LEN);
+  uint8_t tprime_new[SENDME_TAG_LEN_CGO];
+  memcpy(tprime_new, cell->payload, SENDME_TAG_LEN_CGO);
   uiv_tweak_t h = {
     .h = cgo->tprime,
     .cmd = cell->command,
   };
   cgo_uiv_decrypt(&cgo->uiv, h, cell->payload);
-  memcpy(cgo->tprime, tprime_new, CGO_TAG_LEN);
+  memcpy(cgo->tprime, tprime_new, SENDME_TAG_LEN_CGO);
 }
 
 /**
@@ -523,7 +526,7 @@ cgo_crypt_client_forward(cgo_crypt_t *cgo, cell_t *cell)
  * originate a cell for a given target hop.
  *
  * The provided cell must have its command value set,
- * and should have the first CGO_TAG_LEN bytes of its payload unused.
+ * and should have the first SENDME_TAG_LEN_CGO bytes of its payload unused.
  *
  * Set '*tag_out' to a value that we should expect
  * if we want an authenticated SENDME for this cell.
@@ -536,7 +539,7 @@ void
 cgo_crypt_client_originate(cgo_crypt_t *cgo, cell_t *cell,
                            const uint8_t **tag_out)
 {
-  memcpy(cell->payload, cgo->nonce, CGO_TAG_LEN);
+  memcpy(cell->payload, cgo->nonce, SENDME_TAG_LEN_CGO);
   cgo_crypt_client_forward(cgo, cell);
   cgo_crypt_update(cgo, CGO_MODE_CLIENT_FORWARD);
   *tag_out = cell->payload;
@@ -547,7 +550,7 @@ cgo_crypt_client_originate(cgo_crypt_t *cgo, cell_t *cell,
  * process an inbound cell from a relay.
  *
  * If the cell originated from this this relay, set *'recognized_tag_out'
- * to point to a CGO_TAG_LEN value that should be used
+ * to point to a SENDME_TAG_LEN_CGO value that should be used
  * if we want to acknowledge this cell with an authenticated SENDME.
  *
  * The value of 'recognized_tag_out' will become invalid
@@ -564,15 +567,15 @@ cgo_crypt_client_backward(cgo_crypt_t *cgo, cell_t *cell,
     .h = cgo->tprime,
     .cmd = cell->command,
   };
-  uint8_t t_orig[CGO_TAG_LEN];
-  memcpy(t_orig, cell->payload, CGO_TAG_LEN);
+  uint8_t t_orig[SENDME_TAG_LEN_CGO];
+  memcpy(t_orig, cell->payload, SENDME_TAG_LEN_CGO);
 
   cgo_uiv_decrypt(&cgo->uiv, h, cell->payload);
-  memcpy(cgo->tprime, t_orig, CGO_TAG_LEN);
-  if (tor_memeq(cell->payload, cgo->nonce, CGO_TAG_LEN)) {
-    memcpy(cgo->nonce, t_orig, CGO_TAG_LEN);
+  memcpy(cgo->tprime, t_orig, SENDME_TAG_LEN_CGO);
+  if (tor_memeq(cell->payload, cgo->nonce, SENDME_TAG_LEN_CGO)) {
+    memcpy(cgo->nonce, t_orig, SENDME_TAG_LEN_CGO);
     cgo_crypt_update(cgo, CGO_MODE_CLIENT_BACKWARD);
-    // tor_assert(tor_memeq(cgo->tprime, t_orig, CGO_TAG_LEN));
+    // tor_assert(tor_memeq(cgo->tprime, t_orig, SENDME_TAG_LEN_CGO));
     *recognized_tag_out = cgo->tprime;
   } else {
     *recognized_tag_out = NULL;

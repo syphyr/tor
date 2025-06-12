@@ -545,13 +545,11 @@ bench_cell_ops_tor1(void)
   or_circ->base_.purpose = CIRCUIT_PURPOSE_OR;
 
   /* Initialize crypto */
-  char key1[CIPHER_KEY_LEN], key2[CIPHER_KEY_LEN];
-  crypto_rand(key1, sizeof(key1));
-  crypto_rand(key2, sizeof(key2));
-  or_circ->crypto.f_crypto = crypto_cipher_new(key1);
-  or_circ->crypto.b_crypto = crypto_cipher_new(key2);
-  or_circ->crypto.f_digest = crypto_digest_new();
-  or_circ->crypto.b_digest = crypto_digest_new();
+  char keys[CPATH_KEY_MATERIAL_LEN];
+  crypto_rand(keys, sizeof(keys));
+  size_t keylen = sizeof(keys);
+  relay_crypto_init(RELAY_CRYPTO_ALG_TOR1,
+                    &or_circ->crypto, keys, keylen);
 
   reset_perftime();
 

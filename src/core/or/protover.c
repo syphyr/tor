@@ -399,7 +399,7 @@ protocol_list_supports_protocol_or_later(const char *list,
 #define PR_LINKAUTH_V  "3"
 #define PR_MICRODESC_V "1-3"
 #define PR_PADDING_V   "2"
-#define PR_RELAY_V     "2-4"
+#define PR_RELAY_V     "2-6"
 
 /** Return the string containing the supported version for the given protocol
  * type. */

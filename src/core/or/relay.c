@@ -265,10 +265,6 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
     edge_connection_t *conn = NULL;
     relay_cell_fmt_t format = circuit_get_relay_format(circ, layer_hint);
 
-    /* Recognized cell, the cell digest has been updated, we'll record it for
-     * the SENDME if need be. */
-    sendme_record_received_cell_digest(circ, layer_hint);
-
     relay_msg_t msg_buf;
     if (relay_msg_decode_cell_in_place(format, cell, &msg_buf) < 0) {
       log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,

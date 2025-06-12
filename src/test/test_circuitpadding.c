@@ -1623,7 +1623,8 @@ simulate_single_hop_extend(circuit_t *client, circuit_t *mid_relay,
           digest, NULL, NULL,
           &addr, padding, NULL, false);
 
-  cpath_init_circuit_crypto(hop, whatevs_key, sizeof(whatevs_key), 0, 0);
+  cpath_init_circuit_crypto(RELAY_CRYPTO_ALG_TOR1, hop,
+                            whatevs_key, sizeof(whatevs_key));
 
   hop->package_window = circuit_initial_package_window();
   hop->deliver_window = CIRCWINDOW_START;

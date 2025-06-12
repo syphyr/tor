@@ -153,26 +153,28 @@ test_v1_build_cell(void *arg)
   smartlist_add(circ->sendme_last_digests, tor_memdup(digest, sizeof(digest)));
 
   /* SENDME v1 payload is 3 bytes + 20 bytes digest. See spec. */
-  ret = build_cell_payload_v1(digest, payload);
+  ret = build_cell_payload_v1(digest, 20, payload);
   tt_int_op(ret, OP_EQ, 23);
 
   /* Validation. */
 
   /* An empty payload means SENDME version 0 thus valid. */
-  tt_int_op(sendme_is_valid(circ, payload, 0), OP_EQ, true);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, 0), OP_EQ, true);
   /* Current phoney digest should have been popped. */
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 0);
 
   /* An unparseable cell means invalid. */
   setup_full_capture_of_logs(LOG_INFO);
-  tt_int_op(sendme_is_valid(circ, (const uint8_t *) "A", 1), OP_EQ, false);
+  tt_int_op(sendme_is_valid(circ, NULL, (const uint8_t *) "A", 1),
+            OP_EQ, false);
   expect_log_msg_containing("Unparseable SENDME cell received. "
                             "Closing circuit.");
   teardown_capture_of_logs();
 
   /* No cell digest recorded for this. */
   setup_full_capture_of_logs(LOG_INFO);
-  tt_int_op(sendme_is_valid(circ, payload, sizeof(payload)), OP_EQ, false);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, sizeof(payload)),
+            OP_EQ, false);
   expect_log_msg_containing("We received a SENDME but we have no cell digests "
                             "to match. Closing circuit.");
   teardown_capture_of_logs();
@@ -182,18 +184,20 @@ test_v1_build_cell(void *arg)
   sendme_record_cell_digest_on_circ(circ, NULL);
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 1);
   setup_full_capture_of_logs(LOG_INFO);
-  tt_int_op(sendme_is_valid(circ, payload, sizeof(payload)), OP_EQ, false);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, sizeof(payload)),
+            OP_EQ, false);
   /* After a validation, the last digests is always popped out. */
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 0);
   expect_log_msg_containing("SENDME v1 cell digest do not match.");
   teardown_capture_of_logs();
 
   /* Record the cell digest into the circuit, cell should validate. */
-  memcpy(or_circ->crypto.sendme_digest, digest, sizeof(digest));
+  memcpy(or_circ->crypto.c.tor1.sendme_digest, digest, sizeof(digest));
   circ->package_window = CIRCWINDOW_INCREMENT + 1;
   sendme_record_cell_digest_on_circ(circ, NULL);
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 1);
-  tt_int_op(sendme_is_valid(circ, payload, sizeof(payload)), OP_EQ, true);
+  tt_int_op(sendme_is_valid(circ, NULL, payload, sizeof(payload)),
+            OP_EQ, true);
   /* After a validation, the last digests is always popped out. */
   tt_int_op(smartlist_len(circ->sendme_last_digests), OP_EQ, 0);
 
@@ -313,50 +317,6 @@ test_package_payload_len(void *arg)
   circuit_free(c);
 }
 
-/* Check that circuit_sendme_is_next works with a window of 1000,
- * and a sendme_inc of 100 (old school tor compat) */
-static void
-test_sendme_is_next1000(void *arg)
-{
- (void)arg;
- tt_int_op(circuit_sendme_cell_is_next(1000, 100), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(999, 100), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(901, 100), OP_EQ, 1);
-
- tt_int_op(circuit_sendme_cell_is_next(900, 100), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(899, 100), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(801, 100), OP_EQ, 1);
-
- tt_int_op(circuit_sendme_cell_is_next(101, 100), OP_EQ, 1);
- tt_int_op(circuit_sendme_cell_is_next(100, 100), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(99, 100), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(1, 100), OP_EQ, 1);
- tt_int_op(circuit_sendme_cell_is_next(0, 100), OP_EQ, 0);
-
-done:
- ;
-}
-
-/* Check that circuit_sendme_is_next works with a window of 31 */
-static void
-test_sendme_is_next(void *arg)
-{
- (void)arg;
- tt_int_op(circuit_sendme_cell_is_next(1000, 31), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(970, 31), OP_EQ, 1);
- tt_int_op(circuit_sendme_cell_is_next(969, 31), OP_EQ, 0);
-
- /* deliver_window should never get this low, but test anyway */
- tt_int_op(circuit_sendme_cell_is_next(9, 31), OP_EQ, 1);
- tt_int_op(circuit_sendme_cell_is_next(8, 31), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(7, 31), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(1, 31), OP_EQ, 0);
- tt_int_op(circuit_sendme_cell_is_next(0, 31), OP_EQ, 0);
-
- done:
-  ;
-}
-
 struct testcase_t sendme_tests[] = {
   { "v1_record_digest", test_v1_record_digest, TT_FORK,
     NULL, NULL },
@@ -367,8 +327,6 @@ struct testcase_t sendme_tests[] = {
   { "cell_version_validation", test_cell_version_validation, TT_FORK,
     NULL, NULL },
   { "package_payload_len", test_package_payload_len, 0, NULL, NULL },
-  { "sendme_is_next1000", test_sendme_is_next1000, 0, NULL, NULL },
-  { "sendme_is_next", test_sendme_is_next, 0, NULL, NULL },
 
   END_OF_TESTCASES
 };

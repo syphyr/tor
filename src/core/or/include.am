@@ -105,7 +105,6 @@ noinst_HEADERS +=					\
 	src/core/or/protover.h				\
 	src/core/or/reasons.h				\
 	src/core/or/relay.h				\
-	src/core/or/relay_crypto_st.h			\
 	src/core/or/relay_msg.h		        	\
 	src/core/or/relay_msg_st.h	        	\
 	src/core/or/scheduler.h				\

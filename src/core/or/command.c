@@ -371,6 +371,7 @@ command_process_create_cell(cell_t *cell, channel_t *chan)
     circuit_params_t params;
 
     memset(&created_cell, 0, sizeof(created_cell));
+    size_t keylen = sizeof(keys);
     len = onion_skin_server_handshake(ONION_HANDSHAKE_TYPE_FAST,
                                        create_cell->onionskin,
                                        create_cell->handshake_len,
@@ -378,11 +379,11 @@ command_process_create_cell(cell_t *cell, channel_t *chan)
                                        NULL,
                                        created_cell.reply,
                                        sizeof(created_cell.reply),
-                                       keys, CPATH_KEY_MATERIAL_LEN,
+                                        keys, &keylen,
                                        rend_circ_nonce,
                                        &params);
     tor_free(create_cell);
-    if (len < 0) {
+    if (len < 0 || keylen != sizeof(keys)) {
       log_warn(LD_OR,"Failed to generate key material. Closing.");
       circuit_mark_for_close(TO_CIRCUIT(circ), END_CIRC_REASON_INTERNAL);
       return;
@@ -391,6 +392,7 @@ command_process_create_cell(cell_t *cell, channel_t *chan)
     created_cell.handshake_len = len;
 
     if (onionskin_answer(circ, &created_cell,
+                         RELAY_CRYPTO_ALG_TOR1,
                          (const char *)keys, sizeof(keys),
                          rend_circ_nonce)<0) {
       log_warn(LD_OR,"Failed to reply to CREATE_FAST cell. Closing.");

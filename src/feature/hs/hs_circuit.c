@@ -112,9 +112,10 @@ create_rend_cpath(const uint8_t *ntor_key_seed, size_t seed_len,
 
   // TODO CGO: Pick relay cell format based on capabilities.
   cpath->relay_cell_format = RELAY_CELL_FORMAT_V0;
+  relay_crypto_alg_t alg = is_service_side ? RELAY_CRYPTO_ALG_TOR1_HSS :
+    RELAY_CRYPTO_ALG_TOR1_HSC;
 
-  if (cpath_init_circuit_crypto(cpath, (char*)keys, sizeof(keys),
-                                is_service_side, 1) < 0) {
+  if (cpath_init_circuit_crypto(alg, cpath, (char*)keys, sizeof(keys)) < 0) {
     tor_free(cpath);
     goto err;
   }
