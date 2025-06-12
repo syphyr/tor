@@ -3450,7 +3450,7 @@ test_crypto_aes_cnt_set_iv(void *arg)
 struct testcase_t crypto_tests[] = {
   CRYPTO_LEGACY(formats),
   { "openssl_version", test_crypto_openssl_version, TT_FORK, NULL, NULL },
-  { "aes_AES", test_crypto_aes128, TT_FORK, NULL, NULL },
+  { "aes", test_crypto_aes128, TT_FORK, NULL, NULL },
   { "aes128_ctr_testvec", test_crypto_aes_ctr_testvec, 0,
     &passthrough_setup, (void*)"128" },
   { "aes192_ctr_testvec", test_crypto_aes_ctr_testvec, 0,

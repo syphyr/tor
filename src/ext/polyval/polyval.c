@@ -431,10 +431,10 @@ PV_DECLARE(, , u128_from_bytes_ctmul,
 void
 polyval_detect_implementation(void)
 {
-  unsigned int eax, ebc, ecx, edx;
+  unsigned int eax, ebx, ecx, edx;
   use_pclmul = false;
-  if (__get_cpuid(1, &eax, &ebc, &ecx, &edx)) {
-    if (0 != (ecx & (1<<1))) {
+  if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+    if (0 != (ecx & bit_PCLMUL)) {
       use_pclmul = true;
     }
   }
