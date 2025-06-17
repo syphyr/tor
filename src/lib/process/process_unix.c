@@ -49,9 +49,6 @@
 
 #ifndef _WIN32
 
-/** Maximum number of file descriptors, if we cannot get it via sysconf() */
-#define DEFAULT_MAX_FD 256
-
 /** Internal state for Unix handles. */
 struct process_unix_handle_t {
   /** Unix File Descriptor. */
@@ -130,8 +127,6 @@ process_unix_free_(process_unix_t *unix_process)
 process_status_t
 process_unix_exec(process_t *process)
 {
-  static int max_fd = -1;
-
   process_unix_t *unix_process;
   pid_t pid;
   int stdin_pipe[2];
@@ -188,20 +183,6 @@ process_unix_exec(process_t *process)
 
     return PROCESS_STATUS_ERROR;
   }
-
-#ifdef _SC_OPEN_MAX
-  if (-1 == max_fd) {
-    max_fd = (int)sysconf(_SC_OPEN_MAX);
-
-    if (max_fd == -1) {
-      max_fd = DEFAULT_MAX_FD;
-      log_warn(LD_PROCESS,
-               "Cannot find maximum file descriptor, assuming: %d", max_fd);
-    }
-  }
-#else /* !defined(_SC_OPEN_MAX) */
-  max_fd = DEFAULT_MAX_FD;
-#endif /* defined(_SC_OPEN_MAX) */
 
   pid = fork();
 
