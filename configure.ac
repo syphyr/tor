@@ -1156,8 +1156,9 @@ dnl confusing with LibreSSL, OpenSSL, and various distributions' patches
 dnl to them.
 AC_CHECK_FUNCS([ \
 		EVP_PBE_scrypt \
-		SSL_CTX_set_security_level
-	       ])
+		SSL_CTX_set_security_level \
+        SSL_set_ciphersuites
+])
 
 fi # enable_nss
 

@@ -383,6 +383,12 @@ static const char CLIENT_CIPHER_LIST[] =
    * of any cipher we say. */
   "!SSLv2"
   ;
+static char CLIENT_CIPHER_LIST_TLSv13[] =
+#ifndef COCCI
+#include "lib/tls/ciphers_v13.inc"
+#endif
+  ""
+  ;
 #undef CIPHER
 #undef XCIPHER
 
@@ -666,9 +672,26 @@ tor_tls_new(tor_socket_t sock, int isServer)
   }
 #endif /* defined(SSL_CTRL_SET_MAX_PROTO_VERSION) */
 
-  if (!SSL_set_cipher_list(result->ssl,
-                           isServer ? UNRESTRICTED_TLS1_2_SERVER_CIPHER_LIST
-                                    : CLIENT_CIPHER_LIST)) {
+  /* Contrary to SSL_set_cipher_list(), TLSv1.3 SSL_set_ciphersuites() does NOT
+   * accept the final ':' so we have to strip it out. */
+  size_t TLSv13len = strlen(CLIENT_CIPHER_LIST_TLSv13);
+  if (TLSv13len && CLIENT_CIPHER_LIST_TLSv13[TLSv13len - 1] == ':') {
+    CLIENT_CIPHER_LIST_TLSv13[TLSv13len - 1] = '\0';
+  }
+
+  const bool tls12_ciphers_ok = SSL_set_cipher_list(
+      result->ssl,
+      isServer ? UNRESTRICTED_TLS1_2_SERVER_CIPHER_LIST : CLIENT_CIPHER_LIST);
+
+  bool tls13_ciphers_ok = true;
+#ifdef HAVE_SSL_SET_CIPHERSUITES
+  if (!isServer) {
+    tls13_ciphers_ok =
+      SSL_set_ciphersuites(result->ssl, CLIENT_CIPHER_LIST_TLSv13);
+  }
+#endif
+
+  if (!tls12_ciphers_ok || !tls13_ciphers_ok) {
     tls_log_errors(NULL, LOG_WARN, LD_NET, "setting ciphers");
 #ifdef SSL_set_tlsext_host_name
     SSL_set_tlsext_host_name(result->ssl, NULL);
