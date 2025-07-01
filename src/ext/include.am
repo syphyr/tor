@@ -6,15 +6,15 @@ AM_CPPFLAGS += \
 EXTRA_DIST += src/ext/ext.md
 
 EXTHEADERS = \
-  src/ext/ht.h		\
-  src/ext/byteorder.h   \
-  src/ext/tinytest.h	\
+  src/ext/ht.h \
+  src/ext/byteorder.h \
+  src/ext/tinytest.h \
   src/ext/tor_readpassphrase.h \
-  src/ext/strlcat.c	\
-  src/ext/strlcpy.c	\
-  src/ext/getdelim.c    \
+  src/ext/strlcat.c \
+  src/ext/strlcpy.c \
+  src/ext/getdelim.c \
   src/ext/tinytest_macros.h \
-  src/ext/tor_queue.h	\
+  src/ext/tor_queue.h \
   src/ext/siphash.h \
   src/ext/compat_blake2.h \
   src/ext/timeouts/timeout.h \
