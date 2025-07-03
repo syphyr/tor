@@ -79,4 +79,44 @@ JNIEXPORT jobject JNICALL
 Java_org_torproject_jni_TorService_prepareFileDescriptor
 (JNIEnv *env, jclass, jstring);
 
+/*
+ * Class:     org_torproject_jni_TorService
+ * Method:    libeventVersion
+ */
+JNIEXPORT jstring JNICALL
+Java_org_torproject_jni_TorService_libeventVersion
+(JNIEnv *env, jobject obj);
+
+/*
+ * Class:     org_torproject_jni_TorService
+ * Method:    opensslVersion
+ */
+JNIEXPORT jstring JNICALL
+Java_org_torproject_jni_TorService_opensslVersion
+(JNIEnv *env, jobject obj);
+
+/*
+ * Class:     org_torproject_jni_TorService
+ * Method:    zlibVersion
+ */
+JNIEXPORT jstring JNICALL
+Java_org_torproject_jni_TorService_zlibVersion
+(JNIEnv *env, jobject obj);
+
+/*
+ * Class:     org_torproject_jni_TorService
+ * Method:    zstdVersion
+ */
+JNIEXPORT jstring JNICALL
+Java_org_torproject_jni_TorService_zstdVersion
+(JNIEnv *env, jobject obj);
+
+/*
+ * Class:     org_torproject_jni_TorService
+ * Method:    lzmaVersion
+ */
+JNIEXPORT jstring JNICALL
+Java_org_torproject_jni_TorService_lzmaVersion
+(JNIEnv *env, jobject obj);
+
 #endif /* !defined(ORG_TORPROJECT_JNI_TORSERVICE_H) */
