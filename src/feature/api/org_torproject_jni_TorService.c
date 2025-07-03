@@ -174,7 +174,7 @@ SetCommandLine(JNIEnv *env, jobject thisObj, jobjectArray arrArgv)
   return true;
 }
 
-static int
+static bool
 SetupControlSocket(JNIEnv *env, jobject thisObj)
 {
   jclass torApiClass = (*env)->GetObjectClass(env, thisObj);
