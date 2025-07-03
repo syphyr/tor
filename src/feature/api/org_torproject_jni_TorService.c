@@ -5,6 +5,9 @@
 
 #include "org_torproject_jni_TorService.h"
 #include "orconfig.h"
+#include "lib/compress/compress.h"
+#include "lib/crypt_ops/crypto_init.h"
+#include "lib/evloop/procmon.h"
 #include "lib/malloc/malloc.h"
 #include "app/main/shutdown.h"
 #include "feature/api/tor_api.h"
@@ -325,4 +328,39 @@ Java_org_torproject_jni_TorService_prepareFileDescriptor
   (*env)->SetIntField(env, ret, field_fd, fd);
 
   return ret;
+}
+
+JNIEXPORT jstring JNICALL Java_org_torproject_jni_TorService_libeventVersion
+(JNIEnv *env, jobject obj)
+{
+  UNUSED(obj);
+  return  (*env)->NewStringUTF(env, tor_libevent_get_version_str());
+}
+
+JNIEXPORT jstring JNICALL Java_org_torproject_jni_TorService_opensslVersion
+(JNIEnv *env, jobject obj)
+{
+  UNUSED(obj);
+  return  (*env)->NewStringUTF(env, crypto_get_library_version_string());
+}
+
+JNIEXPORT jstring JNICALL Java_org_torproject_jni_TorService_zlibVersion
+(JNIEnv *env, jobject obj)
+{
+  UNUSED(obj);
+  return  (*env)->NewStringUTF(env, tor_compress_version_str(ZLIB_METHOD));
+}
+
+JNIEXPORT jstring JNICALL Java_org_torproject_jni_TorService_zstdVersion
+(JNIEnv *env, jobject obj)
+{
+  UNUSED(obj);
+  return  (*env)->NewStringUTF(env, tor_compress_version_str(ZSTD_METHOD));
+}
+
+JNIEXPORT jstring JNICALL Java_org_torproject_jni_TorService_lzmaVersion
+(JNIEnv *env, jobject obj)
+{
+  UNUSED(obj);
+  return  (*env)->NewStringUTF(env, tor_compress_version_str(LZMA_METHOD));
 }
