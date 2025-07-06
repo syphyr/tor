@@ -148,7 +148,7 @@ SetCommandLine(JNIEnv *env, jobject thisObj, jobjectArray arrArgv)
   tor_main_configuration_t *cfg = GetConfiguration(env, thisObj);
   if (cfg == NULL) {
     fprintf(stderr, "SetCommandLine: The Tor configuration is NULL!\n");
-    return -1;
+    return false;
   }
 
   jsize arrArgvLen = (*env)->GetArrayLength(env, arrArgv);
