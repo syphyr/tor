@@ -491,7 +491,7 @@ command_process_relay_cell(cell_t *cell, channel_t *chan)
 {
   const or_options_t *options = get_options();
   circuit_t *circ;
-  int direction;
+  int direction, reason;
   uint32_t orig_delivered_bw = 0;
   uint32_t orig_overhead_bw = 0;
 
@@ -581,7 +581,7 @@ command_process_relay_cell(cell_t *cell, channel_t *chan)
     }
   }
 
-  if (circuit_receive_relay_cell(cell, circ, direction) < 0) {
+  if ((reason = circuit_receive_relay_cell(cell, circ, direction)) < 0) {
     log_fn(LOG_DEBUG,LD_PROTOCOL,"circuit_receive_relay_cell "
            "(%s) failed. Closing.",
            direction==CELL_DIRECTION_OUT?"forward":"backward");
@@ -589,6 +589,7 @@ command_process_relay_cell(cell_t *cell, channel_t *chan)
     if (CIRCUIT_IS_ORIGIN(circ)) {
       control_event_circ_bandwidth_used_for_circ(TO_ORIGIN_CIRCUIT(circ));
     }
+    circuit_mark_for_close(circ, -reason);
   }
 
   if (CIRCUIT_IS_ORIGIN(circ)) {

@@ -230,9 +230,6 @@ circuit_update_channel_usage(circuit_t *circ, cell_t *cell)
  *  - If not recognized, then we need to relay it: append it to the appropriate
  *    cell_queue on <b>circ</b>.
  *
- * If a reason exists to close <b>circ</b>, circuit_mark_for_close()
- * is called in this function, so the caller doesn't have to do it.
- *
  * Return -<b>reason</b> on failure, else 0.
  */
 int
@@ -255,8 +252,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
       < 0) {
     log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
            "relay crypt failed. Dropping connection.");
-    reason = -END_CIRC_REASON_INTERNAL;
-    goto error;
+    return -END_CIRC_REASON_INTERNAL;
   }
 
   circuit_update_channel_usage(circ, cell);
@@ -292,7 +288,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
         log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
                "connection_edge_process_relay_cell (away from origin) "
                "failed.");
-        goto error;
+        return reason;
       }
     } else if (cell_direction == CELL_DIRECTION_IN) {
       ++stats_n_relay_cells_delivered;
@@ -307,7 +303,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
           log_warn(LD_OR,
                    "connection_edge_process_relay_cell (at origin) failed.");
         }
-        goto error;
+        return reason;
       }
     }
     return 0;
@@ -330,8 +326,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
      * XXX: Shouldn't they always die? */
     if (circ->purpose == CIRCUIT_PURPOSE_PATH_BIAS_TESTING) {
       TO_ORIGIN_CIRCUIT(circ)->path_state = PATH_STATE_USE_FAILED;
-      reason = -END_CIRC_REASON_TORPROTOCOL;
-      goto error;
+      return -END_CIRC_REASON_TORPROTOCOL;
     } else {
       return 0;
     }
@@ -351,14 +346,13 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
                                                CELL_DIRECTION_IN)) < 0) {
         log_warn(LD_REND, "Error relaying cell across rendezvous; closing "
                  "circuits");
-        goto error;
+        return reason;
       }
       return 0;
     }
     if (BUG(CIRCUIT_IS_ORIGIN(circ))) {
       /* Should be impossible at this point. */
-      reason = -END_CIRC_REASON_TORPROTOCOL;
-      goto error;
+      return -END_CIRC_REASON_TORPROTOCOL;
     }
     or_circuit_t *or_circ = TO_OR_CIRCUIT(circ);
     if (++or_circ->n_cells_discarded_at_end == 1) {
@@ -367,8 +361,7 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
              "Didn't recognize a cell, but circ stops here! Closing circuit. "
              "It was created %ld seconds ago.", (long)seconds_open);
     }
-    reason = -END_CIRC_REASON_TORPROTOCOL;
-    goto error;
+    return -END_CIRC_REASON_TORPROTOCOL;
   }
 
   log_debug(LD_OR,"Passing on unrecognized cell.");
@@ -378,14 +371,9 @@ circuit_receive_relay_cell(cell_t *cell, circuit_t *circ,
                                   * the cells. */
 
   if (append_cell_to_circuit_queue(circ, chan, cell, cell_direction, 0) < 0) {
-    reason = -END_CIRC_REASON_RESOURCELIMIT;
-    goto error;
+    return -END_CIRC_REASON_RESOURCELIMIT;
   }
   return 0;
-
-error:
-  circuit_mark_for_close(circ, -reason);
-  return reason;
 }
 
 /** Package a relay cell from an edge:
