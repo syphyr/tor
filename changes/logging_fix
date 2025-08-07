@@ -1,0 +1,3 @@
+  o Minor feature (padding, logging):
+    - Reduce the amount of messages being logged related to channel padding
+      timeout when log level is "notice".
