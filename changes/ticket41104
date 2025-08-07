@@ -1,0 +1,3 @@
+  o Minor bugfixes (logging, metrics port):
+    - Count BUG statements for the MetricsPort only if they are warnings or
+      errors. Fixes bug 41104; bugfix on 0.4.7.1.
