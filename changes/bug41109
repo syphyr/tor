@@ -1,0 +1,3 @@
+  o Minor bugfixes (threads):
+    - Make thread control POSIX compliant.
+      Fixes bug 41109; bugfix on 0.4.8.17-dev.
