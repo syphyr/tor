@@ -278,7 +278,6 @@ static void
 worker_thread_main(void *thread_)
 {
   static int n_worker_threads_running = 0;
-  static unsigned long control_lock_owner = 0;
   workerthread_t *thread = thread_;
   threadpool_t *pool = thread->in_pool;
   workqueue_entry_t *work;
@@ -297,11 +296,6 @@ worker_thread_main(void *thread_)
   /* Wait until all worker threads have started.
    * pool->lock must be prelocked here. */
   tor_mutex_acquire(&pool->lock);
-
-  if (control_lock_owner == 0) {
-    tor_mutex_acquire(&pool->control_lock);
-    control_lock_owner = tor_get_thread_id();
-  }
 
   log_debug(LD_GENERAL, "Worker thread has entered the work loop [TID: %lu].",
             tor_get_thread_id());
@@ -368,25 +362,11 @@ exit:
             pool->n_threads_max - n_worker_threads_running + 1,
             pool->n_threads_max, tor_get_thread_id());
 
-  if (tor_get_thread_id() == control_lock_owner) {
-    if (n_worker_threads_running > 1) {
-      /* Wait for the other worker threads to exit so we
-       * can safely unlock pool->control_lock. */
-      struct timespec ts = {.tv_sec = 0, .tv_nsec = 100000};
-      do {
-        tor_mutex_release(&pool->lock);
-        nanosleep(&ts, NULL);
-        tor_mutex_acquire(&pool->lock);
-      } while (n_worker_threads_running > 1);
-    }
-
-    tor_mutex_release(&pool->lock);
+  if (--n_worker_threads_running == 0)
     /* Let the main thread know, the last worker thread has exited. */
     tor_mutex_release(&pool->control_lock);
-  } else {
-    --n_worker_threads_running;
-    tor_mutex_release(&pool->lock);
-  }
+
+  tor_mutex_release(&pool->lock);
 }
 
 /** Put a reply on the reply queue.  The reply must not currently be on
@@ -641,10 +621,11 @@ check_status:
     log_debug(LD_GENERAL, "Signaled the worker threads to exit...");
   }
 
-  /* Let one of the worker threads take the ownership of pool->control_lock */
-  tor_mutex_release(&pool->control_lock);
   /* Let worker threads enter the work loop. */
   tor_mutex_release(&pool->lock);
+
+  /* pool->control_lock stays locked. This is required for the main thread
+   * to wait for the worker threads to exit on shutdown. */
 
   return status;
 }
