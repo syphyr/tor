@@ -659,17 +659,13 @@ circuit_handle_first_hop(origin_circuit_t *circ)
   return 0;
 }
 
-/** Find any circuits that are waiting on <b>or_conn</b> to become
+/** Find any circuits that are waiting on <b>chan</b> to become
  * open and get them to send their create cells forward.
  *
  * Status is 1 if connect succeeded, or 0 if connect failed.
- *
- * Close_origin_circuits is 1 if we should close all the origin circuits
- * through this channel, or 0 otherwise.  (This happens when we want to retry
- * an older guard.)
  */
 void
-circuit_n_chan_done(channel_t *chan, int status, int close_origin_circuits)
+circuit_n_chan_done(channel_t *chan, int status)
 {
   smartlist_t *pending_circs;
   int err_reason = 0;
@@ -722,11 +718,6 @@ circuit_n_chan_done(channel_t *chan, int status, int close_origin_circuits)
         continue;
       }
 
-      if (close_origin_circuits && CIRCUIT_IS_ORIGIN(circ)) {
-        log_info(LD_CIRC,"Channel deprecated for origin circs; closing circ.");
-        circuit_mark_for_close(circ, END_CIRC_REASON_CHANNEL_CLOSED);
-        continue;
-      }
       log_debug(LD_CIRC, "Found circ, sending create cell.");
       /* circuit_deliver_create_cell will set n_circ_id and add us to
        * chan_circuid_circuit_map, so we don't need to call
