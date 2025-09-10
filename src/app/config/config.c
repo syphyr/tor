@@ -3536,7 +3536,8 @@ options_validate_cb(const void *old_options_, void *options_, char **msg)
                                    server_mode(options));
   options->MaxMemInQueues_low_threshold = (options->MaxMemInQueues / 4) * 3;
 
-  /* Process MaxHSDirCacheBytes. If not set (0), use MaxMemInQueues / 5 as default. */
+  /* Process MaxHSDirCacheBytes. If not set (0), use MaxMemInQueues / 5 as
+   * default. */
   if (options->MaxHSDirCacheBytes == 0) {
     /* Default to MaxMemInQueues / 5 for HS directory cache (20%) */
     options->MaxHSDirCacheBytes = options->MaxMemInQueues / 5;
