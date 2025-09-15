@@ -609,7 +609,7 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
   size_t msg_body_len;
   {
     relay_cell_fmt_t cell_format = circuit_get_relay_format(circ, cpath_layer);
-    relay_msg_t msg;
+    relay_msg_t msg = {0};
     if (payload_len >
         relay_cell_max_payload_size(cell_format, relay_command)) {
       // TODO CGO: Rate-limit this?
