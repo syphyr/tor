@@ -2934,9 +2934,9 @@ cell_queues_check_size(void)
 
       /* If we're spending over the configured limit on hidden service
        * descriptors, free them until we're down to 50% of the limit. */
-      if (hs_cache_total > get_options()->MaxHSDirCacheBytes) {
+      if (hs_cache_total > hs_cache_get_max_bytes()) {
         const size_t bytes_to_remove =
-          hs_cache_total - (size_t)(get_options()->MaxHSDirCacheBytes / 2);
+          hs_cache_total - (size_t)(hs_cache_get_max_bytes() / 2);
         removed = hs_cache_handle_oom(bytes_to_remove);
         oom_stats_n_bytes_removed_hsdir += removed;
         alloc -= removed;
@@ -2944,7 +2944,7 @@ cell_queues_check_size(void)
         log_fn_ratelim(&hs_cache_oom_ratelim, LOG_NOTICE, LD_REND,
                "HSDir cache exceeded limit (%zu > %"PRIu64" bytes). "
                "Pruned %zu bytes during cell_queues_check_size.",
-               hs_cache_total, get_options()->MaxHSDirCacheBytes, removed);
+               hs_cache_total, hs_cache_get_max_bytes(), removed);
       }
       if (geoip_client_cache_total > get_options()->MaxMemInQueues / 5) {
         const size_t bytes_to_remove =
