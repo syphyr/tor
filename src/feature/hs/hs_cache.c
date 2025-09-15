@@ -155,7 +155,7 @@ cache_store_v3_as_dir(hs_cache_dir_descriptor_t *desc)
 
   /* Check if we've exceeded the MaxHSDirCacheBytes limit after adding
    * this descriptor. If so, prune excess bytes leaving room for more. */
-  const size_t max_cache_bytes = get_options()->MaxHSDirCacheBytes;
+  const size_t max_cache_bytes = hs_cache_get_max_bytes();
   const size_t current_cache_bytes = hs_cache_get_total_allocation();
   if (max_cache_bytes > 0 && current_cache_bytes > max_cache_bytes) {
     /* We prune only 1000 descriptors worth of memory here because
@@ -1252,6 +1252,14 @@ hs_cache_free_all(void)
                     cache_client_intro_state_free_void);
   hs_cache_client_intro_state = NULL;
   hs_cache_total_allocation = 0;
+}
+
+/** Get the configured maximum cache size. */
+uint64_t
+hs_cache_get_max_bytes(void)
+{
+  uint64_t opt = get_options()->MaxHSDirCacheBytes;
+  return opt != 0 ? opt : get_options()->MaxMemInQueues / 5;
 }
 
 /* Return total size of the cache. */
