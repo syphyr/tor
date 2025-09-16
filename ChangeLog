@@ -1,5 +1,5 @@
-Changes in version 0.4.9.2-alpha - 2025-09-16
-  This is the second alpha release and likely the last before going stable.
+Changes in version 0.4.9.3-alpha - 2025-09-16
+  This is the third alpha release and likely the last before going stable.
   This release contains the new CGO circuit encryption. See proposal 359 for
   more details. Several TLS minor fixes which will strengthen the link
   security.
