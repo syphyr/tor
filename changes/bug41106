@@ -1,5 +1,0 @@
-  o Minor bugfixes (circuit handling):
-    - Prevent circuit_mark_for_close() from
-      being called twice on the same circuit.
-      Second fix attempt
-      Fixes bug 41106; bugfix on 0.4.8.17

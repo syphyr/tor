@@ -1,8 +1,0 @@
-  o Major bugfixes (onion service directory cache):
-    - Preserve the download counter of an onion service descriptor across
-      descriptor uploads, so that recently updated descriptors don't get
-      pruned if there is memory pressure soon after update. Additionally,
-      create a separate torrc option MaxHSDirCacheBytes that defaults to the
-      former 20% of MaxMemInQueues threshold, but can be controlled by
-      relay operators under DoS. Also enforce this theshold during HSDir
-      uploads. Fixes bug 41006; bugfix on 0.4.8.14.
