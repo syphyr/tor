@@ -1,3 +1,6 @@
   o Minor bugfix (conflux):
     - Avoid a non fatal assert when describing a conflux circuit on the control
       port after being prepped to be freed. Fixes bug 41037; bugfix on 0.4.8.15.
+    - Remove the pending nonce if we realize that the nonce of the unlinked
+      circuit is not tracked anymore. Should avoid the non fatal assert
+      triggered with a control port circuit event.
