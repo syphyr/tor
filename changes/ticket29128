@@ -1,2 +1,0 @@
-  o Minor features (bridges):
-    - Save complete bridge lines to 'datadir/bridgelines'. Closes ticket 29128.

@@ -1,2 +1,0 @@
-  o Minor feature (client, TLS):
-    - Set the TLS 1.3 cipher list instead of falling back on the default value.
