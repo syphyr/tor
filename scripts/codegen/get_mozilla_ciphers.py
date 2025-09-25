@@ -136,9 +136,13 @@ for entry in yaml_file:
 
 used_ciphers = []
 for k, v in enabled_ciphers.items():
-    if v != False: # there are strings we want to allow.
-
+    if v in (True, "True", "true", "IS_NOT_EARLY_BETA_OR_EARLIER"):
         used_ciphers.append(ciphers[k])
+    elif v == False:
+        pass
+    else:
+        print(f"Warning: unexpected value {v!r} for 'enabled'", file=sys.stderr)
+        sys.exit(1)
 
 #oSSLinclude = ('/usr/include/openssl/ssl3.h', '/usr/include/openssl/ssl.h',
 #               '/usr/include/openssl/ssl2.h', '/usr/include/openssl/ssl23.h',
