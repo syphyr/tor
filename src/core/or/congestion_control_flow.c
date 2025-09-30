@@ -496,8 +496,11 @@ flow_control_decide_xoff(edge_connection_t *stream)
         stream->xoff_grace_period_start_usec = now;
       } else if (now > stream->xoff_grace_period_start_usec + XOFF_GRACE_PERIOD_USEC) {
         /* If we've exceeded our XOFF grace period, we need to send an XOFF. */
-        log_info(LD_EDGE, "Sending XOFF: %"TOR_PRIuSZ" %d",
-                   total_buffered, buffer_limit_xoff);
+        log_info(LD_EDGE,
+                 "Sending XOFF: total-buffered=%" TOR_PRIuSZ
+                 " xoff-limit=%d grace-period-dur=%" TOR_PRIuSZ "usec",
+                 total_buffered, buffer_limit_xoff,
+                 now - stream->xoff_grace_period_start_usec);
         tor_trace(TR_SUBSYS(cc), TR_EV(flow_decide_xoff_sending), stream);
 
         cc_stats_flow_xoff_outbuf_ma =
