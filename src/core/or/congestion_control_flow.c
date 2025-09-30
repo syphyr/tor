@@ -489,12 +489,16 @@ flow_control_decide_xoff(edge_connection_t *stream)
       uint64_t now = monotime_absolute_usec();
 
       if (stream->xoff_grace_period_start_usec == 0) {
-        /* If unset, we haven't begun the XOFF grace period. We need to start. */
-        log_debug(LD_EDGE, "Exceeded XOFF limit; Beginning grace period: total-buffered=%" TOR_PRIuSZ " xoff-limit=%d",
+        /* If unset, we haven't begun the XOFF grace period. We need to start.
+         */
+        log_debug(LD_EDGE,
+                  "Exceeded XOFF limit; Beginning grace period: "
+                  "total-buffered=%" TOR_PRIuSZ " xoff-limit=%d",
                   total_buffered, buffer_limit_xoff);
 
         stream->xoff_grace_period_start_usec = now;
-      } else if (now > stream->xoff_grace_period_start_usec + XOFF_GRACE_PERIOD_USEC) {
+      } else if (now > stream->xoff_grace_period_start_usec +
+                           XOFF_GRACE_PERIOD_USEC) {
         /* If we've exceeded our XOFF grace period, we need to send an XOFF. */
         log_info(LD_EDGE,
                  "Sending XOFF: total-buffered=%" TOR_PRIuSZ
@@ -520,7 +524,8 @@ flow_control_decide_xoff(edge_connection_t *stream)
       }
     }
   } else {
-    /* The outbuf length is less than the XOFF limit, so unset our grace period. */
+    /* The outbuf length is less than the XOFF limit, so unset our grace
+     * period. */
     stream->xoff_grace_period_start_usec = 0;
   }
 
