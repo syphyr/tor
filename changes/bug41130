@@ -3,4 +3,4 @@
       data to the socket before sending an XOFF. This significantly reduces the
       number of XON/XOFF messages sent when (1) the application is reading
       stream data at a fast rate, and (2) when conflux is enabled.
-      Partially Fixes bug 41130; bugfix on 0.4.7.2-alpha
+      Fixes part of bug 41130; bugfix on 0.4.7.2-alpha
