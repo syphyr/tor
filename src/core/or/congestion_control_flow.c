@@ -459,19 +459,21 @@ flow_control_decide_xoff(edge_connection_t *stream)
 
   if (total_buffered > buffer_limit_xoff) {
     if (!stream->xoff_sent) {
-      log_info(LD_EDGE, "Sending XOFF: %"TOR_PRIuSZ" %d",
-                 total_buffered, buffer_limit_xoff);
-      tor_trace(TR_SUBSYS(cc), TR_EV(flow_decide_xoff_sending), stream);
+      {
+        log_info(LD_EDGE, "Sending XOFF: %"TOR_PRIuSZ" %d",
+                   total_buffered, buffer_limit_xoff);
+        tor_trace(TR_SUBSYS(cc), TR_EV(flow_decide_xoff_sending), stream);
 
-      cc_stats_flow_xoff_outbuf_ma =
-        stats_update_running_avg(cc_stats_flow_xoff_outbuf_ma,
-                                 total_buffered);
+        cc_stats_flow_xoff_outbuf_ma =
+          stats_update_running_avg(cc_stats_flow_xoff_outbuf_ma,
+                                   total_buffered);
 
-      circuit_send_stream_xoff(stream);
+        circuit_send_stream_xoff(stream);
 
-      /* Clear the drain rate. It is considered wrong if we
-       * got all the way to XOFF */
-      stream->ewma_drain_rate = 0;
+        /* Clear the drain rate. It is considered wrong if we
+         * got all the way to XOFF */
+        stream->ewma_drain_rate = 0;
+      }
     }
   }
 
