@@ -137,8 +137,12 @@ debian-minimal:
 debian-i386-minimal:
   # TODO: Use a TPA-maintained image when there is one.
   # See https://gitlab.torproject.org/tpo/tpa/base-images/-/issues/3
+  #
+  # XXX: Seems that anything else than Bullseye is making
+  # "src/test/test_include.sh" test to fail. For now, keep bullseye until we
+  # figure this out.
   image:
-    name: i386/debian:bookworm
+    name: i386/debian:bullseye
     docker:
       platform: linux/386
   <<: *debian-template
