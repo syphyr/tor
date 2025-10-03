@@ -42,7 +42,6 @@ variables:
 .x86-64-template: &x86-64-template
   tags:
     - amd64
-    - tpa
 
 # This template should be usable on any system that's based on apt.
 .apt-template: &apt-template |
