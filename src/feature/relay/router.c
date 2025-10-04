@@ -1466,7 +1466,7 @@ decide_if_publishable_server(void)
       return 0;
     }
   }
-  return router_dirport_seems_reachable(options);
+  return 1; /* everything looks good! publish. */
 }
 
 /** Initiate server descriptor upload as reasonable (if server is publishable,
