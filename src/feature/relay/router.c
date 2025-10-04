@@ -1351,8 +1351,6 @@ router_should_be_dirserver(const or_options_t *options)
  * advertise the fact that we have begindir support, else
  * return 1.
  *
- * Where supports_tunnelled_dir_requests is not relevant, it must be 0.
- *
  * Log a helpful message if we change our mind about whether to publish.
  */
 static int
@@ -1370,8 +1368,7 @@ decide_to_advertise_dir_impl(const or_options_t *options,
     return 1;
   if (net_is_disabled())
     return 0;
-  if (supports_tunnelled_dir_requests &&
-      !routerconf_find_or_port(options, AF_INET))
+  if (!routerconf_find_or_port(options, AF_INET))
     return 0;
 
   /* Part two: consider config options that could make us choose to
@@ -1379,7 +1376,7 @@ decide_to_advertise_dir_impl(const or_options_t *options,
   return router_should_be_dirserver(options);
 }
 
-/** Front-end to decide_to_advertise_dir_impl(): return 0 if we don't want to
+/** Return 0 if we don't want to
  * advertise the fact that we have a DirPort open, else return the
  * DirPort we want to advertise.
  */
