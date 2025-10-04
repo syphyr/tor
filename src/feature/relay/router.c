@@ -1286,13 +1286,12 @@ router_has_bandwidth_to_be_dirserver(const or_options_t *options)
 
 /** Helper: Return 1 if we have sufficient resources for serving directory
  * requests, return 0 otherwise.
- * dir_port is either 0 or the configured DirPort number.
  * If AccountingMax is set less than our advertised bandwidth, then don't
  * serve requests. Likewise, if our advertised bandwidth is less than
  * MIN_BW_TO_ADVERTISE_DIRSERVER, don't bother trying to serve requests.
  */
 static int
-router_should_be_dirserver(const or_options_t *options, int dir_port)
+router_should_be_dirserver(const or_options_t *options)
 {
   static int advertising=1; /* start out assuming we will advertise */
   int new_choice=1;
@@ -1301,7 +1300,8 @@ router_should_be_dirserver(const or_options_t *options, int dir_port)
   if (accounting_is_enabled(options) &&
     get_options()->AccountingRule != ACCT_IN) {
     /* Don't spend bytes for directory traffic if we could end up hibernating,
-     * but allow DirPort otherwise. Some relay operators set AccountingMax
+     * but allow being a dir cache otherwise.
+     * Some relay operators set AccountingMax
      * because they're confused or to get statistics. Directory traffic has a
      * much larger effect on output than input so there is no reason to turn it
      * off if using AccountingRule in. */
@@ -1313,10 +1313,9 @@ router_should_be_dirserver(const or_options_t *options, int dir_port)
                        "seconds long. Raising to 1.");
       interval_length = 1;
     }
-    log_info(LD_GENERAL, "Calculating whether to advertise %s: effective "
-                         "bwrate: %u, AccountingMax: %"PRIu64", "
+    log_info(LD_GENERAL, "Calculating whether to advertise begindir: "
+                         "effective bwrate: %u, AccountingMax: %"PRIu64", "
                          "accounting interval length %d",
-                         dir_port ? "dirport" : "begindir",
                          effective_bw, (options->AccountingMax),
                          interval_length);
 
@@ -1336,14 +1335,11 @@ router_should_be_dirserver(const or_options_t *options, int dir_port)
 
   if (advertising != new_choice) {
     if (new_choice == 1) {
-      if (dir_port > 0)
-        log_notice(LD_DIR, "Advertising DirPort as %d", dir_port);
-      else
-        log_notice(LD_DIR, "Advertising directory service support");
+      log_notice(LD_DIR, "Advertising directory service support");
     } else {
       tor_assert(reason);
-      log_notice(LD_DIR, "Not advertising Dir%s (Reason: %s)",
-                 dir_port ? "Port" : "ectory Service support", reason);
+      log_notice(LD_DIR, "Not advertising Directory Service support "
+                 "(Reason: %s)", reason);
     }
     advertising = new_choice;
   }
@@ -1352,17 +1348,15 @@ router_should_be_dirserver(const or_options_t *options, int dir_port)
 }
 
 /** Look at a variety of factors, and return 0 if we don't want to
- * advertise the fact that we have a DirPort open or begindir support, else
+ * advertise the fact that we have begindir support, else
  * return 1.
  *
- * Where dir_port or supports_tunnelled_dir_requests are not relevant, they
- * must be 0.
+ * Where supports_tunnelled_dir_requests is not relevant, it must be 0.
  *
  * Log a helpful message if we change our mind about whether to publish.
  */
 static int
 decide_to_advertise_dir_impl(const or_options_t *options,
-                             uint16_t dir_port,
                              int supports_tunnelled_dir_requests)
 {
   /* Part one: reasons to publish or not publish that aren't
@@ -1370,13 +1364,11 @@ decide_to_advertise_dir_impl(const or_options_t *options,
    * or because they're normal behavior. */
 
   /* short circuit the rest of the function */
-  if (!dir_port && !supports_tunnelled_dir_requests)
+  if (!supports_tunnelled_dir_requests)
     return 0;
   if (authdir_mode(options)) /* always publish */
     return 1;
   if (net_is_disabled())
-    return 0;
-  if (dir_port && !routerconf_find_dir_port(options, dir_port))
     return 0;
   if (supports_tunnelled_dir_requests &&
       !routerconf_find_or_port(options, AF_INET))
@@ -1384,7 +1376,7 @@ decide_to_advertise_dir_impl(const or_options_t *options,
 
   /* Part two: consider config options that could make us choose to
    * publish or not publish that the user might find surprising. */
-  return router_should_be_dirserver(options, dir_port);
+  return router_should_be_dirserver(options);
 }
 
 /** Front-end to decide_to_advertise_dir_impl(): return 0 if we don't want to
@@ -1405,8 +1397,7 @@ static int
 router_should_advertise_begindir(const or_options_t *options,
                              int supports_tunnelled_dir_requests)
 {
-  /* dir_port is not relevant, pass 0 */
-  return decide_to_advertise_dir_impl(options, 0,
+  return decide_to_advertise_dir_impl(options,
                                       supports_tunnelled_dir_requests);
 }
 
@@ -1435,17 +1426,14 @@ static bool publish_even_when_ipv4_orport_unreachable = false;
 static bool publish_even_when_ipv6_orport_unreachable = false;
 
 /** Decide if we're a publishable server. We are a publishable server if:
+ * - We are an authoritative directory server, or if
  * - We don't have the ClientOnly option set
  * and
  * - We have the PublishServerDescriptor option set to non-empty
  * and
  * - We have ORPort set
  * and
- * - We believe our ORPort and DirPort (if present) are reachable from
- *   the outside; or
- * - We believe our ORPort is reachable from the outside, and we can't
- *   check our DirPort because the consensus has no exits; or
- * - We are an authoritative directory server.
+ * - We believe our ORPort is reachable from the outside.
  */
 static int
 decide_if_publishable_server(void)
@@ -1478,13 +1466,7 @@ decide_if_publishable_server(void)
       return 0;
     }
   }
-  if (router_have_consensus_path() == CONSENSUS_PATH_INTERNAL) {
-    /* All set: there are no exits in the consensus (maybe this is a tiny
-     * test network), so we can't check our DirPort reachability. */
-    return 1;
-  } else {
-    return router_dirport_seems_reachable(options);
-  }
+  return router_dirport_seems_reachable(options);
 }
 
 /** Initiate server descriptor upload as reasonable (if server is publishable,
