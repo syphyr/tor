@@ -1,0 +1,3 @@
+  o Minor feature (compiler flag):
+    - Add -fcf-protection=full if supported by the compiler. Fixes 41139.
+

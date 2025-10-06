@@ -1490,6 +1490,15 @@ dnl we should try to add -fasynchronous-unwind-tables so that our backtrace
 dnl code will work.
 TOR_CHECK_CFLAGS(-fasynchronous-unwind-tables)
 
+# From https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html:
+#
+# Enable code instrumentation to increase program security by checking that
+# target addresses of control-flow transfer instructions are valid. This
+# prevents diverting the flow of control to an unexpected target. This is
+# intended to protect against such threats as Return-oriented Programming
+# (ROP), and similarly call/jmp-oriented programming (COP/JOP).
+TOR_CHECK_CFLAGS(-fcf-protection=full)
+
 dnl ============================================================
 dnl Check for libseccomp
 
