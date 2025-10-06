@@ -413,7 +413,6 @@ connection_or_state_publish(const or_connection_t *conn, uint8_t state)
 /** Call this to change or_connection_t states, so the owning channel_tls_t can
  * be notified.
  */
-
 MOCK_IMPL(void,
 connection_or_change_state,(or_connection_t *conn, uint8_t state))
 {
@@ -429,7 +428,6 @@ connection_or_change_state,(or_connection_t *conn, uint8_t state))
 /** Return the number of circuits using an or_connection_t; this used to
  * be an or_connection_t field, but it got moved to channel_t and we
  * shouldn't maintain two copies. */
-
 MOCK_IMPL(int,
 connection_or_get_num_circuits, (or_connection_t *conn))
 {
@@ -520,7 +518,6 @@ var_cell_new(uint16_t payload_len)
 /**
  * Copy a var_cell_t
  */
-
 var_cell_t *
 var_cell_copy(const var_cell_t *src)
 {
@@ -1448,7 +1445,6 @@ connection_or_notify_error(or_connection_t *conn,
  *
  * Return the launched conn, or NULL if it failed.
  */
-
 MOCK_IMPL(or_connection_t *,
 connection_or_connect, (const tor_addr_t *_addr, uint16_t port,
                         const char *id_digest,
@@ -1595,7 +1591,6 @@ connection_or_connect, (const tor_addr_t *_addr, uint16_t port,
  * rather than connections, use channel_mark_for_close(); see also
  * the comment on that function in channel.c.
  */
-
 void
 connection_or_close_normally(or_connection_t *orconn, int flush)
 {
@@ -1616,7 +1611,6 @@ connection_or_close_normally(or_connection_t *orconn, int flush)
 /** Mark orconn for close and transition the associated channel, if any, to
  * the error state.
  */
-
 MOCK_IMPL(void,
 connection_or_close_for_error,(or_connection_t *orconn, int flush))
 {
@@ -1933,7 +1927,6 @@ connection_or_client_learned_peer_id(or_connection_t *conn,
 /** Return when we last used this channel for client activity (origin
  * circuits). This is called from connection.c, since client_used is now one
  * of the timestamps in channel_t */
-
 time_t
 connection_or_client_used(or_connection_t *conn)
 {
