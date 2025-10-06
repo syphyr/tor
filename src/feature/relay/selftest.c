@@ -130,16 +130,6 @@ router_orport_seems_reachable(const or_options_t *options,
   return true;
 }
 
-/** Relay DirPorts are no longer used (though authorities are). In either case,
- * reachability self test is done anymore, since network re-entry towards an
- * authority DirPort is not allowed. Thus, consider it always reachable. */
-int
-router_dirport_seems_reachable(const or_options_t *options)
-{
-  (void) options;
-  return 1;
-}
-
 /** See if we currently believe our ORPort to be unreachable. If so, return 1
  * else return 0. */
 static int
