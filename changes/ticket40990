@@ -1,4 +1,0 @@
-  o Minor bugfix (process):
-    - Avoid closing all possible FDs when spawning a process (PT). On some systems, this could
-      lead to 3+ minutes hang. Fixes bug 40990; bugfix on 0.3.5.1-alpha.
-

@@ -1,3 +1,0 @@
-  o Major bugfixes (client, TLS):
-    - Fix some clients not being able to connect to LibreSSL relays.
-      Fixes bug 41134; bugfix on 0.4.8.17
