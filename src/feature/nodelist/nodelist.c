@@ -821,15 +821,6 @@ nodelist_set_consensus(const networkstatus_t *ns)
   }
 }
 
-/** Return 1 iff <b>node</b> has Exit flag and no BadExit flag.
- * Otherwise, return 0.
- */
-int
-node_is_good_exit(const node_t *node)
-{
-  return node->is_exit && ! node->is_bad_exit;
-}
-
 /** Helper: return true iff a node has a usable amount of information*/
 static inline int
 node_is_usable(const node_t *node)
