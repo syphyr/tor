@@ -507,8 +507,20 @@ conflux_decide_circ_for_send(conflux_t *cfx,
       uint64_t relative_seq = cfx->prev_leg->last_seq_sent -
                               cfx->curr_leg->last_seq_sent;
 
-      tor_assert(cfx->prev_leg->last_seq_sent >=
-                 cfx->curr_leg->last_seq_sent);
+      if (cfx->curr_leg->last_seq_sent > cfx->prev_leg->last_seq_sent) {
+        /* Having incoherent sequence numbers, log warn about it but rate limit
+         * it to every hour so we avoid redundent report. */
+        static ratelim_t rlimit = RATELIM_INIT(60 * 60);
+        log_fn_ratelim(&rlimit, LOG_WARN, LD_BUG,
+                       "Current conflux leg last_seq_sent=%"PRIu64
+                       " is above previous leg at %" PRIu64 ". Closing set.",
+                       cfx->curr_leg->last_seq_sent,
+                       cfx->prev_leg->last_seq_sent);
+        conflux_mark_all_for_close(cfx->nonce, CIRCUIT_IS_ORIGIN(new_circ),
+                                   END_CIRC_REASON_TORPROTOCOL);
+        return NULL;
+      }
+
       conflux_send_switch_command(cfx->curr_leg->circ, relative_seq);
       cfx->curr_leg->last_seq_sent = cfx->prev_leg->last_seq_sent;
     }

@@ -675,7 +675,7 @@ unlinked_close_or_free(unlinked_circuits_t *unlinked)
 /** Upon an error condition or a close of an in-use circuit, we must close all
  * linked and unlinked circuits associated with a set. When the last leg of
  * each set is closed, the set is removed from the pool. */
-static void
+void
 conflux_mark_all_for_close(const uint8_t *nonce, bool is_client, int reason)
 {
   /* It is possible that for a nonce we have both an unlinked set and a linked
