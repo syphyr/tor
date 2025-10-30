@@ -521,7 +521,13 @@ conflux_decide_circ_for_send(conflux_t *cfx,
         return NULL;
       }
 
-      conflux_send_switch_command(cfx->curr_leg->circ, relative_seq);
+      /* On failure to send the SWITCH, we close everything. This means we have
+       * a protocol error or the sending failed and the circuit is closed. */
+      if (!conflux_send_switch_command(cfx->curr_leg->circ, relative_seq)) {
+        conflux_mark_all_for_close(cfx->nonce, CIRCUIT_IS_ORIGIN(new_circ),
+                                   END_CIRC_REASON_TORPROTOCOL);
+        return NULL;
+      }
       cfx->curr_leg->last_seq_sent = cfx->prev_leg->last_seq_sent;
     }
   }
