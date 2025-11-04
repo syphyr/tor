@@ -3182,10 +3182,23 @@ connection_ap_process_http_connect(entry_connection_t *conn)
       socks->username = authorization; // steal reference
       socks->usernamelen = strlen(authorization);
     }
-    char *isolation = http_get_header(headers, "X-Tor-Stream-Isolation: ");
-    if (isolation) {
-      socks->password = isolation; // steal reference
-      socks->passwordlen = strlen(isolation);
+    char *isolation = http_get_header(headers, "Tor-Stream-Isolation: ");
+    char *x_isolation = http_get_header(headers, "X-Tor-Stream-Isolation: ");
+    if (isolation || x_isolation) {
+      // We need to cram both of these headers into a single
+      // password field.  Using a delimiter like this is a bit ugly,
+      // but the only ones who can confuse it are the applications,
+      // whom we are trusting get their own isolation right.
+      const char DELIM[] = "\x01\xff\x01\xff";
+      tor_asprintf(&socks->password,
+                   "%s%s%s",
+                   isolation?isolation:"",
+                   DELIM,
+                   x_isolation?x_isolation:"");
+      tor_free(isolation);
+      tor_free(x_isolation);
+
+      socks->passwordlen = strlen(socks->password);
     }
   }
 
