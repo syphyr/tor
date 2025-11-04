@@ -2745,6 +2745,20 @@ consider_recording_trackhost(const entry_connection_t *conn,
                       ADDRMAPSRC_TRACKEXIT, 0, 0, stream_id);
 }
 
+/**
+ * Return true if <b>conn</b> is configured with KeepaliveIsolateSOCKSAuth,
+ * and it has its socks isolation set.
+ */
+static bool
+connection_ap_socks_iso_keepalive_enabled(const entry_connection_t *conn)
+{
+  return conn &&
+    conn->socks_request &&
+    (conn->entry_cfg.isolation_flags & ISO_SOCKSAUTH) &&
+    (conn->entry_cfg.socks_iso_keep_alive) &&
+    (conn->socks_request->usernamelen || conn->socks_request->passwordlen);
+}
+
 /** Attempt to attach the connection <b>conn</b> to <b>circ</b>, and send a
  * begin or resolve cell as appropriate.  Return values are as for
  * connection_ap_handshake_attach_circuit.  The stream will exit from the hop
@@ -2766,10 +2780,7 @@ connection_ap_handshake_attach_chosen_circuit(entry_connection_t *conn,
   base_conn->state = AP_CONN_STATE_CIRCUIT_WAIT;
 
   if (!circ->base_.timestamp_dirty ||
-      ((conn->entry_cfg.isolation_flags & ISO_SOCKSAUTH) &&
-       (conn->entry_cfg.socks_iso_keep_alive) &&
-       (conn->socks_request->usernamelen ||
-        conn->socks_request->passwordlen))) {
+      connection_ap_socks_iso_keepalive_enabled(conn)) {
     /* When stream isolation is in use and controlled by an application
      * we are willing to keep using the stream. */
     circ->base_.timestamp_dirty = approx_time();
