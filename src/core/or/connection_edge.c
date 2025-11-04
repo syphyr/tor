@@ -2995,6 +2995,12 @@ connection_ap_process_natd(entry_connection_t *conn)
   TOR_CAPABILITIES_HEADER \
   "Server: tor/1.0 (tor "VERSION")\r\n"
 
+static const char HTTP_OPTIONS_REPLY[] =
+  "HTTP/1.0 200 OK\r\n"
+  "Allow: OPTIONS, CONNECT\r\n"
+  HTTP_OTHER_FIXED_HEADERS
+  "\r\n";
+
 static const char HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG[] =
   "HTTP/1.0 405 Method Not Allowed\r\n"
   "Content-Type: text/html; charset=iso-8859-1\r\n"
@@ -3106,6 +3112,9 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   // If true, we already have a full reply, so we shouldn't add
   // fixed headers and CRLF.
   bool errmsg_is_complete = false;
+  // If true, we're sending a fixed reply as an errmsg,
+  // but technically this isn't an error so we shouldn't log.
+  bool skip_error_log = false;
 
   const int http_status =
     fetch_from_buf_http(ENTRY_TO_CONN(conn)->inbuf, &headers, 8192,
@@ -3137,6 +3146,22 @@ connection_ap_process_http_connect(entry_connection_t *conn)
       host_is_localhost = host_header_is_localhost(host);
     }
     tor_free(host);
+  }
+  if (!strcasecmp(command, "options") && host_is_localhost) {
+    errmsg = HTTP_OPTIONS_REPLY;
+    errmsg_is_complete = true;
+
+    // TODO: We could in theory make sure that the target
+    // is a host or is *.
+    // TODO: We could in theory make sure that the body is empty.
+    // (And we would have to, if we ever support HTTP/1.1.)
+
+    // This is not actually an error, but the error handling
+    // does the right operations here (send the reply,
+    // mark the connection).
+    skip_error_log = true;
+
+    goto err;
   }
   if (strcasecmp(command, "connect")) {
     if (host_is_localhost) {
@@ -3219,7 +3244,8 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   if (BUG(errmsg == NULL) && ! close_without_message)
     errmsg = "HTTP/1.0 400 Bad Request\r\n";
   if (errmsg) {
-    log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
+    if (!skip_error_log)
+      log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
     connection_buf_add(errmsg, strlen(errmsg), ENTRY_TO_CONN(conn));
     if (!errmsg_is_complete) {
       connection_buf_add(fixed_reply_headers, strlen(fixed_reply_headers),
@@ -3227,7 +3253,8 @@ connection_ap_process_http_connect(entry_connection_t *conn)
       connection_buf_add("\r\n", 2, ENTRY_TO_CONN(conn));
     }
   } else {
-    log_info(LD_EDGE, "HTTP tunnel error: closing silently");
+    if (!skip_error_log)
+      log_info(LD_EDGE, "HTTP tunnel error: closing silently");
   }
   /* Mark it as "has_finished" so that we don't try to send an extra socks
    * reply. */
