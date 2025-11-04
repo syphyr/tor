@@ -3049,6 +3049,37 @@ host_header_is_localhost(const char *host_value)
   return result;
 }
 
+/** Return true if the Proxy-Authorization header  present in 'auth'
+ * isn't using the "modern" format introduced by proposal 365,
+ * with "basic" auth and username "tor". */
+STATIC bool
+using_old_proxy_auth(const char *auth)
+{
+  auth = eat_whitespace(auth);
+  if (strcasecmpstart(auth, "Basic ")) {
+    // Not Basic.
+    return true;
+  }
+  auth += strlen("Basic ");
+  auth = eat_whitespace(auth);
+
+  ssize_t clen = base64_decode_maxsize(strlen(auth)) + 1;
+  char *credential = tor_malloc_zero(clen);
+  ssize_t n = base64_decode(credential, clen, auth, strlen(auth));
+  if (n < 0 || BUG(n >= clen)) {
+    // not base64, or somehow too long.
+    tor_free(credential);
+    return true;
+  }
+  // nul-terminate.
+  credential[n] = 0;
+
+  bool username_is_modern = ! strcmpstart(credential, "tor:");
+  tor_free(credential);
+
+  return ! username_is_modern;
+}
+
 /** Called on an HTTP CONNECT entry connection when some bytes have arrived,
  * but we have not yet received a full HTTP CONNECT request.  Try to parse an
  * HTTP CONNECT request from the connection's inbuf.  On success, set up the
@@ -3144,6 +3175,10 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   {
     char *authorization = http_get_header(headers, "Proxy-Authorization: ");
     if (authorization) {
+      if (using_old_proxy_auth(authorization)) {
+        log_warn(LD_GENERAL, "Proxy-Authorization header in legacy format. "
+                 "With modern Tor, use Basic auth with username=tor.");
+      }
       socks->username = authorization; // steal reference
       socks->usernamelen = strlen(authorization);
     }

@@ -310,6 +310,7 @@ STATIC void connection_half_edge_add(const edge_connection_t *conn,
 STATIC struct half_edge_t *connection_half_edge_find_stream_id(
                                      const smartlist_t *half_conns,
                                      streamid_t stream_id);
+STATIC bool using_old_proxy_auth(const char *auth);
 #endif /* defined(CONNECTION_EDGE_PRIVATE) */
 
 #endif /* !defined(TOR_CONNECTION_EDGE_H) */
