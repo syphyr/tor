@@ -3131,6 +3131,14 @@ connection_ap_process_http_connect(entry_connection_t *conn)
     goto err;
   }
 
+  /* Reject the request if it's trying to interact with Arti RPC. */
+  char *rpc_hdr = http_get_header(headers, "Tor-RPC-Target: ");
+  if (rpc_hdr) {
+    tor_free(rpc_hdr);
+    errmsg = "HTTP/1.0 501 Not implemented (No RPC Support)\r\n";
+    goto err;
+  }
+
   /* Abuse the 'username' and 'password' fields here. They are already an
   * abuse. */
   {
