@@ -2984,9 +2984,22 @@ connection_ap_process_natd(entry_connection_t *conn)
   return connection_ap_rewrite_and_attach_if_allowed(conn, NULL, NULL);
 }
 
+#define TOR_CAPABILITIES_HEADER \
+  "Tor-Capabilities: \r\n"
+
+#define HTTP_CONNECT_FIXED_HEADERS \
+  TOR_CAPABILITIES_HEADER \
+  "Via: tor/1.0 tor-network (tor "VERSION")\r\n"
+
+#define HTTP_OTHER_FIXED_HEADERS \
+  TOR_CAPABILITIES_HEADER \
+  "Server: tor/1.0 (tor "VERSION")\r\n"
+
 static const char HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG[] =
   "HTTP/1.0 405 Method Not Allowed\r\n"
-  "Content-Type: text/html; charset=iso-8859-1\r\n\r\n"
+  "Content-Type: text/html; charset=iso-8859-1\r\n"
+  HTTP_OTHER_FIXED_HEADERS
+  "\r\n"
   "<html>\n"
   "<head>\n"
   "<title>This is an HTTP CONNECT tunnel, not a full HTTP Proxy</title>\n"
@@ -3052,11 +3065,16 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   char *command = NULL, *addrport = NULL;
   char *addr = NULL;
   size_t bodylen = 0;
+  const char *fixed_reply_headers = HTTP_OTHER_FIXED_HEADERS;
 
   const char *errmsg = NULL;
   bool close_without_message = false;
   int rv = 0;
   bool host_is_localhost = false;
+
+  // If true, we already have a full reply, so we shouldn't add
+  // fixed headers and CRLF.
+  bool errmsg_is_complete = false;
 
   const int http_status =
     fetch_from_buf_http(ENTRY_TO_CONN(conn)->inbuf, &headers, 8192,
@@ -3092,21 +3110,24 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   if (strcasecmp(command, "connect")) {
     if (host_is_localhost) {
       errmsg = HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG;
+      errmsg_is_complete = true;
     } else {
       close_without_message = true;
     }
     goto err;
   }
 
+  fixed_reply_headers = HTTP_CONNECT_FIXED_HEADERS;
+
   tor_assert(conn->socks_request);
   socks_request_t *socks = conn->socks_request;
   uint16_t port;
   if (tor_addr_port_split(LOG_WARN, addrport, &addr, &port) < 0) {
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    errmsg = "HTTP/1.0 400 Bad Request\r\n";
     goto err;
   }
   if (strlen(addr) >= MAX_SOCKS_ADDR_LEN) {
-    errmsg = "HTTP/1.0 414 Request-URI Too Long\r\n\r\n";
+    errmsg = "HTTP/1.0 414 Request-URI Too Long\r\n";
     goto err;
   }
 
@@ -3140,10 +3161,15 @@ connection_ap_process_http_connect(entry_connection_t *conn)
 
  err:
   if (BUG(errmsg == NULL) && ! close_without_message)
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    errmsg = "HTTP/1.0 400 Bad Request\r\n";
   if (errmsg) {
     log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
     connection_buf_add(errmsg, strlen(errmsg), ENTRY_TO_CONN(conn));
+    if (!errmsg_is_complete) {
+      connection_buf_add(fixed_reply_headers, strlen(fixed_reply_headers),
+                         ENTRY_TO_CONN(conn));
+      connection_buf_add("\r\n", 2, ENTRY_TO_CONN(conn));
+    }
   } else {
     log_info(LD_EDGE, "HTTP tunnel error: closing silently");
   }
@@ -3825,9 +3851,13 @@ connection_ap_handshake_socks_reply(entry_connection_t *conn, char *reply,
        CONN_TYPE_AP_HTTP_CONNECT_LISTENER) {
     const char *response = end_reason_to_http_connect_response_line(endreason);
     if (!response) {
-      response = "HTTP/1.0 400 Bad Request\r\n\r\n";
+      response = "HTTP/1.0 400 Bad Request\r\n";
     }
     connection_buf_add(response, strlen(response), ENTRY_TO_CONN(conn));
+    connection_buf_add(HTTP_CONNECT_FIXED_HEADERS,
+                       strlen(HTTP_CONNECT_FIXED_HEADERS),
+                       ENTRY_TO_CONN(conn));
+    connection_buf_add("\r\n", 2, ENTRY_TO_CONN(conn));
   } else if (conn->socks_request->socks_version == 4) {
     memset(buf,0,SOCKS4_NETWORK_LEN);
     buf[1] = (status==SOCKS5_SUCCEEDED ? SOCKS4_GRANTED : SOCKS4_REJECT);
