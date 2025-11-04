@@ -1,0 +1,8 @@
+  o Minor features (HTTPTunnelPort):
+    - Implement new HTTPTunnelPort features for interoperability with
+      Arti's HTTP CONNECT proxy.  This work adds new headers to
+      requests to and replies from the HttpConnectPort,
+      support for OPTIONS requests, tightens the expected syntax
+      for Proxy-Authorization, and increases defense-in-depth
+      against some kinds of cross-site HTTP attacks.
+      Closes ticket 41156.  Implements proposal 365.
