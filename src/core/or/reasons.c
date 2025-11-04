@@ -468,9 +468,9 @@ end_reason_to_http_connect_response_line(int endreason)
     case END_STREAM_REASON_MISC:
       return "HTTP/1.0 500 Internal Server Error\r\n";
     case END_STREAM_REASON_RESOLVEFAILED:
-      return "HTTP/1.0 404 Not Found (resolve failed)\r\n";
+      return "HTTP/1.0 503 Service Unavailable (resolve failed)\r\n";
     case END_STREAM_REASON_NOROUTE:
-      return "HTTP/1.0 404 Not Found (no route)\r\n";
+      return "HTTP/1.0 503 Service Unavailable (no route)\r\n";
     case END_STREAM_REASON_CONNECTREFUSED:
       return "HTTP/1.0 403 Forbidden (connection refused)\r\n";
     case END_STREAM_REASON_EXITPOLICY:
