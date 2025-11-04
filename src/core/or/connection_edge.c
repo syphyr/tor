@@ -3009,6 +3009,33 @@ static const char HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG[] =
   "</body>\n"
   "</html>\n";
 
+/** Return true iff `host` is a valid host header value indicating localhost.
+ */
+static bool
+host_header_is_localhost(const char *host_value)
+{
+  char *host = NULL;
+  uint16_t port = 0;
+  tor_addr_t addr;
+  bool result;
+
+  // Note that this does not _require_ that a port was set,
+  // which is what we want.
+  if (tor_addr_port_split(LOG_DEBUG, host_value, &host, &port) < 0) {
+    return false;
+  }
+  tor_assert(host);
+
+  if (tor_addr_parse(&addr, host) == 0) {
+    result = tor_addr_is_loopback(&addr);
+  } else {
+    result = ! strcasecmp(host, "localhost");
+  }
+
+  tor_free(host);
+  return result;
+}
+
 /** Called on an HTTP CONNECT entry connection when some bytes have arrived,
  * but we have not yet received a full HTTP CONNECT request.  Try to parse an
  * HTTP CONNECT request from the connection's inbuf.  On success, set up the
@@ -3027,14 +3054,16 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   size_t bodylen = 0;
 
   const char *errmsg = NULL;
+  bool close_without_message = false;
   int rv = 0;
+  bool host_is_localhost = false;
 
   const int http_status =
     fetch_from_buf_http(ENTRY_TO_CONN(conn)->inbuf, &headers, 8192,
                         &body, &bodylen, 1024, 0);
   if (http_status < 0) {
-    /* Bad http status */
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    /* Unparseable http message.  Don't send a reply. */
+    close_without_message = true;
     goto err;
   } else if (http_status == 0) {
     /* no HTTP request yet. */
@@ -3043,13 +3072,29 @@ connection_ap_process_http_connect(entry_connection_t *conn)
 
   const int cmd_status = parse_http_command(headers, &command, &addrport);
   if (cmd_status < 0) {
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    /* Unparseable command. Don't reply. */
+    close_without_message = true;
     goto err;
   }
   tor_assert(command);
   tor_assert(addrport);
+  {
+    // Find out whether the host is localhost.  If it isn't,
+    // then either this is a connect request (which is okay)
+    // or a webpage is using DNS rebinding to try to bypass
+    // browser security (which isn't).
+    char *host = http_get_header(headers, "Host: ");
+    if (host) {
+      host_is_localhost = host_header_is_localhost(host);
+    }
+    tor_free(host);
+  }
   if (strcasecmp(command, "connect")) {
-    errmsg = HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG;
+    if (host_is_localhost) {
+      errmsg = HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG;
+    } else {
+      close_without_message = true;
+    }
     goto err;
   }
 
@@ -3094,10 +3139,14 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   goto done;
 
  err:
-  if (BUG(errmsg == NULL))
+  if (BUG(errmsg == NULL) && ! close_without_message)
     errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
-  log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
-  connection_buf_add(errmsg, strlen(errmsg), ENTRY_TO_CONN(conn));
+  if (errmsg) {
+    log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
+    connection_buf_add(errmsg, strlen(errmsg), ENTRY_TO_CONN(conn));
+  } else {
+    log_info(LD_EDGE, "HTTP tunnel error: closing silently");
+  }
   /* Mark it as "has_finished" so that we don't try to send an extra socks
    * reply. */
   conn->socks_request->has_finished = 1;
