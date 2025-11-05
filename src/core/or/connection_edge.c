@@ -2984,9 +2984,28 @@ connection_ap_process_natd(entry_connection_t *conn)
   return connection_ap_rewrite_and_attach_if_allowed(conn, NULL, NULL);
 }
 
+#define TOR_CAPABILITIES_HEADER \
+  "Tor-Capabilities: \r\n"
+
+#define HTTP_CONNECT_FIXED_HEADERS \
+  TOR_CAPABILITIES_HEADER \
+  "Via: tor/1.0 tor-network (tor "VERSION")\r\n"
+
+#define HTTP_OTHER_FIXED_HEADERS \
+  TOR_CAPABILITIES_HEADER \
+  "Server: tor/1.0 (tor "VERSION")\r\n"
+
+static const char HTTP_OPTIONS_REPLY[] =
+  "HTTP/1.0 200 OK\r\n"
+  "Allow: OPTIONS, CONNECT\r\n"
+  HTTP_OTHER_FIXED_HEADERS
+  "\r\n";
+
 static const char HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG[] =
   "HTTP/1.0 405 Method Not Allowed\r\n"
-  "Content-Type: text/html; charset=iso-8859-1\r\n\r\n"
+  "Content-Type: text/html; charset=iso-8859-1\r\n"
+  HTTP_OTHER_FIXED_HEADERS
+  "\r\n"
   "<html>\n"
   "<head>\n"
   "<title>This is an HTTP CONNECT tunnel, not a full HTTP Proxy</title>\n"
@@ -3009,6 +3028,64 @@ static const char HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG[] =
   "</body>\n"
   "</html>\n";
 
+/** Return true iff `host` is a valid host header value indicating localhost.
+ */
+static bool
+host_header_is_localhost(const char *host_value)
+{
+  char *host = NULL;
+  uint16_t port = 0;
+  tor_addr_t addr;
+  bool result;
+
+  // Note that this does not _require_ that a port was set,
+  // which is what we want.
+  if (tor_addr_port_split(LOG_DEBUG, host_value, &host, &port) < 0) {
+    return false;
+  }
+  tor_assert(host);
+
+  if (tor_addr_parse(&addr, host) == 0) {
+    result = tor_addr_is_loopback(&addr);
+  } else {
+    result = ! strcasecmp(host, "localhost");
+  }
+
+  tor_free(host);
+  return result;
+}
+
+/** Return true if the Proxy-Authorization header  present in 'auth'
+ * isn't using the "modern" format introduced by proposal 365,
+ * with "basic" auth and username "tor". */
+STATIC bool
+using_old_proxy_auth(const char *auth)
+{
+  auth = eat_whitespace(auth);
+  if (strcasecmpstart(auth, "Basic ")) {
+    // Not Basic.
+    return true;
+  }
+  auth += strlen("Basic ");
+  auth = eat_whitespace(auth);
+
+  ssize_t clen = base64_decode_maxsize(strlen(auth)) + 1;
+  char *credential = tor_malloc_zero(clen);
+  ssize_t n = base64_decode(credential, clen, auth, strlen(auth));
+  if (n < 0 || BUG(n >= clen)) {
+    // not base64, or somehow too long.
+    tor_free(credential);
+    return true;
+  }
+  // nul-terminate.
+  credential[n] = 0;
+
+  bool username_is_modern = ! strcmpstart(credential, "tor:");
+  tor_free(credential);
+
+  return ! username_is_modern;
+}
+
 /** Called on an HTTP CONNECT entry connection when some bytes have arrived,
  * but we have not yet received a full HTTP CONNECT request.  Try to parse an
  * HTTP CONNECT request from the connection's inbuf.  On success, set up the
@@ -3025,16 +3102,26 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   char *command = NULL, *addrport = NULL;
   char *addr = NULL;
   size_t bodylen = 0;
+  const char *fixed_reply_headers = HTTP_OTHER_FIXED_HEADERS;
 
   const char *errmsg = NULL;
+  bool close_without_message = false;
   int rv = 0;
+  bool host_is_localhost = false;
+
+  // If true, we already have a full reply, so we shouldn't add
+  // fixed headers and CRLF.
+  bool errmsg_is_complete = false;
+  // If true, we're sending a fixed reply as an errmsg,
+  // but technically this isn't an error so we shouldn't log.
+  bool skip_error_log = false;
 
   const int http_status =
     fetch_from_buf_http(ENTRY_TO_CONN(conn)->inbuf, &headers, 8192,
                         &body, &bodylen, 1024, 0);
   if (http_status < 0) {
-    /* Bad http status */
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    /* Unparseable http message.  Don't send a reply. */
+    close_without_message = true;
     goto err;
   } else if (http_status == 0) {
     /* no HTTP request yet. */
@@ -3043,25 +3130,68 @@ connection_ap_process_http_connect(entry_connection_t *conn)
 
   const int cmd_status = parse_http_command(headers, &command, &addrport);
   if (cmd_status < 0) {
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    /* Unparseable command. Don't reply. */
+    close_without_message = true;
     goto err;
   }
   tor_assert(command);
   tor_assert(addrport);
-  if (strcasecmp(command, "connect")) {
-    errmsg = HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG;
+  {
+    // Find out whether the host is localhost.  If it isn't,
+    // then either this is a connect request (which is okay)
+    // or a webpage is using DNS rebinding to try to bypass
+    // browser security (which isn't).
+    char *host = http_get_header(headers, "Host: ");
+    if (host) {
+      host_is_localhost = host_header_is_localhost(host);
+    }
+    tor_free(host);
+  }
+  if (!strcasecmp(command, "options") && host_is_localhost) {
+    errmsg = HTTP_OPTIONS_REPLY;
+    errmsg_is_complete = true;
+
+    // TODO: We could in theory make sure that the target
+    // is a host or is *.
+    // TODO: We could in theory make sure that the body is empty.
+    // (And we would have to, if we ever support HTTP/1.1.)
+
+    // This is not actually an error, but the error handling
+    // does the right operations here (send the reply,
+    // mark the connection).
+    skip_error_log = true;
+
     goto err;
   }
+  if (strcasecmp(command, "connect")) {
+    if (host_is_localhost) {
+      errmsg = HTTP_CONNECT_IS_NOT_AN_HTTP_PROXY_MSG;
+      errmsg_is_complete = true;
+    } else {
+      close_without_message = true;
+    }
+    goto err;
+  }
+
+  fixed_reply_headers = HTTP_CONNECT_FIXED_HEADERS;
 
   tor_assert(conn->socks_request);
   socks_request_t *socks = conn->socks_request;
   uint16_t port;
   if (tor_addr_port_split(LOG_WARN, addrport, &addr, &port) < 0) {
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
+    errmsg = "HTTP/1.0 400 Bad Request\r\n";
     goto err;
   }
   if (strlen(addr) >= MAX_SOCKS_ADDR_LEN) {
-    errmsg = "HTTP/1.0 414 Request-URI Too Long\r\n\r\n";
+    errmsg = "HTTP/1.0 414 Request-URI Too Long\r\n";
+    goto err;
+  }
+
+  /* Reject the request if it's trying to interact with Arti RPC. */
+  char *rpc_hdr = http_get_header(headers, "Tor-RPC-Target: ");
+  if (rpc_hdr) {
+    tor_free(rpc_hdr);
+    errmsg = "HTTP/1.0 501 Not implemented (No RPC Support)\r\n";
     goto err;
   }
 
@@ -3070,13 +3200,30 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   {
     char *authorization = http_get_header(headers, "Proxy-Authorization: ");
     if (authorization) {
+      if (using_old_proxy_auth(authorization)) {
+        log_warn(LD_GENERAL, "Proxy-Authorization header in legacy format. "
+                 "With modern Tor, use Basic auth with username=tor.");
+      }
       socks->username = authorization; // steal reference
       socks->usernamelen = strlen(authorization);
     }
-    char *isolation = http_get_header(headers, "X-Tor-Stream-Isolation: ");
-    if (isolation) {
-      socks->password = isolation; // steal reference
-      socks->passwordlen = strlen(isolation);
+    char *isolation = http_get_header(headers, "Tor-Stream-Isolation: ");
+    char *x_isolation = http_get_header(headers, "X-Tor-Stream-Isolation: ");
+    if (isolation || x_isolation) {
+      // We need to cram both of these headers into a single
+      // password field.  Using a delimiter like this is a bit ugly,
+      // but the only ones who can confuse it are the applications,
+      // whom we are trusting get their own isolation right.
+      const char DELIM[] = "\x01\xff\x01\xff";
+      tor_asprintf(&socks->password,
+                   "%s%s%s",
+                   isolation?isolation:"",
+                   DELIM,
+                   x_isolation?x_isolation:"");
+      tor_free(isolation);
+      tor_free(x_isolation);
+
+      socks->passwordlen = strlen(socks->password);
     }
   }
 
@@ -3094,10 +3241,21 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   goto done;
 
  err:
-  if (BUG(errmsg == NULL))
-    errmsg = "HTTP/1.0 400 Bad Request\r\n\r\n";
-  log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
-  connection_buf_add(errmsg, strlen(errmsg), ENTRY_TO_CONN(conn));
+  if (BUG(errmsg == NULL) && ! close_without_message)
+    errmsg = "HTTP/1.0 400 Bad Request\r\n";
+  if (errmsg) {
+    if (!skip_error_log)
+      log_info(LD_EDGE, "HTTP tunnel error: saying %s", escaped(errmsg));
+    connection_buf_add(errmsg, strlen(errmsg), ENTRY_TO_CONN(conn));
+    if (!errmsg_is_complete) {
+      connection_buf_add(fixed_reply_headers, strlen(fixed_reply_headers),
+                         ENTRY_TO_CONN(conn));
+      connection_buf_add("\r\n", 2, ENTRY_TO_CONN(conn));
+    }
+  } else {
+    if (!skip_error_log)
+      log_info(LD_EDGE, "HTTP tunnel error: closing silently");
+  }
   /* Mark it as "has_finished" so that we don't try to send an extra socks
    * reply. */
   conn->socks_request->has_finished = 1;
@@ -3776,9 +3934,13 @@ connection_ap_handshake_socks_reply(entry_connection_t *conn, char *reply,
        CONN_TYPE_AP_HTTP_CONNECT_LISTENER) {
     const char *response = end_reason_to_http_connect_response_line(endreason);
     if (!response) {
-      response = "HTTP/1.0 400 Bad Request\r\n\r\n";
+      response = "HTTP/1.0 400 Bad Request\r\n";
     }
     connection_buf_add(response, strlen(response), ENTRY_TO_CONN(conn));
+    connection_buf_add(HTTP_CONNECT_FIXED_HEADERS,
+                       strlen(HTTP_CONNECT_FIXED_HEADERS),
+                       ENTRY_TO_CONN(conn));
+    connection_buf_add("\r\n", 2, ENTRY_TO_CONN(conn));
   } else if (conn->socks_request->socks_version == 4) {
     memset(buf,0,SOCKS4_NETWORK_LEN);
     buf[1] = (status==SOCKS5_SUCCEEDED ? SOCKS4_GRANTED : SOCKS4_REJECT);
