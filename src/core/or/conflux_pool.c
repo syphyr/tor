@@ -1489,8 +1489,11 @@ unlinked_circuit_closed(circuit_t *circ)
   /* If no more legs, opportunistically free the unlinked set. */
   if (smartlist_len(unlinked->legs) == 0) {
     unlinked_pool_del_and_free(unlinked, is_client);
-  } else if (!shutting_down) {
-    /* Launch a new leg for this set to recover. */
+  } else if (!shutting_down && !have_been_under_memory_pressure()) {
+    /* Launch a new leg for this set to recover if we are not shutting down or
+     * if we are not under memory pressure. We must not launch legs under
+     * memory pressure else it can just create a feedback loop of being closed
+     * by the OOM handler and relaunching, rinse and repeat. */
     if (CIRCUIT_IS_ORIGIN(circ)) {
       conflux_launch_leg(nonce);
     }
