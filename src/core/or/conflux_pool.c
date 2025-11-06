@@ -1162,10 +1162,22 @@ conflux_launch_leg(const uint8_t *nonce)
   origin_circuit_t *circ =
     circuit_establish_circuit_conflux(nonce, CIRCUIT_PURPOSE_CONFLUX_UNLINKED,
                                       exit, flags);
-  if (!circ) {
+
+  /* The above call to establish a circuit can send us back a closed
+   * circuit if the OOM handler closes this very circuit while in that
+   * function. OOM handler runs everytime we queue a cell on a circuit which
+   * the above function does with the CREATE cell.
+   *
+   * The BUG() checks after are in the same spirit which is that there are so
+   * many things that can happen in that establish circuit function that we
+   * ought to make sure we have a valid nonce and a valid conflux object. */
+  if (!circ || TO_CIRCUIT(circ)->marked_for_close) {
     goto err;
   }
-  tor_assert(TO_CIRCUIT(circ)->conflux_pending_nonce);
+  /* We think this won't happen but it might. The maze is powerful. #41155 */
+  if (BUG(!TO_CIRCUIT(circ)->conflux_pending_nonce || !unlinked->cfx)) {
+    goto err;
+  }
 
   /* At this point, the unlinked object has either a new conflux_t or the one
    * used by a linked set so it is fine to use the cfx from the unlinked object
