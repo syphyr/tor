@@ -885,6 +885,18 @@ conflux_process_cell(conflux_t *cfx, circuit_t *in_circ,
     circuit_mark_for_close(in_circ, END_CIRC_REASON_INTERNAL);
     return false;
   } else {
+    uint32_t n_bytes_in_q = smartlist_len(cfx->ooo_q) * sizeof(conflux_cell_t);
+    if (n_bytes_in_q >= conflux_params_get_max_oooq()) {
+      /* Log rate limit every hour. In heavy DDoS scenario, this could be
+       * triggered many times so avoid the spam. */
+      static ratelim_t rlimit = RATELIM_INIT(60 * 60);
+      log_fn_ratelim(&rlimit, LOG_WARN, LD_CIRC,
+                     "Conflux OOO queue is at maximum. Currently at "
+                     "%u bytes, maximum allowed is %u bytes. Closing.",
+                     n_bytes_in_q, conflux_params_get_max_oooq());
+      circuit_mark_for_close(in_circ, END_CIRC_REASON_RESOURCELIMIT);
+      return false;
+    }
     conflux_cell_t *c_cell = tor_malloc_zero(sizeof(conflux_cell_t));
     c_cell->seq = leg->last_seq_recv;
 
