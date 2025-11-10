@@ -1461,11 +1461,6 @@ unlinked_circuit_closed(circuit_t *circ)
   /* This circuit is part of set that has already been removed previously freed
    * by another leg closing. */
   if (!unlinked) {
-    /* This circuit is not Conflux related anymore regardless of its purpose so
-     * remove the pending nonce so after this function, the circuit is not
-     * considered conflux with CIRCUIT_IS_CONFLUX(). */
-    tor_free(circ->conflux_pending_nonce);
-    circ->conflux_pending_nonce = NULL;
     return;
   }
 
