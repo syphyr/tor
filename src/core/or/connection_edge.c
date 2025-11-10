@@ -3241,7 +3241,7 @@ connection_ap_process_http_connect(entry_connection_t *conn)
   goto done;
 
  err:
-  if (BUG(errmsg == NULL) && ! close_without_message)
+  if (! close_without_message && BUG(errmsg == NULL))
     errmsg = "HTTP/1.0 400 Bad Request\r\n";
   if (errmsg) {
     if (!skip_error_log)
