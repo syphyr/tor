@@ -1,0 +1,4 @@
+  o Minor bugfixes (conflux fragile asserts):
+    - Fix the root cause of some conflux fragile asserts
+      when a control port listener is attached. Fixes bug 41037;
+      bugfix on 0.4.8.16.
