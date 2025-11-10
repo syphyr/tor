@@ -1,5 +1,0 @@
-  o Minor bugfixes (conflux, relay):
-    - Fix a series of conflux edge cases about sequence number arithmetic and
-      OOM handler kicking in under heavy memory pressure. Fixes bug 41155;
-      bugfix on 0.4.8.4.
-
