@@ -2988,6 +2988,9 @@ cell_queues_check_size(void)
 int
 have_been_under_memory_pressure(void)
 {
+  if (last_time_under_memory_pressure == 0) {
+    return false;
+  }
   return last_time_under_memory_pressure + MEMORY_PRESSURE_INTERVAL
     < approx_time();
 }
