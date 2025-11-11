@@ -511,9 +511,27 @@ conflux_decide_circ_for_send(conflux_t *cfx,
       uint64_t relative_seq = cfx->prev_leg->last_seq_sent -
                               cfx->curr_leg->last_seq_sent;
 
-      tor_assert(cfx->prev_leg->last_seq_sent >=
-                 cfx->curr_leg->last_seq_sent);
-      conflux_send_switch_command(cfx->curr_leg->circ, relative_seq);
+      if (cfx->curr_leg->last_seq_sent > cfx->prev_leg->last_seq_sent) {
+        /* Having incoherent sequence numbers, log warn about it but rate limit
+         * it to every hour so we avoid redundent report. */
+        static ratelim_t rlimit = RATELIM_INIT(60 * 60);
+        log_fn_ratelim(&rlimit, LOG_WARN, LD_BUG,
+                       "Current conflux leg last_seq_sent=%"PRIu64
+                       " is above previous leg at %" PRIu64 ". Closing set.",
+                       cfx->curr_leg->last_seq_sent,
+                       cfx->prev_leg->last_seq_sent);
+        conflux_mark_all_for_close(cfx->nonce, CIRCUIT_IS_ORIGIN(new_circ),
+                                   END_CIRC_REASON_TORPROTOCOL);
+        return NULL;
+      }
+
+      /* On failure to send the SWITCH, we close everything. This means we have
+       * a protocol error or the sending failed and the circuit is closed. */
+      if (!conflux_send_switch_command(cfx->curr_leg->circ, relative_seq)) {
+        conflux_mark_all_for_close(cfx->nonce, CIRCUIT_IS_ORIGIN(new_circ),
+                                   END_CIRC_REASON_TORPROTOCOL);
+        return NULL;
+      }
       cfx->curr_leg->last_seq_sent = cfx->prev_leg->last_seq_sent;
     }
   }
@@ -879,6 +897,18 @@ conflux_process_relay_msg(conflux_t *cfx, circuit_t *in_circ,
     circuit_mark_for_close(in_circ, END_CIRC_REASON_INTERNAL);
     return false;
   } else {
+    /* Both cost and param are in bytes. */
+    if (cfx->ooo_q_alloc_cost >= conflux_params_get_max_oooq()) {
+      /* Log rate limit every hour. In heavy DDoS scenario, this could be
+       * triggered many times so avoid the spam. */
+      static ratelim_t rlimit = RATELIM_INIT(60 * 60);
+      log_fn_ratelim(&rlimit, LOG_WARN, LD_CIRC,
+                     "Conflux OOO queue is at maximum. Currently at "
+                     "%lu bytes, maximum allowed is %u bytes. Closing.",
+                     cfx->ooo_q_alloc_cost, conflux_params_get_max_oooq());
+      circuit_mark_for_close(in_circ, END_CIRC_REASON_RESOURCELIMIT);
+      return false;
+    }
     conflux_msg_t *c_msg = tor_malloc_zero(sizeof(conflux_msg_t));
     c_msg->seq = leg->last_seq_recv;
     /* Notice the copy here. Reason is that we don't have ownership of the
