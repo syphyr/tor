@@ -131,23 +131,6 @@ debian-minimal:
   script:
     - ./scripts/ci/ci-driver.sh
 
-# Minimal check on debian/i386: just make, make check.
-#
-debian-i386-minimal:
-  # TODO: Use a TPA-maintained image when there is one.
-  # See https://gitlab.torproject.org/tpo/tpa/base-images/-/issues/3
-  #
-  # XXX: Seems that anything else than Bullseye is making
-  # "src/test/test_include.sh" test to fail. For now, keep bullseye until we
-  # figure this out.
-  image:
-    name: i386/debian:bullseye
-    docker:
-      platform: linux/386
-  <<: *debian-template
-  script:
-    - ./scripts/ci/ci-driver.sh
-
 #####
 # Run "make check" with a hardened clang on debian stable.  This takes
 # care of a hardening check, and a compile-with-clang check.
