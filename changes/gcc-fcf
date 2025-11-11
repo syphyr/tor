@@ -1,3 +1,4 @@
   o Minor feature (compiler flag):
     - Add -fcf-protection=full if supported by the compiler. Fixes 41139.
+    - Add -mbranch-protection=standard for arm64.
 
