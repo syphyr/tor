@@ -1504,6 +1504,8 @@ TOR_CHECK_CFLAGS(-fasynchronous-unwind-tables)
 # intended to protect against such threats as Return-oriented Programming
 # (ROP), and similarly call/jmp-oriented programming (COP/JOP).
 TOR_CHECK_CFLAGS(-fcf-protection=full)
+# The equivalent for arm64 (#41139)
+TOR_CHECK_CFLAGS(-mbranch-protection=standard)
 
 dnl ============================================================
 dnl Check for libseccomp
