@@ -1,0 +1,6 @@
+  o Minor features (security, reliability):
+    - When KeepaliveIsolateSOCKSAuth is keeping a circuit alive,
+      expire the circuit based on when it was last in use for any stream,
+      not (as we did before) based on when a stream was last attached to it.
+      Closes ticket 41157. Implements a minimal version of
+      Proposal 368.

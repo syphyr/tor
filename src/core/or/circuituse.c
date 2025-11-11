@@ -79,6 +79,8 @@
 
 STATIC void circuit_expire_old_circuits_clientside(void);
 static void circuit_increment_failure_count(void);
+static bool connection_ap_socks_iso_keepalive_enabled(
+    const entry_connection_t *);
 
 /** Check whether the hidden service destination of the stream at
  *  <b>edge_conn</b> is the same as the destination of the circuit at
@@ -1357,6 +1359,7 @@ void
 circuit_detach_stream(circuit_t *circ, edge_connection_t *conn)
 {
   edge_connection_t *prevconn;
+  bool update_dirty = false;
 
   tor_assert(circ);
   tor_assert(conn);
@@ -1364,6 +1367,9 @@ circuit_detach_stream(circuit_t *circ, edge_connection_t *conn)
   if (conn->base_.type == CONN_TYPE_AP) {
     entry_connection_t *entry_conn = EDGE_TO_ENTRY_CONN(conn);
     entry_conn->may_use_optimistic_data = 0;
+    // When KeepAliveIsolateSOCKSAuth is in effect, we update the dirty
+    // time on close as well as on open.
+    update_dirty = connection_ap_socks_iso_keepalive_enabled(entry_conn);
   }
   conn->cpath_layer = NULL; /* don't keep a stale pointer */
   conn->on_circuit = NULL;
@@ -1388,6 +1394,10 @@ circuit_detach_stream(circuit_t *circ, edge_connection_t *conn)
     if (removed) {
       log_debug(LD_APP, "Removing stream %d from circ %u",
                 conn->stream_id, (unsigned)circ->n_circ_id);
+
+      if (update_dirty) {
+        circ->timestamp_dirty = approx_time();
+      }
 
       /* If the stream was removed, and it was a rend stream, decrement the
        * number of streams on the circuit associated with the rend service.
@@ -2745,6 +2755,20 @@ consider_recording_trackhost(const entry_connection_t *conn,
                       ADDRMAPSRC_TRACKEXIT, 0, 0, stream_id);
 }
 
+/**
+ * Return true if <b>conn</b> is configured with KeepaliveIsolateSOCKSAuth,
+ * and it has its socks isolation set.
+ */
+static bool
+connection_ap_socks_iso_keepalive_enabled(const entry_connection_t *conn)
+{
+  return conn &&
+    conn->socks_request &&
+    (conn->entry_cfg.isolation_flags & ISO_SOCKSAUTH) &&
+    (conn->entry_cfg.socks_iso_keep_alive) &&
+    (conn->socks_request->usernamelen || conn->socks_request->passwordlen);
+}
+
 /** Attempt to attach the connection <b>conn</b> to <b>circ</b>, and send a
  * begin or resolve cell as appropriate.  Return values are as for
  * connection_ap_handshake_attach_circuit.  The stream will exit from the hop
@@ -2766,10 +2790,7 @@ connection_ap_handshake_attach_chosen_circuit(entry_connection_t *conn,
   base_conn->state = AP_CONN_STATE_CIRCUIT_WAIT;
 
   if (!circ->base_.timestamp_dirty ||
-      ((conn->entry_cfg.isolation_flags & ISO_SOCKSAUTH) &&
-       (conn->entry_cfg.socks_iso_keep_alive) &&
-       (conn->socks_request->usernamelen ||
-        conn->socks_request->passwordlen))) {
+      connection_ap_socks_iso_keepalive_enabled(conn)) {
     /* When stream isolation is in use and controlled by an application
      * we are willing to keep using the stream. */
     circ->base_.timestamp_dirty = approx_time();
