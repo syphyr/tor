@@ -879,9 +879,11 @@ conflux_process_cell(conflux_t *cfx, circuit_t *in_circ,
      * now be checked for remaining elements */
     cfx->last_seq_delivered++;
     return true;
-  } else if (BUG(leg->last_seq_recv <= cfx->last_seq_delivered)) {
-    log_warn(LD_BUG, "Got a conflux cell with a sequence number "
-             "less than the last delivered. Closing circuit.");
+  } else if (leg->last_seq_recv <= cfx->last_seq_delivered) {
+    /* Anyone can mangle these sequence number. */
+    log_fn(LOG_PROTOCOL_WARN, LD_BUG,
+           "Got a conflux cell with a sequence number "
+           "less than the last delivered. Closing circuit.");
     circuit_mark_for_close(in_circ, END_CIRC_REASON_INTERNAL);
     return false;
   } else {
