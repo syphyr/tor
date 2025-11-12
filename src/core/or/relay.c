@@ -2173,7 +2173,7 @@ connection_edge_process_relay_cell(cell_t *cell, circuit_t *circ,
       }
 
       /* Now, check queue for more */
-      while ((c_cell = conflux_dequeue_cell(circ->conflux))) {
+      while ((c_cell = conflux_dequeue_cell(circ))) {
         relay_header_unpack(&rh, c_cell->cell.payload);
         conn = relay_lookup_conn(circ, &c_cell->cell, CELL_DIRECTION_OUT,
                                  layer_hint);
