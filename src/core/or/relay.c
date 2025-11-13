@@ -2985,14 +2985,11 @@ cell_queues_check_size(void)
 
 /** Return true if we've been under memory pressure in the last
  * MEMORY_PRESSURE_INTERVAL seconds. */
-int
+bool
 have_been_under_memory_pressure(void)
 {
-  if (last_time_under_memory_pressure == 0) {
-    return false;
-  }
-  return last_time_under_memory_pressure + MEMORY_PRESSURE_INTERVAL
-    < approx_time();
+  return approx_time() <
+         last_time_under_memory_pressure + MEMORY_PRESSURE_INTERVAL;
 }
 
 /**
