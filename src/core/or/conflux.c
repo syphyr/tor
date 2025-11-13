@@ -904,7 +904,7 @@ conflux_process_relay_msg(conflux_t *cfx, circuit_t *in_circ,
       static ratelim_t rlimit = RATELIM_INIT(60 * 60);
       log_fn_ratelim(&rlimit, LOG_WARN, LD_CIRC,
                      "Conflux OOO queue is at maximum. Currently at "
-                     "%lu bytes, maximum allowed is %u bytes. Closing.",
+                     "%zu bytes, maximum allowed is %u bytes. Closing.",
                      cfx->ooo_q_alloc_cost, conflux_params_get_max_oooq());
       circuit_mark_for_close(in_circ, END_CIRC_REASON_RESOURCELIMIT);
       return false;
