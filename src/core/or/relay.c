@@ -641,17 +641,13 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
     circ = conflux_decide_circ_for_send(orig_circ->conflux, orig_circ,
                                         relay_command);
     if (!circ) {
-      log_warn(LD_BUG, "No circuit to send for conflux for relay command %d, "
-               "called from %s:%d", relay_command, filename, lineno);
-      conflux_log_set(LOG_WARN, orig_circ->conflux,
-                       CIRCUIT_IS_ORIGIN(orig_circ));
-      circ = orig_circ;
-    } else {
-      /* Conflux circuits always send multiplexed relay commands to
-       * to the last hop. (Non-multiplexed commands go on their
-       * original circuit and hop). */
-      cpath_layer = conflux_get_destination_hop(circ);
+      /* Something is wrong with the conflux set. We are done. */
+      return -1;
     }
+    /* Conflux circuits always send multiplexed relay commands to
+     * to the last hop. (Non-multiplexed commands go on their
+     * original circuit and hop). */
+    cpath_layer = conflux_get_destination_hop(circ);
   }
 
   /* This is possible because we have protocol error paths when deciding the
