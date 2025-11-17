@@ -589,17 +589,13 @@ relay_send_command_from_edge_,(streamid_t stream_id, circuit_t *orig_circ,
     circ = conflux_decide_circ_for_send(orig_circ->conflux, orig_circ,
                                         relay_command);
     if (!circ) {
-      log_warn(LD_BUG, "No circuit to send for conflux for relay command %d, "
-               "called from %s:%d", relay_command, filename, lineno);
-      conflux_log_set(LOG_WARN, orig_circ->conflux,
-                       CIRCUIT_IS_ORIGIN(orig_circ));
-      circ = orig_circ;
-    } else {
-      /* Conflux circuits always send multiplexed relay commands to
-       * to the last hop. (Non-multiplexed commands go on their
-       * original circuit and hop). */
-      cpath_layer = conflux_get_destination_hop(circ);
+      /* Something is wrong with the conflux set. We are done. */
+      return -1;
     }
+    /* Conflux circuits always send multiplexed relay commands to
+     * to the last hop. (Non-multiplexed commands go on their
+     * original circuit and hop). */
+    cpath_layer = conflux_get_destination_hop(circ);
   }
 
   /* This is possible because we have protocol error paths when deciding the
@@ -2118,7 +2114,7 @@ connection_edge_process_relay_cell(const relay_msg_t *msg, circuit_t *circ,
       }
 
       /* Now, check queue for more */
-      while ((c_msg = conflux_dequeue_relay_msg(circ->conflux))) {
+      while ((c_msg = conflux_dequeue_relay_msg(circ))) {
         conn = relay_lookup_conn(circ, c_msg->msg, CELL_DIRECTION_OUT,
                                  layer_hint);
         ret = connection_edge_process_ordered_relay_cell(c_msg->msg, circ,
@@ -2930,14 +2926,11 @@ cell_queues_check_size(void)
 
 /** Return true if we've been under memory pressure in the last
  * MEMORY_PRESSURE_INTERVAL seconds. */
-int
+bool
 have_been_under_memory_pressure(void)
 {
-  if (last_time_under_memory_pressure == 0) {
-    return false;
-  }
-  return last_time_under_memory_pressure + MEMORY_PRESSURE_INTERVAL
-    < approx_time();
+  return approx_time() <
+         last_time_under_memory_pressure + MEMORY_PRESSURE_INTERVAL;
 }
 
 /**
