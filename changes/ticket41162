@@ -1,5 +1,0 @@
-  o Major bugfixes (conflux, exit):
-    - When dequeuing out-of-order conflux cells, the circuit could be close in
-      between two dequeue which could lead to a mishandling of a NULL pointer.
-      Fixes bug 41162; bugfix on 0.4.8.4.
-

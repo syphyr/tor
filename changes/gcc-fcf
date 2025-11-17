@@ -1,3 +1,0 @@
-  o Minor feature (compiler flag):
-    - Add -mbranch-protection=standard for arm64.
-
