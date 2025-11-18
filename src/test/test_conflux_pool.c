@@ -336,7 +336,7 @@ simulate_single_hop_extend(origin_circuit_t *client, int exit)
 {
   char whatevs_key[CPATH_KEY_MATERIAL_LEN];
   char digest[DIGEST_LEN];
-  tor_addr_t addr;
+  tor_addr_t addr = TOR_ADDR_NULL;
 
   // Advance time a tiny bit so we can calculate an RTT
   curr_mocked_time += 10 * TOR_NSEC_PER_MSEC;

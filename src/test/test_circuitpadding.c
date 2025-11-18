@@ -1588,7 +1588,7 @@ simulate_single_hop_extend(circuit_t *client, circuit_t *mid_relay,
 {
   char whatevs_key[CPATH_KEY_MATERIAL_LEN];
   char digest[DIGEST_LEN];
-  tor_addr_t addr;
+  tor_addr_t addr = TOR_ADDR_NULL;
 
   // Pretend a non-padding cell was sent
   circpad_cell_event_nonpadding_sent(client);

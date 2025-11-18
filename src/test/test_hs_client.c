@@ -1094,7 +1094,7 @@ test_socks_hs_errors(void *arg)
   char *desc_encoded = NULL;
   circuit_t *circ = NULL;
   origin_circuit_t *ocirc = NULL;
-  tor_addr_t addr;
+  tor_addr_t addr = TOR_ADDR_NULL;
   ed25519_keypair_t service_kp;
   ed25519_keypair_t signing_kp;
   entry_connection_t *socks_conn = NULL;
@@ -1268,7 +1268,7 @@ test_close_intro_circuit_failure(void *arg)
   circuit_t *circ = NULL;
   ed25519_keypair_t service_kp, intro_kp;
   origin_circuit_t *ocirc = NULL;
-  tor_addr_t addr;
+  tor_addr_t addr = TOR_ADDR_NULL;
   const hs_cache_intro_state_t *entry;
 
   (void) arg;
