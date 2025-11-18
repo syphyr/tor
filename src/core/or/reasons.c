@@ -23,7 +23,11 @@
 /***************************** Edge (stream) reasons **********************/
 
 /** Convert the reason for ending a stream <b>reason</b> into the format used
- * in STREAM events. Return NULL if the reason is unrecognized. */
+ * in STREAM events. Return NULL if the reason is unrecognized.
+ *
+ * Note: For all specified remote reasons that can occur in a Relay END
+ * message, these are the same as the specified name of the END reason.
+ */
 const char *
 stream_end_reason_to_control_string(int reason)
 {
