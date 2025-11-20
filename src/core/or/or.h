@@ -297,7 +297,6 @@ is_known_relay_command(const uint8_t cmd)
 #define END_STREAM_REASON_CONNRESET 12
 #define END_STREAM_REASON_TORPROTOCOL 13
 #define END_STREAM_REASON_NOTDIRECTORY 14
-#define END_STREAM_REASON_ENTRYPOLICY 15
 
 /* These high-numbered end reasons are not part of the official spec,
  * and are not intended to be put in relay end cells. They are here
@@ -326,6 +325,11 @@ is_known_relay_command(const uint8_t cmd)
  * way we can't handle.
  */
 #define END_STREAM_REASON_HTTPPROTOCOL 263
+/**
+ * The user has asked us to do something that we reject
+ * (Like connecting to a plaintext port, or violating OnionTrafficOnly.)
+ **/
+#define END_STREAM_REASON_ENTRYPOLICY 264
 
 /** Bitwise-and this value with endreason to mask out all flags. */
 #define END_STREAM_REASON_MASK 511
