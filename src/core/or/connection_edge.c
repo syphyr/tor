@@ -3942,6 +3942,17 @@ connection_ap_handshake_socks_reply(entry_connection_t *conn, char *reply,
     connection_buf_add(HTTP_CONNECT_FIXED_HEADERS,
                        strlen(HTTP_CONNECT_FIXED_HEADERS),
                        ENTRY_TO_CONN(conn));
+    if (endreason) {
+      bool reason_is_remote = (endreason & END_STREAM_REASON_MASK) < 256;
+      const char *reason = stream_end_reason_to_control_string(endreason);
+      if (reason) {
+        const char *prefix = reason_is_remote ? "end" : "c-tor";
+        tor_snprintf(buf, sizeof(buf),
+                     "Tor-Request-Failed: %s/%s\r\n",
+                     prefix, reason);
+        connection_buf_add(buf, strlen(buf), ENTRY_TO_CONN(conn));
+      }
+    }
     connection_buf_add("\r\n", 2, ENTRY_TO_CONN(conn));
   } else if (conn->socks_request->socks_version == 4) {
     memset(buf,0,SOCKS4_NETWORK_LEN);
