@@ -1,0 +1,5 @@
+  o Minor bugfixes (spec conformance):
+    - Do not treat "15" as a recognized remote END reason code.
+      Formerly, we treated it as synonymous with a local ENTRYPOLICY,
+      which isn't a valid remote code at all.
+      Fixes bug 41171; bugfix on 0.2.0.8-alpha.
