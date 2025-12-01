@@ -1,0 +1,9 @@
+  o Minor features (linux seccomp2 sandbox):
+    - Allow the fstatat64 and statx syscalls on i386 architecture when
+      glibc >= 2.33. On i386, glibc uses fstatat64 instead of newfstatat
+      for stat operations, and statx for time64 support. Without this,
+      SIGHUP configuration reload fails when using sandbox mode with
+      %include directives on i386 with Debian Bookworm or newer.
+    - Allow the lstat64 syscall on i386 architecture. This syscall is used
+      by glob() in glibc 2.36+ when processing %include directives with
+      directory patterns.

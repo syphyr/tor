@@ -289,6 +289,10 @@ static int filter_nopar_gen[] = {
     // getaddrinfo uses this..
     SCMP_SYS(stat64),
 #endif
+#ifdef __NR_lstat64
+    // glob uses this on i386 with glibc 2.36+
+    SCMP_SYS(lstat64),
+#endif
 
 #ifdef __NR_getrandom
     SCMP_SYS(getrandom),
@@ -2019,6 +2023,25 @@ add_noparam_filter(scmp_filter_ctx ctx)
     rc = seccomp_rule_add_0(ctx, SCMP_ACT_ALLOW, SCMP_SYS(newfstatat));
     if (rc != 0) {
       log_err(LD_BUG,"(Sandbox) failed to add newfstatat() syscall; "
+          "received libseccomp error %d", rc);
+      return rc;
+    }
+#elif defined(__NR_fstatat64)
+    // On i386, glibc uses fstatat64 instead of newfstatat.
+    // This is needed for glob() and stat() operations on 32-bit systems.
+    rc = seccomp_rule_add_0(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstatat64));
+    if (rc != 0) {
+      log_err(LD_BUG,"(Sandbox) failed to add fstatat64() syscall; "
+          "received libseccomp error %d", rc);
+      return rc;
+    }
+#endif
+#if defined(__i386__) && defined(__NR_statx)
+    // On i386 with glibc 2.33+, statx may be used for time64 support.
+    // glob() in glibc 2.36+ uses statx for directory traversal.
+    rc = seccomp_rule_add_0(ctx, SCMP_ACT_ALLOW, SCMP_SYS(statx));
+    if (rc != 0) {
+      log_err(LD_BUG,"(Sandbox) failed to add statx() syscall; "
           "received libseccomp error %d", rc);
       return rc;
     }
