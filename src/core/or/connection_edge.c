@@ -3057,7 +3057,7 @@ host_header_is_localhost(const char *host_value)
   return result;
 }
 
-/** Return true if the Proxy-Authorization header  present in 'auth'
+/** Return true if the Proxy-Authorization header present in <b>auth</b>
  * isn't using the "modern" format introduced by proposal 365,
  * with "basic" auth and username "tor". */
 STATIC bool
@@ -3215,7 +3215,7 @@ connection_ap_process_http_connect(entry_connection_t *conn)
       // We need to cram both of these headers into a single
       // password field.  Using a delimiter like this is a bit ugly,
       // but the only ones who can confuse it are the applications,
-      // whom we are trusting get their own isolation right.
+      // whom we are trusting to get their own isolation right.
       const char DELIM[] = "\x01\xff\x01\xff";
       tor_asprintf(&socks->password,
                    "%s%s%s",
