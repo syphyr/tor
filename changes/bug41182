@@ -1,0 +1,4 @@
+  o Minor bugfixes (tooling):
+    - Fix a false positive valgrind related to inspecting
+      a bitfield next to another uninitialized bitfield.
+      Fixes bug 41182; bugfix on 0.3.3.2-alpha.
