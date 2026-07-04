@@ -1,6 +1,8 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
+EXTERNAL_ROOT := $(shell pwd)
+
 DH_VERBOSE ?= 1
 
 DEB_HOST_ARCH_OS := $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
@@ -42,6 +44,9 @@ override_dh_auto_configure:
 		--disable-silent-rules \
 		--enable-gcc-warnings-advisory \
 		--enable-gpl \
+		--enable-static-libevent --with-libevent-dir=$(EXTERNAL_ROOT)/../libs/build_libs/lib \
+		--enable-static-openssl --with-openssl-dir=$(EXTERNAL_ROOT)/../libs/build_libs/lib \
+		--enable-static-zlib --with-zlib-dir=$(EXTERNAL_ROOT)/../libs/build_libs/lib \
 		--enable-lzma \
 		--enable-zstd
 
