@@ -1523,6 +1523,12 @@ dnl Check for libseccomp
 if test "x$enable_seccomp" != "xno"; then
   AC_CHECK_HEADERS([seccomp.h])
   AC_SEARCH_LIBS(seccomp_init, [seccomp])
+
+  AC_CHECK_DECL(SYS_SECCOMP,
+     [AC_DEFINE(HAVE_SYS_SECCOMP, 1, [Is SYS_SECCOMP defined?])],
+     [],
+     [#include <signal.h>]
+  )
 fi
 
 dnl ============================================================
