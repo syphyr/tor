@@ -879,8 +879,7 @@ circuit_pick_create_handshake(uint8_t *cell_type_out,
   *cell_type_out = CELL_CREATE2;
   /* Only use ntor v3 with exits that support congestion control,
    * and only when it is enabled. */
-  if (ei->exit_supports_congestion_control &&
-      congestion_control_enabled())
+  if (ei->use_congestion_control)
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR_V3;
   else if (ei->enable_cgo)
     *handshake_type_out = ONION_HANDSHAKE_TYPE_NTOR_V3;
@@ -2732,8 +2731,7 @@ client_circ_negotiation_message(const extend_info_t *ei,
 
   trn_extension_t *ext = trn_extension_new();
 
-  if (ei->exit_supports_congestion_control &&
-      congestion_control_enabled()) {
+  if (ei->use_congestion_control) {
     if (congestion_control_build_ext_request(ext) < 0) {
       goto err;
     }

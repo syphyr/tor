@@ -193,7 +193,7 @@ run_full_handshake(circuit_params_t *serv_params_in,
   uint8_t rend_auth[DIGEST_LEN];
 
   info.supports_ntor_v3 = true;
-  info.exit_supports_congestion_control = 1;
+  info.use_congestion_control = congestion_control_enabled();
 
   unhex(relay_onion_key.seckey.secret_key,
         "4051daa5921cfa2a1c27b08451324919538e79e788a81b38cbed097a5dff454a");
@@ -261,6 +261,7 @@ test_ntor3_handshake(void *arg)
   serv_ns_params.sendme_inc_cells = congestion_control_sendme_inc();
 
   /* client off, serv off -> off */
+  congestion_control_set_cc_disabled();
   serv_ns_params.cc_enabled = 0;
   run_full_handshake(&serv_ns_params, &client_params, &serv_params);
   tt_int_op(client_params.cc_enabled, OP_EQ, 0);
