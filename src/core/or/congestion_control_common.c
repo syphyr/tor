@@ -206,7 +206,7 @@ congestion_control_new_consensus_params(const networkstatus_t *ns)
         SENDME_INC_MIN,
         SENDME_INC_MAX);
 
-#define CC_ALG_MIN 0
+#define CC_ALG_MIN 2
 #define CC_ALG_MAX (NUM_CC_ALGS-1)
   cc_alg =
     networkstatus_get_param(NULL, "cc_alg",
