@@ -2736,6 +2736,7 @@ client_circ_negotiation_message(const extend_info_t *ei,
       goto err;
     }
     cc_enabled = true;
+    params_out->cc_requested = true;
   }
 
   if (cc_enabled && ei->enable_cgo) {

@@ -1190,8 +1190,14 @@ congestion_control_parse_ext_response(const trn_extension_t *ext,
 
   field = trn_extension_find(ext, TRUNNEL_EXT_TYPE_CC_FIELD_RESPONSE);
 
-  if (field == 0) {
+  if (field == NULL) {
     ret = 0;
+  } else if (! params_out->cc_requested) {
+    log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
+           "Received CC_RESPONSE without having sent CC_REQUEST. "
+           "Rejecting.");
+    ret = -1;
+    goto end;
   } else {
       /* Parse the field into the congestion control field. */
       ret = trn_extension_field_cc_parse(&cc_field,
