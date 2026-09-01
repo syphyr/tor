@@ -454,11 +454,20 @@ enqueue_timestamp(smartlist_t *timestamps_u64, uint64_t timestamp_usec)
 static inline uint64_t
 dequeue_timestamp(smartlist_t *timestamps_u64_usecs)
 {
-  uint64_t *timestamp_ptr = smartlist_get(timestamps_u64_usecs, 0);
+  uint64_t *timestamp_ptr;
   uint64_t timestamp_u64;
 
-  if (BUG(!timestamp_ptr)) {
+  if (BUG(!timestamps_u64_usecs)) {
+    return 0;
+  }
+
+  if (BUG(0 == smartlist_len(timestamps_u64_usecs))) {
     log_err(LD_CIRC, "Congestion control timestamp list became empty!");
+    return 0;
+  }
+
+  timestamp_ptr = smartlist_get(timestamps_u64_usecs, 0);
+  if (BUG(timestamp_ptr == NULL)) {
     return 0;
   }
 
