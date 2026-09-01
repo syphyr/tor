@@ -1386,6 +1386,10 @@ circuit_truncated(origin_circuit_t *circ, int reason)
 
     layer->next = victim->next;
     cpath_free(victim);
+    /* NOTE: If we were ever to reinstate this code, we should
+     * ensure that `victim` is not the sendme_digest_hop,
+     * or clear sendme_digest_hop if it is.
+     */
   }
 
   log_info(LD_CIRC, "finished");
