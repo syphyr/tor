@@ -15,6 +15,7 @@
 #include "feature/hs/hs_ob.h"
 #include "core/crypto/hs_ntor.h"
 #include "core/or/congestion_control_common.h"
+#include "lib/crypt_ops/crypto_curve25519.h"
 
 #include "core/or/origin_circuit_st.h"
 
@@ -1084,6 +1085,14 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
   memcpy(data->rdv_data.onion_pk.public_key,
          trn_cell_introduce_encrypted_getconstarray_onion_key(enc_cell),
          CURVE25519_PUBKEY_LEN);
+  if (!curve25519_public_key_is_ok(&data->rdv_data.onion_pk)) {
+    log_fn(LOG_PROTOCOL_WARN, LD_REND,
+           "Invalid rendezvous onion key in INTRODUCE2 cell on "
+           "circuit %u for service %s. Dropping cell.",
+           TO_CIRCUIT(circ)->n_circ_id,
+           safe_str_client(service->onion_address));
+    goto done;
+  }
   memcpy(data->rdv_data.rendezvous_cookie,
          trn_cell_introduce_encrypted_getconstarray_rend_cookie(enc_cell),
          sizeof(data->rdv_data.rendezvous_cookie));

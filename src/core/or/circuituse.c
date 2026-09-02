@@ -2193,6 +2193,10 @@ circuit_should_cannibalize_to_build(uint8_t purpose_to_build,
  *  - CIRCLAUNCH_IS_V3_RP: the last hop must support v3 onion service
  *                         rendezvous.
  *
+ * The given <b>extend_info</b> for a multi-hop circuit must contain a usable
+ * ntor onion key. One-hop circuits are exempt because they can use CREATE_FAST
+ * when bootstrapping or connecting to a relay without a descriptor.
+ *
  * Return the newly allocated circuit on success, or NULL on failure. */
 origin_circuit_t *
 circuit_launch_by_extend_info(uint8_t purpose,
@@ -2202,6 +2206,16 @@ circuit_launch_by_extend_info(uint8_t purpose,
   origin_circuit_t *circ;
   int onehop_tunnel = (flags & CIRCLAUNCH_ONEHOP_TUNNEL) != 0;
   int have_path = have_enough_path_info(! (flags & CIRCLAUNCH_IS_INTERNAL) );
+
+  /* We don't support TAP anymore so we must have a valid Ntor key. */
+  if (extend_info != NULL && !onehop_tunnel &&
+      !extend_info_supports_ntor(extend_info)) {
+    log_fn(LOG_PROTOCOL_WARN, LD_CIRC,
+           "Refusing to launch a multi-hop circuit to %s without "
+           "a usable ntor onion key.",
+           safe_str_client(extend_info_describe(extend_info)));
+    return NULL;
+  }
 
   /* Keep some stats about our attempts to launch HS rendezvous circuits */
   if (purpose == CIRCUIT_PURPOSE_S_CONNECT_REND) {
