@@ -281,12 +281,17 @@ test_ntor3_handshake(void *arg)
   tt_int_op(client_params.cc_enabled, OP_EQ, 1);
   tt_int_op(serv_params.cc_enabled, OP_EQ, 1);
 
+#if 0
+  // No longer supported: If the client asks for CC,
+  // the server may not decline.
+
   /* client on, serv off -> off */
   serv_ns_params.cc_enabled = 0;
   congestion_control_set_cc_enabled();
   run_full_handshake(&serv_ns_params, &client_params, &serv_params);
   tt_int_op(client_params.cc_enabled, OP_EQ, 0);
   tt_int_op(serv_params.cc_enabled, OP_EQ, 0);
+#endif
 
   /* client on, serv on -> on */
   serv_ns_params.cc_enabled = 1;
