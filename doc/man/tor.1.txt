@@ -3476,7 +3476,7 @@ on the public Tor network.
 [[MinimalAcceptedServerVersion]] **MinimalAcceptedServerVersion** __STRING__::
    STRING is the oldest Tor version accepted by the directory authority for
    relays and bridge. Any older version will be rejected.
-   (Default: 0.4.7.0-alpha-dev)
+   (Default: 0.4.9.1-alpha)
 
 [[V3AuthDistDelay]] **V3AuthDistDelay** __N__ **seconds**|**minutes**|**hours**::
     V3 authoritative directories only. Configures the server's preferred  delay
