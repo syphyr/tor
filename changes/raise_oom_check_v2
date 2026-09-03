@@ -8,7 +8,6 @@
       with attendent risk of use-after-free errors.
       Now we only check for OOM conditions there, and handle
       them from much higher in the stack.
-      Fixes bug 41341; bugfix on 0.2.4.14-alpha.
-      (XXX this actually fixes more bugs than that, but I don't have a full
-      list.)
-      Root-cause fix for TROVE-2026-????? and others.
+      Fixes bugs 41341, 41336, 41326, and 41363;
+      bugfix on 0.2.4.14-alpha.
+      Root-cause fix for TROVE-2026-043.
