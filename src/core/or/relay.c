@@ -903,6 +903,17 @@ connection_ap_process_end_not_open(
       case END_STREAM_REASON_EXITPOLICY: {
         tor_addr_t addr;
         tor_addr_make_unspec(&addr);
+        if (conn->use_begindir) {
+          /* Refusing "because exit policy" makes no sense on begindir
+           * requests, and worse it can cause us to do bizarre things by
+           * believing the address in the END cell and retrying there.
+           * Instead, treat it as a protocol violation and close the
+           * stream. */
+          log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
+                 "Got an EXITPOLICY end cell on a directory stream to %s. "
+                 "Closing.", safe_str(conn->chosen_exit_name));
+          break; /* close it, below */
+        }
         if (msg->length >= 5) {
           int ttl = -1;
           tor_addr_make_unspec(&addr);

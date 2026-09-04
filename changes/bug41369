@@ -1,0 +1,6 @@
+  o Minor bugfixes (client stream handling):
+    - For a BEGIN_DIR directory connection, treat an END cell with reason
+      EXITPOLICY as a protocol violation and close the stream. Previously
+      we would retry the stream with the destination IP address supplied
+      by the misbehaving relay, which led to bizarre behavior. Fixes
+      bug 41369; bugfix on 0.1.2.5-alpha.
