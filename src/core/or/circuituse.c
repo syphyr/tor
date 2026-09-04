@@ -1689,9 +1689,8 @@ circuit_has_opened(origin_circuit_t *circ)
       connection_ap_attach_pending(1);
       /* This isn't a call to circuit_try_attaching_streams because a
        * circuit in _C_ESTABLISH_REND state isn't connected to its
-       * hidden service yet, thus we can't attach streams to it yet,
-       * thus circuit_try_attaching_streams would always clear the
-       * circuit's isolation state.  circuit_try_attaching_streams is
+       * hidden service yet, thus we can't attach streams to it yet.
+       * circuit_try_attaching_streams is
        * called later, when the rend circ enters _C_REND_JOINED
        * state. */
       break;
@@ -1826,7 +1825,13 @@ circuit_try_clearing_isolation_state(origin_circuit_t *circ)
       circ->isolation_values_set &&
       /* It's not legal to clear a circuit's isolation info if it's ever had
        * streams attached */
-      !circ->isolation_any_streams_attached) {
+      !circ->isolation_any_streams_attached &&
+      /* We must not clear isolation settings on an onion service related
+       * circuit, since the circumstances of launching that circuit are
+       * themselves identifying. We don't want to let some new unrelated
+       * stream reuse this circuit and let the onion service or the
+       * HSDir link the two isolation contexts. */
+      !circuit_purpose_is_hidden_service(TO_CIRCUIT(circ)->purpose)) {
     /* If we have any isolation information set on this circuit, and
      * we didn't manage to attach any streams to it, then we can
      * and should clear it and try again. */
