@@ -1754,7 +1754,7 @@ control_event_status(int type, int severity, const char *format, va_list args)
       sev = "ERR";
       break;
     default:
-      log_warn(LD_BUG, "Unrecognized status severity %d", severity);
+      log_debug(LD_BUG, "Unrecognized status severity %d", severity);
       return -1;
   }
   if (tor_snprintf(format_buf, sizeof(format_buf), "650 %s %s",
