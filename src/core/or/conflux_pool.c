@@ -2054,6 +2054,7 @@ conflux_process_linked(circuit_t *circ, crypt_path_t *layer_hint,
     log_fn(LOG_PROTOCOL_WARN, LD_CIRC,
            "Received CONFLUX_LINKED but circuit nonce doesn't match "
            "cell nonce. Closing circuit.");
+    tor_free(link);
     goto close;
   }
 
@@ -2062,6 +2063,7 @@ conflux_process_linked(circuit_t *circ, crypt_path_t *layer_hint,
   if (BUG(!leg)) {
     log_warn(LD_CIRC, "Received CONFLUX_LINKED but can't find "
                       "associated leg. Closing circuit.");
+    tor_free(link);
     goto close;
   }
 
