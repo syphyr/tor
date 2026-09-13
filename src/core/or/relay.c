@@ -892,7 +892,11 @@ connection_ap_process_end_not_open(
 
   if (edge_reason_is_retriable(reason) &&
       /* avoid retry if rend */
-      !connection_edge_is_rendezvous_stream(edge_conn)) {
+      !connection_edge_is_rendezvous_stream(edge_conn) &&
+      /* also don't retry if it was a begindir request: those are tunneled
+       * requests to a specific relay, and if that relay didn't want
+       * it, asking again isn't going to work better. */
+      !conn->use_begindir) {
     const char *chosen_exit_digest =
       circ->build_state->chosen_exit->identity_digest;
     log_info(LD_APP,"Address '%s' refused due to '%s'. Considering retrying.",
@@ -903,17 +907,6 @@ connection_ap_process_end_not_open(
       case END_STREAM_REASON_EXITPOLICY: {
         tor_addr_t addr;
         tor_addr_make_unspec(&addr);
-        if (conn->use_begindir) {
-          /* Refusing "because exit policy" makes no sense on begindir
-           * requests, and worse it can cause us to do bizarre things by
-           * believing the address in the END cell and retrying there.
-           * Instead, treat it as a protocol violation and close the
-           * stream. */
-          log_fn(LOG_PROTOCOL_WARN, LD_PROTOCOL,
-                 "Got an EXITPOLICY end cell on a directory stream to %s. "
-                 "Closing.", safe_str(conn->chosen_exit_name));
-          break; /* close it, below */
-        }
         if (msg->length >= 5) {
           int ttl = -1;
           tor_addr_make_unspec(&addr);
