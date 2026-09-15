@@ -145,11 +145,11 @@ addressmap_virtaddress_remove(const char *address, addressmap_entry_t *ent)
       strmap_get(virtaddress_reversemap, ent->new_address);
     /*log_fn(LOG_NOTICE,"remove reverse mapping for %s",ent->new_address);*/
     if (ve) {
-      if (!strcmp(address, ve->ipv4_address))
+      if (!strcmp_opt(address, ve->ipv4_address))
         tor_free(ve->ipv4_address);
-      if (!strcmp(address, ve->ipv6_address))
+      if (!strcmp_opt(address, ve->ipv6_address))
         tor_free(ve->ipv6_address);
-      if (!strcmp(address, ve->hostname_address))
+      if (!strcmp_opt(address, ve->hostname_address))
         tor_free(ve->hostname_address);
       if (!ve->ipv4_address && !ve->ipv6_address && !ve->hostname_address) {
         tor_free(ve);
