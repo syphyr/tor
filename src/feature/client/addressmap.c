@@ -772,9 +772,21 @@ client_dns_set_reverse_addressmap(entry_connection_t *for_conn,
   char *s = NULL;
   {
     tor_addr_t tmp_addr;
-    sa_family_t f = tor_addr_parse(&tmp_addr, address);
-    if ((f == AF_INET && ! for_conn->entry_cfg.cache_ipv4_answers) ||
-        (f == AF_INET6 && ! for_conn->entry_cfg.cache_ipv6_answers))
+    if (tor_addr_parse_PTR_name(&tmp_addr, address, AF_UNSPEC, true) <= 0)
+      return;
+    bool cacheable;
+    switch (tor_addr_family(&tmp_addr)) {
+      case AF_INET:
+        cacheable = for_conn->entry_cfg.cache_ipv4_answers;
+        break;
+      case AF_INET6:
+        cacheable = for_conn->entry_cfg.cache_ipv6_answers;
+        break;
+      default:
+        cacheable = false;
+        break;
+    }
+    if (! cacheable)
       return;
   }
   tor_asprintf(&s, "REVERSE[%s]", address);
