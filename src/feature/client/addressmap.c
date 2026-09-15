@@ -1150,8 +1150,8 @@ addressmap_get_mappings(smartlist_t *sl, time_t min_expires,
      val = val_;
      if (val->expires >= min_expires && val->expires <= max_expires) {
        if (!sl) {
-         iter = strmap_iter_next_rmv(addressmap,iter);
          addressmap_ent_remove(key, val);
+         iter = strmap_iter_next_rmv(addressmap,iter);
          continue;
        } else if (val->new_address) {
          const char *src_wc = val->src_wildcard ? "*." : "";
