@@ -68,5 +68,6 @@ int replaycache_add_and_test(replaycache_t *r, const void *data, size_t len);
 int replaycache_add_test_and_elapsed(
     replaycache_t *r, const void *data, size_t len, time_t *elapsed);
 void replaycache_scrub_if_needed(replaycache_t *r);
+size_t replay_cache_count(const replaycache_t *r);
 
 #endif /* !defined(TOR_REPLAYCACHE_H) */

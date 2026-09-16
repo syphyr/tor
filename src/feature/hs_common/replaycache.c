@@ -207,3 +207,12 @@ replaycache_scrub_if_needed(replaycache_t *r)
   replaycache_scrub_if_needed_internal(time(NULL), r);
 }
 
+/** Return the number of entries currently stored in the given cache `r`. */
+size_t
+replay_cache_count(const replaycache_t *r)
+{
+  if (!r) {
+    return 0;
+  }
+  return digest256map_size(r->digests_seen);
+}
