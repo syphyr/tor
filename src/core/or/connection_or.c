@@ -773,8 +773,6 @@ connection_or_about_to_close(or_connection_t *or_conn)
     if (connection_or_nonopen_was_started_here(or_conn)) {
       const or_options_t *options = get_options();
       connection_or_note_state_when_broken(or_conn);
-      /* Tell the new guard API about the channel failure */
-      entry_guard_chan_failed(TLS_CHAN_TO_BASE(or_conn->chan));
       if (conn->state >= OR_CONN_STATE_TLS_HANDSHAKING) {
         int reason = tls_error_to_orconn_end_reason(or_conn->tls_error);
         connection_or_event_status(or_conn, OR_CONN_EVENT_FAILED,
