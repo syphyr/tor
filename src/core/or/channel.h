@@ -661,9 +661,11 @@ int channel_send_destroy(circid_t circ_id, channel_t *chan,
  * something transport/address format independent.
  */
 
+struct circuit_guard_state_t;
 channel_t * channel_connect(const tor_addr_t *addr, uint16_t port,
                             const char *rsa_id_digest,
-                            const struct ed25519_public_key_t *ed_id);
+                            const struct ed25519_public_key_t *ed_id,
+                            const struct circuit_guard_state_t *guard_state);
 
 MOCK_DECL(channel_t *, channel_get_for_extend,(
                                    const char *rsa_id_digest,

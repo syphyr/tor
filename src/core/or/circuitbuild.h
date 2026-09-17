@@ -61,7 +61,8 @@ const node_t *choose_good_entry_server(const origin_circuit_t *circ,
                            struct circuit_guard_state_t **guard_state_out);
 void circuit_upgrade_circuits_from_guard_wait(void);
 
-MOCK_DECL(channel_t *, channel_connect_for_circuit,(const extend_info_t *ei));
+MOCK_DECL(channel_t *, channel_connect_for_circuit,(const extend_info_t *ei,
+                            const struct circuit_guard_state_t *guard_state));
 
 struct create_cell_t;
 MOCK_DECL(int,

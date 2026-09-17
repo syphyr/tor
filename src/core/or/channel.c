@@ -2362,7 +2362,9 @@ channel_free_all(void)
 }
 
 /**
- * Connect to a given addr/port/digest.
+ * Connects to a given addr/port/digest. guard_state is borrowed only during
+ * this synchronous launch; the new channel takes an independent weak handle.
+ * Reuse decisions happen before this call and never replace a handle.
  *
  * This sets up a new outgoing channel; in the future if multiple
  * channel_t subclasses are available, this is where the selection policy
@@ -2374,9 +2376,10 @@ channel_free_all(void)
 channel_t *
 channel_connect(const tor_addr_t *addr, uint16_t port,
                 const char *id_digest,
-                const ed25519_public_key_t *ed_id)
+                const ed25519_public_key_t *ed_id,
+                const struct circuit_guard_state_t *guard_state)
 {
-  return channel_tls_connect(addr, port, id_digest, ed_id);
+  return channel_tls_connect(addr, port, id_digest, ed_id, guard_state);
 }
 
 /**

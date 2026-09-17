@@ -193,7 +193,8 @@ channel_tls_common_init(channel_tls_t *tlschan)
 channel_t *
 channel_tls_connect(const tor_addr_t *addr, uint16_t port,
                     const char *id_digest,
-                    const ed25519_public_key_t *ed_id)
+                    const ed25519_public_key_t *ed_id,
+                    const struct circuit_guard_state_t *guard_state)
 {
   channel_tls_t *tlschan = tor_malloc_zero(sizeof(*tlschan));
   channel_t *chan = &(tlschan->base_);
@@ -219,6 +220,8 @@ channel_tls_connect(const tor_addr_t *addr, uint16_t port,
   }
 
   channel_mark_outgoing(chan);
+  /* guard_state is borrowed for this synchronous launch only. */
+  chan->establishment_guard = entry_guard_handle_from_state(guard_state);
 
   /* Set up or_connection stuff */
   or_connection_t *conn =
