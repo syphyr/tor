@@ -1950,13 +1950,6 @@ circuit_build_failed(origin_circuit_t *circ)
                TO_CIRCUIT(circ)->n_circ_id, circ->global_identifier);
     }
     if (!already_marked) {
-      /*
-       * If we have guard state (new guard API) and our path selection
-       * code actually chose a full path, then blame the failure of this
-       * circuit on the guard.
-       */
-      if (circ->guard_state)
-        entry_guard_failed(&circ->guard_state);
       /* if there are any one-hop streams waiting on this circuit, fail
        * them now so they can retry elsewhere. */
       connection_ap_fail_onehop(n_chan_ident, circ->build_state);

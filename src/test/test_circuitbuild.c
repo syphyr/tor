@@ -1001,8 +1001,10 @@ static int mock_channel_connect_calls = 0;
 static channel_t *mock_channel_connect_nchan = NULL;
 static channel_t *
 mock_channel_connect_for_circuit(const extend_info_t *ei,
-                                 const struct circuit_guard_state_t *state)
+                                 const struct circuit_guard_state_t *state,
+                                 bool for_origin_circ)
 {
+  (void)for_origin_circ;
   (void)state;
   (void)ei;
   mock_channel_connect_calls++;

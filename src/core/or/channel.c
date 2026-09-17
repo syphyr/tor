@@ -1327,6 +1327,11 @@ channel_closed(channel_t *chan)
 {
   tor_assert(chan);
   tor_assert(CHANNEL_CONDEMNED(chan));
+  /* The required transition to a condemned state already clears this handle.
+   * This defensive cleanup precedes early return and circuit callbacks in
+   * case a future teardown path leaves an association behind. It is redundant
+   * today and never infers failure from closure. */
+  channel_note_establishment_cancelled(chan);
 
   /* No-op if already inactive */
   if (CHANNEL_FINISHED(chan))
@@ -1584,6 +1589,21 @@ channel_change_state_(channel_t *chan, channel_state_t to_state)
   tor_assert(channel_state_is_valid(to_state));
   tor_assert(channel_state_can_transition(chan->state, to_state));
 
+  /* If we're going to a closing or closed state, we must have a reason set */
+  if (from_state != to_state &&
+      (to_state == CHANNEL_STATE_CLOSING ||
+       to_state == CHANNEL_STATE_CLOSED ||
+       to_state == CHANNEL_STATE_ERROR)) {
+    tor_assert(chan->reason_for_closing != CHANNEL_NOT_CLOSING);
+  }
+
+  /* Validate the transition before releasing attribution, including for
+   * no-op transitions. Success and generic closure clear permission before
+   * callbacks; OR error hooks must report eligible failure first. */
+  if (to_state == CHANNEL_STATE_OPEN || to_state == CHANNEL_STATE_CLOSING ||
+      to_state == CHANNEL_STATE_CLOSED || to_state == CHANNEL_STATE_ERROR)
+    channel_note_establishment_cancelled(chan);
+
   /* Check for no-op transitions */
   if (from_state == to_state) {
     log_debug(LD_CHANNEL,
@@ -1592,13 +1612,6 @@ channel_change_state_(channel_t *chan, channel_state_t to_state)
               channel_state_to_string(to_state),
               chan, (chan->global_identifier));
     return;
-  }
-
-  /* If we're going to a closing or closed state, we must have a reason set */
-  if (to_state == CHANNEL_STATE_CLOSING ||
-      to_state == CHANNEL_STATE_CLOSED ||
-      to_state == CHANNEL_STATE_ERROR) {
-    tor_assert(chan->reason_for_closing != CHANNEL_NOT_CLOSING);
   }
 
   log_debug(LD_CHANNEL,
@@ -2365,6 +2378,8 @@ channel_free_all(void)
  * Connects to a given addr/port/digest. guard_state is borrowed only during
  * this synchronous launch; the new channel takes an independent weak handle.
  * Reuse decisions happen before this call and never replace a handle.
+ * for_origin_circ identifies local circuit launches even without a guard
+ * selection (for example, a fallback directory request).
  *
  * This sets up a new outgoing channel; in the future if multiple
  * channel_t subclasses are available, this is where the selection policy
@@ -2377,9 +2392,11 @@ channel_t *
 channel_connect(const tor_addr_t *addr, uint16_t port,
                 const char *id_digest,
                 const ed25519_public_key_t *ed_id,
-                const struct circuit_guard_state_t *guard_state)
+                const struct circuit_guard_state_t *guard_state,
+                bool for_origin_circ)
 {
-  return channel_tls_connect(addr, port, id_digest, ed_id, guard_state);
+  return channel_tls_connect(addr, port, id_digest, ed_id, guard_state,
+                             for_origin_circ);
 }
 
 /**

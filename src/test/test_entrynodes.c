@@ -2129,10 +2129,11 @@ test_entry_guard_select_for_circuit_highlevel_primary(void *arg)
 
   /* It's failed!  What will happen to our poor guard? */
   update_approx_time(start+45);
-  entry_guard_failed(&guard);
+  entry_guard_connection_failed(guard->guard);
   tt_assert(guard);
-  tt_int_op(guard->state, OP_EQ, GUARD_CIRC_STATE_DEAD);
-  tt_i64_op(guard->state_set_at, OP_EQ, start+45);
+  /* A connection failure does not mutate the request's success state. */
+  tt_int_op(guard->state, OP_EQ, GUARD_CIRC_STATE_USABLE_ON_COMPLETION);
+  tt_i64_op(guard->state_set_at, OP_EQ, start+35);
   g = entry_guard_handle_get(guard->guard);
   tt_assert(g);
   tt_int_op(g->is_reachable, OP_EQ, GUARD_REACHABLE_NO);
@@ -2208,7 +2209,7 @@ test_entry_guard_select_for_circuit_highlevel_confirm_other(void *arg)
     tt_assert(guard);
     tt_int_op(r, OP_EQ, 0);
     tt_int_op(guard->state, OP_EQ, GUARD_CIRC_STATE_USABLE_ON_COMPLETION);
-    entry_guard_failed(&guard);
+    entry_guard_connection_failed(guard->guard);
     circuit_guard_state_free(guard);
     guard = NULL;
     node = NULL;
@@ -2277,7 +2278,7 @@ test_entry_guard_select_for_circuit_highlevel_primary_retry(void *arg)
     g = entry_guard_handle_get(guard->guard);
     make_guard_confirmed(gs, g);
     tt_int_op(g->is_primary, OP_EQ, 1);
-    entry_guard_failed(&guard);
+    entry_guard_connection_failed(guard->guard);
     circuit_guard_state_free(guard);
     tt_int_op(g->is_reachable, OP_EQ, GUARD_REACHABLE_NO);
     guard = NULL;
@@ -2420,7 +2421,7 @@ test_entry_guard_select_and_cancel(void *arg)
     tt_int_op(g->is_primary, OP_EQ, 1);
     tt_int_op(g->is_pending, OP_EQ, 0);
     make_guard_confirmed(gs, g);
-    entry_guard_failed(&guard);
+    entry_guard_connection_failed(guard->guard);
     circuit_guard_state_free(guard);
     guard = NULL;
     node = NULL;
@@ -2521,7 +2522,7 @@ upgrade_circuits_setup(const struct testcase_t *testcase)
     entry_guard_pick_for_circuit(gs, GUARD_USAGE_TRAFFIC, NULL, &node, &guard);
     g = entry_guard_handle_get(guard->guard);
     make_guard_confirmed(gs, g);
-    entry_guard_failed(&guard);
+    entry_guard_connection_failed(guard->guard);
     circuit_guard_state_free(guard);
   }
 

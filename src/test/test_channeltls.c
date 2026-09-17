@@ -43,7 +43,7 @@ static or_connection_t * tlschan_connection_or_connect_mock(
     uint16_t port,
     const char *digest,
     const ed25519_public_key_t *ed_id,
-    channel_tls_t *tlschan);
+    channel_tls_t *tlschan, bool for_origin_circ);
 static bool tlschan_resolved_addr_is_local_mock(const tor_addr_t *addr);
 
 /* Fake close method */
@@ -81,7 +81,7 @@ test_channeltls_create(void *arg)
   MOCK(connection_or_connect, tlschan_connection_or_connect_mock);
 
   /* Try connecting */
-  ch = channel_tls_connect(&test_addr, 567, test_digest, NULL, NULL);
+  ch = channel_tls_connect(&test_addr, 567, test_digest, NULL, NULL, false);
   tt_ptr_op(ch, OP_NE, NULL);
 
  done:
@@ -130,7 +130,7 @@ test_channeltls_num_bytes_queued(void *arg)
   MOCK(connection_or_connect, tlschan_connection_or_connect_mock);
 
   /* Try connecting */
-  ch = channel_tls_connect(&test_addr, 567, test_digest, NULL, NULL);
+  ch = channel_tls_connect(&test_addr, 567, test_digest, NULL, NULL, false);
   tt_ptr_op(ch, OP_NE, NULL);
 
   /*
@@ -215,7 +215,7 @@ test_channeltls_overhead_estimate(void *arg)
   MOCK(connection_or_connect, tlschan_connection_or_connect_mock);
 
   /* Try connecting */
-  ch = channel_tls_connect(&test_addr, 567, test_digest, NULL, NULL);
+  ch = channel_tls_connect(&test_addr, 567, test_digest, NULL, NULL, false);
   tt_ptr_op(ch, OP_NE, NULL);
 
   /* First case: silly low ratios should get clamped to 1.0 */
@@ -278,8 +278,10 @@ tlschan_connection_or_connect_mock(const tor_addr_t *addr,
                                    uint16_t port,
                                    const char *digest,
                                    const ed25519_public_key_t *ed_id,
-                                   channel_tls_t *tlschan)
+                                   channel_tls_t *tlschan,
+                                   bool for_origin_circ)
 {
+  (void) for_origin_circ;
   or_connection_t *result = NULL;
   (void) ed_id; // XXXX Not yet used.
 
@@ -387,7 +389,7 @@ test_channeltls_startup_failure(void *arg)
   } else {
     tor_addr_parse(&addr, "192.0.2.1");
   }
-  chan = channel_tls_connect(&addr, 9001, digest, NULL, NULL);
+  chan = channel_tls_connect(&addr, 9001, digest, NULL, NULL, false);
   tt_ptr_op(chan, OP_EQ, NULL);
   tt_ptr_op(startup_conn, OP_NE, NULL);
   tt_assert(startup_conn->marked_for_close);

@@ -194,7 +194,8 @@ channel_t *
 channel_tls_connect(const tor_addr_t *addr, uint16_t port,
                     const char *id_digest,
                     const ed25519_public_key_t *ed_id,
-                    const struct circuit_guard_state_t *guard_state)
+                    const struct circuit_guard_state_t *guard_state,
+                    bool for_origin_circ)
 {
   channel_tls_t *tlschan = tor_malloc_zero(sizeof(*tlschan));
   channel_t *chan = &(tlschan->base_);
@@ -225,7 +226,8 @@ channel_tls_connect(const tor_addr_t *addr, uint16_t port,
 
   /* Set up or_connection stuff */
   or_connection_t *conn =
-    connection_or_connect(addr, port, id_digest, ed_id, tlschan);
+    connection_or_connect(addr, port, id_digest, ed_id, tlschan,
+                          for_origin_circ);
   /* connection_or_connect() sets both conn->chan and tlschan->conn. If
    * nonblocking connect() succeeds immediately, it also starts proxy/TLS
    * setup before returning. That setup can fail (e.g., SOCKS4 with an IPv6
@@ -256,8 +258,10 @@ channel_tls_connect(const tor_addr_t *addr, uint16_t port,
   goto done;
 
  err:
-  /* Launch failure frees this allocation directly, bypassing channel_free_().
-   * Release the association left by an abandoned or cached attempt. */
+  /* The only current path here already clears the handle by transitioning to
+   * ERROR. This defensive release also covers future error paths at this
+   * raw-free boundary, which bypasses channel_free_().
+   * Clearing an already-consumed handle is harmless. */
   channel_note_establishment_cancelled(chan);
   circuitmux_free(chan->cmux);
   tor_free(tlschan);

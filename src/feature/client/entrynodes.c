@@ -2693,53 +2693,6 @@ entry_guard_connection_failed(struct entry_guard_handle_t *handle)
 }
 
 /**
- * Called by the circuit building module when a circuit has failed:
- * informs the guards code that the guard in *<b>guard_state_p</b> is
- * not working, and advances the state of the guard module.
- */
-void
-entry_guard_failed(circuit_guard_state_t **guard_state_p)
-{
-  if (BUG(*guard_state_p == NULL))
-    return;
-
-  entry_guard_t *guard = entry_guard_handle_get((*guard_state_p)->guard);
-  if (! guard || BUG(guard->in_selection == NULL))
-    return;
-
-  entry_guards_note_guard_failure(guard->in_selection, guard);
-
-  (*guard_state_p)->state = GUARD_CIRC_STATE_DEAD;
-  (*guard_state_p)->state_set_at = approx_time();
-}
-
-/**
- * Run the entry_guard_failed() function on every circuit that is
- * pending on <b>chan</b>.
- */
-void
-entry_guard_chan_failed(channel_t *chan)
-{
-  if (!chan)
-    return;
-
-  smartlist_t *pending = smartlist_new();
-  circuit_get_all_pending_on_channel(pending, chan);
-  SMARTLIST_FOREACH_BEGIN(pending, circuit_t *, circ) {
-    if (!CIRCUIT_IS_ORIGIN(circ))
-      continue;
-
-    origin_circuit_t *origin_circ = TO_ORIGIN_CIRCUIT(circ);
-    if (origin_circ->guard_state) {
-      /* We might have no guard state if we didn't use a guard on this
-       * circuit (eg it's for a fallback directory). */
-      entry_guard_failed(&origin_circ->guard_state);
-    }
-  } SMARTLIST_FOREACH_END(circ);
-  smartlist_free(pending);
-}
-
-/**
  * Return true iff every primary guard in <b>gs</b> is believed to
  * be unreachable.
  */

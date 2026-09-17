@@ -15,6 +15,7 @@
 #include "lib/container/handles.h"
 
 struct bridge_info_t;
+struct entry_guard_handle_t;
 
 /* Forward declare for guard_selection_t; entrynodes.c has the real struct */
 typedef struct guard_selection_t guard_selection_t;
@@ -289,8 +290,6 @@ struct guard_selection_t {
 
 };
 
-struct entry_guard_handle_t;
-
 /** Types of restrictions we impose when picking guard nodes */
 typedef enum guard_restriction_type_t {
   /* Don't pick the same guard node as our exit node (or its family) */
@@ -401,9 +400,7 @@ typedef enum {
 } guard_usable_t;
 
 guard_usable_t entry_guard_succeeded(circuit_guard_state_t **guard_state_p);
-void entry_guard_failed(circuit_guard_state_t **guard_state_p);
 void entry_guard_cancel(circuit_guard_state_t **guard_state_p);
-void entry_guard_chan_failed(channel_t *chan);
 struct entry_guard_handle_t *entry_guard_handle_from_state(
     const circuit_guard_state_t *state);
 void entry_guard_handle_release(struct entry_guard_handle_t *handle);
