@@ -693,8 +693,8 @@ circuit_handle_first_hop_with_guard(origin_circuit_t *circ,
  *
  * Status is 1 if connect succeeded, or 0 if connect failed.
  */
-void
-circuit_n_chan_done(channel_t *chan, int status)
+MOCK_IMPL(void,
+circuit_n_chan_done,(channel_t *chan, int status))
 {
   smartlist_t *pending_circs;
   int err_reason = 0;

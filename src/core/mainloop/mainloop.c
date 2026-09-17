@@ -1174,7 +1174,7 @@ directory_info_has_arrived(time_t now, int from_cache, int suppress_logs)
 /** Perform regular maintenance tasks for a single connection.  This
  * function gets run once per second per connection by run_scheduled_events.
  */
-static void
+STATIC void
 run_connection_housekeeping(int i, time_t now)
 {
   cell_t cell;

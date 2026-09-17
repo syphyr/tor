@@ -2361,7 +2361,7 @@ circuit_reset_failure_count(int timeout)
  *
  * Write the found or in-progress or launched circ into *circp.
  */
-static int
+STATIC int
 circuit_get_open_circ_or_launch(entry_connection_t *conn,
                                 uint8_t desired_circuit_purpose,
                                 origin_circuit_t **circp)

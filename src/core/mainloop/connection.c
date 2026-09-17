@@ -184,9 +184,6 @@ static int connection_finished_flushing(connection_t *conn);
 static int connection_flushed_some(connection_t *conn);
 static int connection_finished_connecting(connection_t *conn);
 static int connection_reached_eof(connection_t *conn);
-static int connection_buf_read_from_socket(connection_t *conn,
-                                           ssize_t *max_to_read,
-                                           int *socket_error);
 static void client_check_address_changed(tor_socket_t sock);
 static void set_constrained_socket_buffers(tor_socket_t sock, int size);
 
@@ -2299,7 +2296,7 @@ connection_connect_sockaddr,(connection_t *conn,
   if (options->ConstrainedSockets)
     set_constrained_socket_buffers(s, (int)options->ConstrainedSockSize);
 
-  if (connect(s, sa, sa_len) < 0) {
+  if (tor_connect_socket(s, sa, sa_len) == TOR_INVALID_SOCKET) {
     int e = tor_socket_errno(s);
     if (!ERRNO_IS_CONN_EINPROGRESS(e)) {
       /* yuck. kill it. */
@@ -4145,7 +4142,7 @@ connection_handle_read(connection_t *conn)
  *
  * Return -1 if we want to break conn, else return 0.
  */
-static int
+STATIC int
 connection_buf_read_from_socket(connection_t *conn, ssize_t *max_to_read,
                        int *socket_error)
 {
