@@ -774,7 +774,9 @@ buf_pos_inc(buf_pos_t *pos)
   tor_assert(pos->pos < BUF_MAX_LEN);
   ++pos->pos;
   if (pos->pos == (ptrdiff_t)pos->chunk->datalen) {
-    if (!pos->chunk->next)
+    /* The tail chunk (but only the tail chunk) may be empty; if it is,
+     * we're out of data. */
+    if (!pos->chunk->next || !pos->chunk->next->datalen)
       return -1;
     pos->chunk_pos += pos->chunk->datalen;
     pos->chunk = pos->chunk->next;
