@@ -3277,6 +3277,75 @@ test_entry_guard_establishment_finalizer(void *arg)
   guard_selection_free(gs);
 }
 
+static void
+test_entry_guard_establishment_bridges(void *arg)
+{
+  (void)arg;
+  circuit_guard_state_t *state = NULL;
+  channel_t chan;
+  memset(&chan, 0, sizeof(chan));
+  chan.state = CHANNEL_STATE_OPENING;
+  hibernate_set_state_for_testing_(HIBERNATE_STATE_LIVE);
+  get_options_mutable()->UseBridges = 1;
+  mark_bridge_list();
+  for (int i = 1; i <= 30; ++i) {
+    char line[64];
+    tor_snprintf(line, sizeof(line), "192.0.2.%d:9001", i);
+    bridge_line_t *bl = parse_bridge_line(line);
+    tt_assert(bl);
+    bridge_add_from_config(bl); /* consumes bl */
+  }
+  guard_selection_t *gs = get_guard_selection_info();
+  tt_int_op(gs->type, OP_EQ, GS_TYPE_BRIDGE);
+  entry_guards_expand_sample(gs);
+  int n_sampled = smartlist_len(gs->sampled_entry_guards);
+  tt_int_op(n_sampled, OP_EQ, 20);
+  int sampled_fetches = 0, unsampled_fetches = 0;
+  const smartlist_t *bridges = bridge_list_get();
+  for (int i = 0; i < smartlist_len(bridges); ++i) {
+    const bridge_info_t *bridge = smartlist_get(bridges, i);
+    state = get_guard_state_for_bridge_desc_fetch(bridge);
+    if (!state) {
+      ++unsampled_fetches;
+      continue;
+    }
+    ++sampled_fetches;
+    entry_guard_t *g = entry_guard_handle_get(state->guard);
+    tt_assert(g);
+    tt_assert(tor_addr_port_eq(g->bridge_addr, bridge_get_addr_port(bridge)));
+    chan.establishment_guard = entry_guard_handle_from_state(state);
+    entry_guard_cancel(&state);
+    channel_note_establishment_failure(&chan);
+    tt_int_op(g->is_reachable, OP_EQ, GUARD_REACHABLE_NO);
+    tt_int_op(g->is_pending, OP_EQ, 0);
+    tt_int_op(smartlist_len(gs->sampled_entry_guards), OP_EQ, n_sampled);
+  }
+  tt_int_op(sampled_fetches, OP_EQ, 20);
+  tt_int_op(unsampled_fetches, OP_EQ, 10);
+  /* A configured bridge removed during an attempt is not resurrected. */
+  for (int i = 0; i < smartlist_len(bridges); ++i) {
+    state = get_guard_state_for_bridge_desc_fetch(smartlist_get(bridges, i));
+    if (state)
+      break;
+  }
+  tt_assert(state);
+  entry_guard_t *g = entry_guard_handle_get(state->guard);
+  g->is_reachable = GUARD_REACHABLE_YES;
+  chan.establishment_guard = entry_guard_handle_from_state(state);
+  mark_bridge_list();
+  sweep_bridge_list();
+  channel_note_establishment_failure(&chan);
+  tt_int_op(g->is_reachable, OP_EQ, GUARD_REACHABLE_YES);
+  entry_guard_cancel(&state);
+
+ done:
+  /* Release the fixture handle if an assertion skipped finalization. */
+  channel_note_establishment_cancelled(&chan);
+  circuit_guard_state_free(state);
+  bridges_free_all();
+  entry_guards_free_all();
+}
+
 #ifndef COCCI
 #define NO_PREFIX_TEST(name) \
   { #name, test_ ## name, 0, NULL, NULL }
@@ -3320,6 +3389,7 @@ struct testcase_t entrynodes_tests[] = {
   EN_TEST_FORK(number_of_primaries),
 
   BFN_TEST(establishment_finalizer),
+  BFN_TEST(establishment_bridges),
   BFN_TEST(choose_selection_initial),
   BFN_TEST(add_single_guard),
   BFN_TEST(node_filter),
