@@ -1382,6 +1382,38 @@ should_connect_to_relay(const or_connection_t *or_conn)
   return 0;
 }
 
+/** Finalizes an opening attempt at an OR error boundary, EOF, timeout, or
+ * immediate connect failure. Normal closure and explicit exceptions consume
+ * permission without blame; successful opening does so before callbacks. */
+void
+connection_or_note_establishment_failure(or_connection_t *conn)
+{
+  if (!conn->chan)
+    return;
+  channel_t *chan = TLS_CHAN_TO_BASE(conn->chan);
+  if (!conn->is_outgoing || conn->base_.marked_for_close ||
+      conn->base_.state == OR_CONN_STATE_OPEN) {
+    /* Incoming, closed, or established connections cannot fail this attempt.
+     * Clearing the association prevents later notifications from using it. */
+    channel_note_establishment_cancelled(chan);
+    return;
+  }
+  switch (conn->base_.state) {
+    case OR_CONN_STATE_CONNECTING:
+    case OR_CONN_STATE_PROXY_HANDSHAKING:
+    case OR_CONN_STATE_TLS_HANDSHAKING:
+    case OR_CONN_STATE_SERVER_VERSIONS_WAIT:
+    case OR_CONN_STATE_OR_HANDSHAKING_V3:
+      channel_note_establishment_failure(chan);
+      break;
+    default:
+      /* No establishment is in progress in this state. Clearing stale blame
+       * permission prevents its use after a later state transition. */
+      channel_note_establishment_cancelled(chan);
+      break;
+  }
+}
+
 /** <b>conn</b> is in the 'connecting' state, and it failed to complete
  * a TCP connection. Send notifications appropriately.
  *

@@ -253,6 +253,9 @@ channel_tls_connect(const tor_addr_t *addr, uint16_t port,
   goto done;
 
  err:
+  /* Launch failure frees this allocation directly, bypassing channel_free_().
+   * Release the association left by an abandoned or cached attempt. */
+  channel_note_establishment_cancelled(chan);
   circuitmux_free(chan->cmux);
   tor_free(tlschan);
   chan = NULL;

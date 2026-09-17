@@ -71,6 +71,7 @@
 #include "core/or/relay.h"
 #include "core/or/scheduler.h"
 #include "feature/client/entrynodes.h"
+#include "core/mainloop/netstatus.h"
 #include "feature/hs/hs_service.h"
 #include "feature/nodelist/dirlist.h"
 #include "feature/nodelist/networkstatus.h"
@@ -914,6 +915,10 @@ channel_free_(channel_t *chan)
   /* It must be deregistered */
   tor_assert(!(chan->registered));
 
+  /* Direct destruction releases the weak handle even if closure was
+   * bypassed; freeing a channel is never evidence of establishment failure. */
+  channel_note_establishment_cancelled(chan);
+
   log_debug(LD_CHANNEL,
             "Freeing channel %"PRIu64 " at %p",
             (chan->global_identifier), chan);
@@ -986,6 +991,9 @@ static void
 channel_force_xfree(channel_t *chan)
 {
   tor_assert(chan);
+  /* Shutdown bypasses normal state transitions and channel_free_(). This
+   * releases the handle before subclass cleanup, without blaming the guard. */
+  channel_note_establishment_cancelled(chan);
 
   log_debug(LD_CHANNEL,
             "Force-freeing channel %"PRIu64 " at %p",
@@ -1263,6 +1271,48 @@ channel_close_for_error(channel_t *chan)
 
   /* Change state to CLOSING */
   channel_change_state(chan, CHANNEL_STATE_CLOSING);
+}
+
+/** Discards any unused permission to blame this channel's selected guard.
+ * Releases the channel-owned weak handle without changing guard reachability
+ * or closing the channel. It does not cancel requests using the channel.
+ * This also ends attribution after successful establishment: "cancelled"
+ * refers to permission to report failure, not to whether the connection
+ * succeeded.
+ *
+ * After failure reporting, success, or earlier cancellation has consumed the
+ * handle, this function is a no-op and cannot undo a reported failure.
+ *
+ * Callers ending attribution without reporting failure must call this before
+ * invoking callbacks that could report another error. Callers must install
+ * the handle only at launch and must never reinstall it after clearing. */
+void
+channel_note_establishment_cancelled(channel_t *chan)
+{
+  if (!chan)
+    return;
+  struct entry_guard_handle_t *handle = chan->establishment_guard;
+  chan->establishment_guard = NULL;
+  entry_guard_handle_release(handle);
+}
+
+/** Called by the OR failure finalizer. This function clears the channel
+ * handle before delivering the failure, so reentrant callbacks and shared
+ * requests cannot count the attempt twice.
+ * OPENING plus outgoing excludes maintenance and all established traffic. */
+void
+channel_note_establishment_failure(channel_t *chan)
+{
+  if (!chan)
+    return;
+  struct entry_guard_handle_t *handle = chan->establishment_guard;
+  chan->establishment_guard = NULL;
+  if (!handle)
+    return;
+  if (!chan->is_incoming && chan->state == CHANNEL_STATE_OPENING &&
+      !chan->has_been_open && !net_is_disabled())
+    entry_guard_connection_failed(handle);
+  entry_guard_handle_release(handle);
 }
 
 /**

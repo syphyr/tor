@@ -402,6 +402,10 @@ guard_usable_t entry_guard_succeeded(circuit_guard_state_t **guard_state_p);
 void entry_guard_failed(circuit_guard_state_t **guard_state_p);
 void entry_guard_cancel(circuit_guard_state_t **guard_state_p);
 void entry_guard_chan_failed(channel_t *chan);
+struct entry_guard_handle_t *entry_guard_handle_from_state(
+    const circuit_guard_state_t *state);
+void entry_guard_handle_release(struct entry_guard_handle_t *handle);
+void entry_guard_connection_failed(struct entry_guard_handle_t *handle);
 int entry_guards_update_all(guard_selection_t *gs);
 int entry_guards_upgrade_waiting_circuits(guard_selection_t *gs,
                                           const smartlist_t *all_circuits,

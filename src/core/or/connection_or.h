@@ -35,6 +35,7 @@ int connection_or_digest_is_known_relay(const char *id_digest);
 void connection_or_update_token_buckets(smartlist_t *conns,
                                         const or_options_t *options);
 
+void connection_or_note_establishment_failure(or_connection_t *conn);
 void connection_or_connect_failed(or_connection_t *conn,
                                   int reason, const char *msg);
 void connection_or_notify_error(or_connection_t *conn,

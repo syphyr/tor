@@ -2642,14 +2642,50 @@ entry_guard_cancel(circuit_guard_state_t **guard_state_p)
   if (BUG(*guard_state_p == NULL))
     return;
   entry_guard_t *guard = entry_guard_handle_get((*guard_state_p)->guard);
-  if (! guard)
-    return;
-
-  /* XXXX prop271 -- last_tried_to_connect_at will be erroneous here, but this
-   * function will only get called in "bug" cases anyway. */
-  guard->is_pending = 0;
+  /* Ordinary circuit and directory cleanup also cancel selection state.
+   * This clears pending bookkeeping if the guard survives, but leaves
+   * reachability unchanged: disposing of a request neither proves failure nor
+   * reverses an already-recorded connection failure. The channel's independent
+   * handle, if any, remains responsible for its establishment result. */
+  if (guard)
+    guard->is_pending = 0;
   circuit_guard_state_free(*guard_state_p);
   *guard_state_p = NULL;
+}
+
+/** Acquires an independent weak handle from borrowed selection state. */
+struct entry_guard_handle_t *
+entry_guard_handle_from_state(const circuit_guard_state_t *state)
+{
+  entry_guard_t *guard = state ? entry_guard_handle_get(state->guard) : NULL;
+  return guard ? entry_guard_handle_new(guard) : NULL;
+}
+
+/** Releases a channel's independently owned weak handle. */
+void
+entry_guard_handle_release(struct entry_guard_handle_t *handle)
+{
+  entry_guard_handle_free(handle);
+}
+
+/** Records one failed connection through its launch-time selection. Neither
+ * a received identity nor a change of active selection redirects this
+ * result. The handle is borrowed; the caller retains ownership.
+ *
+ * The caller must establish that the failure is eligible for guard attribution
+ * and enforce at most one delivery per connection attempt. This helper only
+ * checks that the selected guard still exists in a selection and, for bridges,
+ * remains configured. It neither consumes the handle nor checks connection
+ * phase, direction, cancellation, or whether networking is enabled. */
+void
+entry_guard_connection_failed(struct entry_guard_handle_t *handle)
+{
+  entry_guard_t *guard = entry_guard_handle_get(handle);
+  if (!guard || !guard->in_selection)
+    return;
+  if (guard->bridge_addr && !get_bridge_info_for_guard(guard))
+    return;
+  entry_guards_note_guard_failure(guard->in_selection, guard);
 }
 
 /**
