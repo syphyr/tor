@@ -880,7 +880,15 @@ connection_ap_process_end_not_open(
   /* This end cell is now valid. */
   circuit_read_valid_data(circ, msg->length);
 
-  control_reason = reason | END_STREAM_REASON_FLAG_REMOTE;
+  /* Generate a reason code that we will use for controller events. This
+   * is the reason the END cell contained, with
+   * END_STREAM_REASON_FLAG_REMOTE to make it clear that it came from
+   * the other side of the circuit. As an exception, if the other side
+   * sent us a reason of 0, replace that with MISC so we don't get
+   * confused on our side (because we use 0 to mean successful connect).
+   */
+  control_reason = (reason ? reason : END_STREAM_REASON_MISC) |
+                   END_STREAM_REASON_FLAG_REMOTE;
 
   if (edge_reason_is_retriable(reason) &&
       /* avoid retry if rend */
@@ -1794,6 +1802,11 @@ handle_relay_msg(const relay_msg_t *msg, circuit_t *circ,
         return -END_CIRC_REASON_TORPROTOCOL;
       }
       reason = get_uint8(msg->body);
+      if (reason == 0) {
+        /* Not a valid END reason; don't let it alias our local "no error"
+         * value in end_reason (see same exception in end_not_open). */
+        reason = END_STREAM_REASON_MISC;
+      }
       if (!conn) {
         if (CIRCUIT_IS_ORIGIN(circ)) {
           origin_circuit_t *ocirc = TO_ORIGIN_CIRCUIT(circ);
