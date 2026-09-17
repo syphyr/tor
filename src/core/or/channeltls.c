@@ -221,13 +221,30 @@ channel_tls_connect(const tor_addr_t *addr, uint16_t port,
   channel_mark_outgoing(chan);
 
   /* Set up or_connection stuff */
-  tlschan->conn = connection_or_connect(addr, port, id_digest, ed_id, tlschan);
-  /* connection_or_connect() will fill in tlschan->conn */
-  if (!(tlschan->conn)) {
+  or_connection_t *conn =
+    connection_or_connect(addr, port, id_digest, ed_id, tlschan);
+  /* connection_or_connect() sets both conn->chan and tlschan->conn. If
+   * nonblocking connect() succeeds immediately, it also starts proxy/TLS
+   * setup before returning. That setup can fail (e.g., SOCKS4 with an IPv6
+   * target), leaving the OR connection marked for deferred close while
+   * returning NULL. Keeping that return value separate preserves tlschan->conn
+   * so the error path below can detach the surviving OR connection.
+   *
+   * Before freeing tlschan at err, this function clears the surviving OR
+   * connection's conn->chan, then tlschan->conn. Otherwise later
+   * connection_or_about_to_close() would notify a freed channel. The OR
+   * connection itself remains for normal deferred cleanup. Earlier failures
+   * that already freed it have already cleared tlschan->conn. */
+  if (!conn) {
+    if (tlschan->conn) {
+      tlschan->conn->chan = NULL;
+      tlschan->conn = NULL;
+    }
     chan->reason_for_closing = CHANNEL_CLOSE_FOR_ERROR;
     channel_change_state(chan, CHANNEL_STATE_ERROR);
     goto err;
   }
+  tlschan->conn = conn;
 
   log_debug(LD_CHANNEL,
             "Got orconn %p for channel with global id %"PRIu64,
