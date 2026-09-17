@@ -14,6 +14,8 @@
 
 #include "lib/container/handles.h"
 
+struct bridge_info_t;
+
 /* Forward declare for guard_selection_t; entrynodes.c has the real struct */
 typedef struct guard_selection_t guard_selection_t;
 
@@ -358,7 +360,7 @@ entry_guard_t *entry_guard_get_by_id_digest_for_guard_selection(
 entry_guard_t *entry_guard_get_by_id_digest(const char *digest);
 
 circuit_guard_state_t *
-get_guard_state_for_bridge_desc_fetch(const char *digest);
+get_guard_state_for_bridge_desc_fetch(const struct bridge_info_t *bridge);
 
 void entry_guards_changed_for_guard_selection(guard_selection_t *gs);
 void entry_guards_changed(void);

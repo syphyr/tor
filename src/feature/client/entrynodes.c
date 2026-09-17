@@ -170,6 +170,7 @@ static void entry_guard_set_filtered_flags(const or_options_t *options,
 static void pathbias_check_use_success_count(entry_guard_t *guard);
 static void pathbias_check_close_success_count(entry_guard_t *guard);
 static int node_is_possible_guard(const node_t *node);
+static bridge_info_t *get_bridge_info_for_guard(const entry_guard_t *guard);
 static int node_passes_guard_filter(const or_options_t *options,
                                     const node_t *node);
 static entry_guard_t *entry_guard_add_to_sample_impl(guard_selection_t *gs,
@@ -589,9 +590,12 @@ mark_guard_maybe_reachable(entry_guard_t *guard)
      * sync with the descriptor fetch schedule, since we will refuse to
      * use the network until our first primary bridges are either
      * known-usable or known-unusable. See bug 40396. */
-    download_status_t *dl = get_bridge_dl_status_by_id(guard->identity);
-    if (dl)
-      download_status_reset(dl);
+    /* Unknown fingerprints are all zero, and even known fingerprints can
+     * identify multiple configured endpoints. Looking up the configured bridge
+     * by its guard selects the matching endpoint's schedule for reset. */
+    bridge_info_t *bridge = get_bridge_info_for_guard(guard);
+    if (bridge)
+      download_status_reset(bridge_get_dl_status(bridge));
   }
 }
 
@@ -3507,16 +3511,15 @@ entry_guard_get_by_id_digest(const char *digest)
       get_guard_selection_info(), digest);
 }
 
-/** We are about to connect to bridge with identity <b>digest</b> to fetch its
+/** We are about to connect to configured <b>bridge</b> to fetch its
  *  descriptor. Create a new guard state for this connection and return it. */
 circuit_guard_state_t *
-get_guard_state_for_bridge_desc_fetch(const char *digest)
+get_guard_state_for_bridge_desc_fetch(const bridge_info_t *bridge)
 {
   circuit_guard_state_t *guard_state = NULL;
   entry_guard_t *guard = NULL;
 
-  guard = entry_guard_get_by_id_digest_for_guard_selection(
-                                    get_guard_selection_info(), digest);
+  guard = get_sampled_guard_for_bridge(get_guard_selection_info(), bridge);
   if (!guard) {
     return NULL;
   }
