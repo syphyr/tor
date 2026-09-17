@@ -3011,8 +3011,13 @@ cell_queues_check_size(void)
 void
 cell_queues_reclaim_memory(void)
 {
-  cell_queues_check_reclaim_impl(true);
+  /* Consume the existing request before cleanup. Leave any new request for
+   * the main loop unless we have verified that it is satisfied. */
   mainloop_must_free_memory = false;
+  cell_queues_check_reclaim_impl(true);
+  if (get_total_allocation() < get_options()->MaxMemInQueues) {
+    mainloop_must_free_memory = false;
+  }
 }
 
 /** Return true if we've been under memory pressure in the last
