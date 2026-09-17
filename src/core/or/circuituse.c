@@ -2198,10 +2198,24 @@ circuit_should_cannibalize_to_build(uint8_t purpose_to_build,
  * when bootstrapping or connecting to a relay without a descriptor.
  *
  * Return the newly allocated circuit on success, or NULL on failure. */
+static origin_circuit_t *
+circuit_launch_by_extend_info_with_guard(uint8_t purpose,
+    extend_info_t *extend_info, int flags,
+    const circuit_guard_state_t *guard_state);
+
 origin_circuit_t *
 circuit_launch_by_extend_info(uint8_t purpose,
+                            extend_info_t *extend_info, int flags)
+{
+  return circuit_launch_by_extend_info_with_guard(purpose, extend_info,
+                                                 flags, NULL);
+}
+
+static origin_circuit_t *
+circuit_launch_by_extend_info_with_guard(uint8_t purpose,
                               extend_info_t *extend_info,
-                              int flags)
+                              int flags,
+                              const circuit_guard_state_t *guard_state)
 {
   origin_circuit_t *circ;
   int onehop_tunnel = (flags & CIRCLAUNCH_ONEHOP_TUNNEL) != 0;
@@ -2320,7 +2334,8 @@ circuit_launch_by_extend_info(uint8_t purpose,
 
   /* try a circ. if it fails, circuit_mark_for_close will increment
    * n_circuit_failures */
-  return circuit_establish_circuit(purpose, extend_info, flags);
+  return circuit_establish_circuit_with_guard(purpose, extend_info, flags,
+                                              guard_state);
 }
 
 /** Record another failure at opening a general circuit. When we have
@@ -2644,8 +2659,15 @@ circuit_get_open_circ_or_launch(entry_connection_t *conn,
         log_info(LD_GENERAL, "Getting rendezvous circuit to v3 service!");
       }
 
-      circ = circuit_launch_by_extend_info(new_circ_purpose, extend_info,
-                                           flags);
+      /* The linked directory owns this state across AP attachment. The launch
+       * below borrows it synchronously; a new channel acquires its own handle.
+       * Reusing a pending circuit or channel never adopts this association. */
+      connection_t *linked = ENTRY_TO_CONN(conn)->linked_conn;
+      const circuit_guard_state_t *guard_state =
+        want_onehop && linked && linked->type == CONN_TYPE_DIR ?
+        TO_DIR_CONN(linked)->guard_state : NULL;
+      circ = circuit_launch_by_extend_info_with_guard(new_circ_purpose,
+                                    extend_info, flags, guard_state);
     }
 
     extend_info_free(extend_info);

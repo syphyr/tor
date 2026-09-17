@@ -87,6 +87,8 @@
 #include "trunnel/congestion_control.h"
 #include "trunnel/subproto_request.h"
 
+static int circuit_handle_first_hop_with_guard(origin_circuit_t *circ,
+                                  const circuit_guard_state_t *guard_state);
 static int circuit_send_first_onion_skin(origin_circuit_t *circ);
 static int circuit_build_no_more_hops(origin_circuit_t *circ);
 static int circuit_send_intermediate_onion_skin(origin_circuit_t *circ,
@@ -480,6 +482,14 @@ origin_circuit_init(uint8_t purpose, int flags)
 origin_circuit_t *
 circuit_establish_circuit(uint8_t purpose, extend_info_t *exit_ei, int flags)
 {
+  return circuit_establish_circuit_with_guard(purpose, exit_ei, flags, NULL);
+}
+
+origin_circuit_t *
+circuit_establish_circuit_with_guard(uint8_t purpose, extend_info_t *exit_ei,
+                                   int flags,
+                                   const circuit_guard_state_t *guard_state)
+{
   origin_circuit_t *circ;
   int err_reason = 0;
 
@@ -493,7 +503,8 @@ circuit_establish_circuit(uint8_t purpose, extend_info_t *exit_ei, int flags)
 
   circuit_event_status(circ, CIRC_EVENT_LAUNCHED, 0);
 
-  if ((err_reason = circuit_handle_first_hop(circ)) < 0) {
+  err_reason = circuit_handle_first_hop_with_guard(circ, guard_state);
+  if (err_reason < 0) {
     circuit_mark_for_close(TO_CIRCUIT(circ), -err_reason);
     return NULL;
   }
@@ -584,6 +595,13 @@ circuit_chan_publish(const origin_circuit_t *circ, const channel_t *chan)
 int
 circuit_handle_first_hop(origin_circuit_t *circ)
 {
+  return circuit_handle_first_hop_with_guard(circ, NULL);
+}
+
+static int
+circuit_handle_first_hop_with_guard(origin_circuit_t *circ,
+                                  const circuit_guard_state_t *guard_state)
+{
   crypt_path_t *firsthop;
   channel_t *n_chan;
   int err_reason = 0;
@@ -632,7 +650,7 @@ circuit_handle_first_hop(origin_circuit_t *circ)
 
     if (should_launch) {
       n_chan = channel_connect_for_circuit(firsthop->extend_info,
-                              circ->guard_state);
+                              guard_state ? guard_state : circ->guard_state);
       if (!n_chan) { /* connect failed, forget the whole thing */
         log_info(LD_CIRC,"connect to firsthop failed. Closing.");
         return -END_CIRC_REASON_CONNECTFAILED;

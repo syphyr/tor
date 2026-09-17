@@ -54,6 +54,9 @@ MOCK_DECL(const node_t *,
 const char *build_state_get_exit_nickname(cpath_build_state_t *state);
 
 struct circuit_guard_state_t;
+origin_circuit_t *circuit_establish_circuit_with_guard(uint8_t purpose,
+    extend_info_t *exit_ei, int flags,
+    const struct circuit_guard_state_t *guard_state);
 
 const node_t *choose_good_entry_server(const origin_circuit_t *circ,
                            uint8_t purpose,
