@@ -1562,15 +1562,18 @@ networkstatus_compute_consensus(smartlist_t *votes,
   flags = smartlist_new();
 
   consensus_method = compute_consensus_method(votes);
-  if (consensus_method_is_supported(consensus_method)) {
-    log_info(LD_DIR, "Generating consensus using method %d.",
-             consensus_method);
-  } else {
+  if (!consensus_method_is_supported(consensus_method)) {
     log_warn(LD_DIR, "The other authorities will use consensus method %d, "
              "which I don't support.  Maybe I should upgrade!",
              consensus_method);
     consensus_method = MAX_SUPPORTED_CONSENSUS_METHOD;
+    /* Fall back to the newest method supported by our current options. */
+    while (!consensus_method_is_supported(consensus_method)) {
+      --consensus_method;
+    }
   }
+  log_info(LD_DIR, "Generating consensus using method %d.",
+           consensus_method);
 
   {
     /* It's smarter to initialize these weights to 1, so that later on,
