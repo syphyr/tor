@@ -1431,7 +1431,7 @@ consensus_diff_apply(const char *consensus,
   // and it has at least three times as many lines as the consensus.
   size_t max_diff_lines;
   if (enforce_length_maxima) {
-    max_diff_lines = MAX(n_consensus_lines * 3, 1024);
+    max_diff_lines = MAX(n_consensus_lines * 3, 1024) - 1;
   } else {
     max_diff_lines = SIZE_MAX;
   }
