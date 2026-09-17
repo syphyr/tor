@@ -3,6 +3,8 @@
 
 #include "orconfig.h"
 
+#define HIBERNATE_PRIVATE
+#define CHANNEL_OBJECT_PRIVATE
 #define CIRCUITLIST_PRIVATE
 #define CIRCUITBUILD_PRIVATE
 #define CONFIG_PRIVATE
@@ -12,6 +14,8 @@
 #define DIRCLIENT_PRIVATE
 
 #include "core/or/or.h"
+#include "core/or/channel.h"
+#include "feature/hibernate/hibernate.h"
 #include "test/test.h"
 
 #include "feature/client/bridges.h"
@@ -3205,6 +3209,74 @@ static const struct testcase_setup_t upgrade_circuits = {
   upgrade_circuits_setup, upgrade_circuits_cleanup
 };
 
+/** Finalization consumes selection permission, independently of request
+ * lifetime, CBT history, received identity, and the active selection. */
+static void
+test_entry_guard_establishment_finalizer(void *arg)
+{
+  (void)arg;
+  guard_selection_t *gs = guard_selection_new("default", GS_TYPE_NORMAL);
+  circuit_guard_state_t *state = NULL;
+  hibernate_set_state_for_testing_(HIBERNATE_STATE_LIVE);
+  channel_t chan;
+  memset(&chan, 0, sizeof(chan));
+  unsigned selected_state;
+  entry_guard_t *g = select_entry_guard_for_circuit(gs, GUARD_USAGE_TRAFFIC,
+                                                  NULL, &selected_state);
+  tt_assert(g);
+  for (int mode = 0; mode < 10; ++mode) {
+    hibernate_set_state_for_testing_(mode == 8 ? HIBERNATE_STATE_DORMANT :
+                        mode == 9 ? HIBERNATE_STATE_EXITING :
+                                    HIBERNATE_STATE_LIVE);
+    state = circuit_guard_state_new(g, selected_state, NULL);
+    chan.state = CHANNEL_STATE_OPENING;
+    chan.is_incoming = mode == 1;
+    chan.has_been_open = mode == 2;
+    chan.establishment_guard = entry_guard_handle_from_state(state);
+    tt_ptr_op(chan.establishment_guard, OP_NE, state->guard);
+    g->is_reachable = GUARD_REACHABLE_YES;
+    get_options_mutable()->LearnCircuitBuildTimeout = mode != 6;
+    get_options_mutable()->DisableNetwork = mode == 4;
+    /* Cancellation must suppress a later failure notification. */
+    if (mode == 3)
+      channel_note_establishment_cancelled(&chan);
+    if (mode == 5) {
+      /* A channel with no association cannot adopt a later request. */
+      channel_note_establishment_cancelled(&chan);
+    }
+    /* Losing the launching request never loses the independent handle. */
+    entry_guard_cancel(&state);
+    tt_ptr_op(state, OP_EQ, NULL);
+    channel_note_establishment_failure(&chan);
+    tt_ptr_op(chan.establishment_guard, OP_EQ, NULL);
+    tt_int_op(g->is_reachable, OP_EQ,
+              mode == 0 || mode == 6 || mode == 7 ?
+              GUARD_REACHABLE_NO : GUARD_REACHABLE_YES);
+    tt_int_op(g->is_pending, OP_EQ, 0);
+    tt_int_op(g->confirmed_idx, OP_EQ, -1);
+    /* A subsequent success must not be undone by duplicate delivery. */
+    g->is_reachable = GUARD_REACHABLE_YES;
+    get_options_mutable()->DisableNetwork = 0;
+    channel_note_establishment_failure(&chan);
+    tt_int_op(g->is_reachable, OP_EQ, GUARD_REACHABLE_YES);
+  }
+
+  state = circuit_guard_state_new(g, selected_state, NULL);
+  chan.establishment_guard = entry_guard_handle_from_state(state);
+  guard_selection_free(gs); /* invalidates both weak handles */
+  entry_guard_cancel(&state);
+  tt_ptr_op(state, OP_EQ, NULL);
+  channel_note_establishment_failure(&chan);
+  tt_ptr_op(chan.establishment_guard, OP_EQ, NULL);
+
+ done:
+  get_options_mutable()->DisableNetwork = 0;
+  /* Release the fixture handle if an assertion skipped finalization. */
+  channel_note_establishment_cancelled(&chan);
+  circuit_guard_state_free(state);
+  guard_selection_free(gs);
+}
+
 #ifndef COCCI
 #define NO_PREFIX_TEST(name) \
   { #name, test_ ## name, 0, NULL, NULL }
@@ -3247,6 +3319,7 @@ struct testcase_t entrynodes_tests[] = {
   EN_TEST_FORK(get_guard_selection_by_name),
   EN_TEST_FORK(number_of_primaries),
 
+  BFN_TEST(establishment_finalizer),
   BFN_TEST(choose_selection_initial),
   BFN_TEST(add_single_guard),
   BFN_TEST(node_filter),
