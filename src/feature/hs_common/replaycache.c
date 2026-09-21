@@ -188,6 +188,24 @@ replaycache_add_and_test(replaycache_t *r, const void *data, size_t len)
   return replaycache_add_and_test_internal(time(NULL), r, data, len, NULL);
 }
 
+/** Test for a cached digest without inserting, refreshing, or scrubbing any
+ * entries. On a hit, optionally return the time since it was last added. */
+int
+replaycache_test_and_elapsed(const replaycache_t *r, const void *data,
+                             size_t len, time_t *elapsed)
+{
+  uint8_t digest[DIGEST256_LEN];
+  time_t *access_time;
+
+  tor_assert(r);
+  tor_assert(data);
+  tor_assert(len);
+
+  crypto_digest256((char *)digest, data, len, DIGEST_SHA256);
+  return replaycache_test_and_elapsed_internal(time(NULL), r, digest, elapsed,
+                                               &access_time);
+}
+
 /** Like replaycache_add_and_test(), but if it's a hit also return the time
  * elapsed since this digest was last seen.
  */

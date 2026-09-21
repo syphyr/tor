@@ -1020,9 +1020,16 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
     goto done;
   }
 
-  /* Check our replay cache for this introduction point. */
-  if (replaycache_add_test_and_elapsed(data->replay_cache, encrypted_section,
-                                       encrypted_section_len, &elapsed)) {
+  /* Bound insertions even between periodic introduction point expiry checks.
+   * Retain existing entries until this introduction point is destroyed. */
+  if (replay_cache_count(data->replay_cache) >= ip->introduce2_max) {
+    goto done;
+  }
+
+  /* Reject known replays before authentication, but do not cache a new cell
+   * until all cell validation has succeeded. */
+  if (replaycache_test_and_elapsed(data->replay_cache, encrypted_section,
+                                   encrypted_section_len, &elapsed)) {
     log_warn(LD_REND, "Possible replay detected! An INTRODUCE2 cell with the "
                       "same ENCRYPTED section was seen %ld seconds ago. "
                       "Dropping cell.", (long int) elapsed);
@@ -1134,6 +1141,12 @@ hs_cell_parse_introduce2(hs_cell_introduce2_data_t *data,
   if (data->rdv_data.cc_enabled && !congestion_control_enabled()) {
     goto done;
   }
+
+  /* Only validated cells consume cache space and count towards cache-based
+   * rotation. Keep these even if the caller rejects the rendezvous cookie:
+   * its replay cache expires entries, while this cache must not. */
+  replaycache_add_and_test(data->replay_cache, encrypted_section,
+                          encrypted_section_len);
 
   /* Success. */
   ret = 0;
