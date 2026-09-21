@@ -1893,11 +1893,12 @@ circuit_build_failed(origin_circuit_t *circ)
               TO_CIRCUIT(circ)->n_circ_id, circ->global_identifier,
               circuit_purpose_to_string(TO_CIRCUIT(circ)->purpose));
 
-    /* If the path failed on an RP, retry it. */
+    /* If the path failed on an RP, note it. The retry itself was already
+     * launched by hs_service_circuit_cleanup_on_close() when this circuit
+     * was marked for close; see hs_circ_retry_service_rendezvous_point(). */
     if (TO_CIRCUIT(circ)->purpose == CIRCUIT_PURPOSE_S_CONNECT_REND) {
       hs_metrics_failed_rdv(&circ->hs_ident->identity_pk,
                             HS_METRICS_ERR_RDV_PATH);
-      hs_circ_retry_service_rendezvous_point(circ);
     }
 
     /* In all other cases, just bail. The rest is just failure accounting
@@ -2004,7 +2005,10 @@ circuit_build_failed(origin_circuit_t *circ)
 
       hs_metrics_failed_rdv(&circ->hs_ident->identity_pk,
                             HS_METRICS_ERR_RDV_RP_CONN_FAILURE);
-      hs_circ_retry_service_rendezvous_point(circ);
+      /* No retry from here: hs_service_circuit_cleanup_on_close() already
+       * relaunched this rendezvous circuit when it was marked for close,
+       * and doing it again would build a second circuit carrying the same
+       * rendezvous cookie and key material. */
       break;
     /* default:
      * This won't happen in normal operation, but might happen if the
