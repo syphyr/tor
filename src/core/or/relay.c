@@ -892,7 +892,11 @@ connection_ap_process_end_not_open(
 
   if (edge_reason_is_retriable(reason) &&
       /* avoid retry if rend */
-      !connection_edge_is_rendezvous_stream(edge_conn)) {
+      !connection_edge_is_rendezvous_stream(edge_conn) &&
+      /* also don't retry if it was a begindir request: those are tunneled
+       * requests to a specific relay, and if that relay didn't want
+       * it, asking again isn't going to work better. */
+      !conn->use_begindir) {
     const char *chosen_exit_digest =
       circ->build_state->chosen_exit->identity_digest;
     log_info(LD_APP,"Address '%s' refused due to '%s'. Considering retrying.",
