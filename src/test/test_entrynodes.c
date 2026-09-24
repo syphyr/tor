@@ -4895,9 +4895,10 @@ test_entry_guard_establishment_socket_completion(void *arg)
       tt_assert(SOCKET_OK(conn->base_.s));
       const tor_socket_t result = tor_connect_socket(conn->base_.s,
                                             (struct sockaddr *)&sa, len);
-      const int error = result == TOR_INVALID_SOCKET ?
+      const int socket_ok = SOCKET_OK(result);
+      const int error = !socket_ok ?
         tor_socket_errno(conn->base_.s) : 0;
-      if (result == TOR_INVALID_SOCKET && !ERRNO_IS_CONN_EINPROGRESS(error)) {
+      if (!socket_ok && !ERRNO_IS_CONN_EINPROGRESS(error)) {
         /* Some platforms refuse synchronously. SO_ERROR need not retain an
          * error already returned by connect(), so no completion is awaited.
          * The synchronous production launch path is covered separately. */
