@@ -2296,7 +2296,8 @@ connection_connect_sockaddr,(connection_t *conn,
   if (options->ConstrainedSockets)
     set_constrained_socket_buffers(s, (int)options->ConstrainedSockSize);
 
-  if (tor_connect_socket(s, sa, sa_len) == TOR_INVALID_SOCKET) {
+  const tor_socket_t connect_result = tor_connect_socket(s, sa, sa_len);
+  if (!SOCKET_OK(connect_result)) {
     int e = tor_socket_errno(s);
     if (!ERRNO_IS_CONN_EINPROGRESS(e)) {
       /* yuck. kill it. */
