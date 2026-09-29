@@ -2268,7 +2268,7 @@ handle_response_fetch_consensus(dir_connection_t *conn,
     }
 
     new_consensus = consensus_diff_apply(consensus_body, consensus_body_len,
-                                         body, body_len);
+                                         body, body_len, true);
     tor_munmap_file(mapped_consensus);
     if (new_consensus == NULL) {
       log_warn(LD_DIR, "Could not apply consensus diff received from server "
