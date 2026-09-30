@@ -769,6 +769,7 @@ nodelist_set_consensus(const networkstatus_t *ns)
       node->is_stable = rs->is_stable;
       node->is_possible_guard = rs->is_possible_guard;
       node->is_exit = rs->is_exit;
+      node->is_middle_only = rs->is_middle_only;
       if (!authdir) {
         /* Authdirs treat is_bad_exit specially in that they only assign
          * it when the descriptor arrives. So when a dir auth is reading
