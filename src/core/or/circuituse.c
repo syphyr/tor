@@ -624,8 +624,10 @@ circuit_expire_building(void)
            * was a timeout, and the timeout value needs to reset if we
            * see enough of them. Note this means we also need to avoid
            * double-counting below, too. */
-          circuit_build_times_count_timeout(get_circuit_build_times_mutable(),
-              first_hop_succeeded);
+          if (circuit_build_times_circ_can_record(TO_ORIGIN_CIRCUIT(victim))) {
+            circuit_build_times_count_timeout(
+                get_circuit_build_times_mutable(), first_hop_succeeded);
+          }
           TO_ORIGIN_CIRCUIT(victim)->relaxed_timeout = 1;
         }
         continue;
@@ -746,7 +748,10 @@ circuit_expire_building(void)
          * it off at, we probably had a suspend event along this codepath,
          * and we should discard the value.
          */
-        if (timercmp(&victim->timestamp_began, &extremely_old_cutoff, OP_LT)) {
+        if (!circuit_build_times_circ_can_record(TO_ORIGIN_CIRCUIT(victim))) {
+          /* Preserve expiry policy, but the prefix was already handled. */
+        } else if (timercmp(&victim->timestamp_began,
+                           &extremely_old_cutoff, OP_LT)) {
           log_notice(LD_CIRC,
                      "Extremely large value for circuit build timeout: %lds. "
                      "Assuming clock jump. Purpose %d (%s)",
@@ -2200,9 +2205,9 @@ circuit_launch_by_extend_info_with_guard(uint8_t purpose,
     extend_info_t *extend_info, int flags,
     const circuit_guard_state_t *guard_state);
 
-origin_circuit_t *
-circuit_launch_by_extend_info(uint8_t purpose,
-                            extend_info_t *extend_info, int flags)
+MOCK_IMPL(origin_circuit_t *,
+circuit_launch_by_extend_info, (uint8_t purpose,
+                              extend_info_t *extend_info, int flags))
 {
   return circuit_launch_by_extend_info_with_guard(purpose, extend_info,
                                                  flags, NULL);

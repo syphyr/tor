@@ -647,7 +647,7 @@ circuit_build_times_mark_circ_as_measurement_only(origin_circuit_t *circ)
    * have a timeout. We also want to avoid double-counting
    * already "relaxed" circuits, which are counted in
    * circuit_expire_building(). */
-  if (!circ->relaxed_timeout) {
+  if (!circ->relaxed_timeout && circuit_build_times_circ_can_record(circ)) {
     int first_hop_succeeded = circ->cpath &&
           circ->cpath->state == CPATH_STATE_OPEN;
 
@@ -655,6 +655,14 @@ circuit_build_times_mark_circ_as_measurement_only(origin_circuit_t *circ)
                                  get_circuit_build_times_mutable(),
                                  first_hop_succeeded);
   }
+}
+
+/** Statistical eligibility, separate from purpose and expiry policy. */
+int
+circuit_build_times_circ_can_record(const origin_circuit_t *circ)
+{
+  return !circ->cbt_prefix_measurement_done &&
+    circuit_timeout_want_to_count_circ(circ);
 }
 
 /**
@@ -691,7 +699,7 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
    * way? If so, handle it below. If not, just return (and let
    * circuit_expire_building() eventually take care of it).
    */
-  if (!circuit_timeout_want_to_count_circ(circ)) {
+  if (!circuit_build_times_circ_can_record(circ)) {
     return;
   }
 
@@ -742,6 +750,7 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
                                       get_circuit_build_times_mutable());
       }
     }
+    circ->cbt_prefix_measurement_done = 1;
   }
 }
 
