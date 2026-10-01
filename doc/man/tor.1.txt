@@ -3354,7 +3354,11 @@ on the public Tor network.
 
 [[AuthDirMaxServersPerAddr]] **AuthDirMaxServersPerAddr** __NUM__::
     Authoritative directories only. The maximum number of servers that we will
-    list as acceptable on a single IP address. Set this to "0" for "no limit".
+    list as acceptable on a single IP address. Only servers that we have
+    found reachable at that address count toward the limit, so it is only
+    enforced when AuthDirTestReachability is set, and for IPv6 addresses
+    only when AuthDirHasIPv6Connectivity is set. Set this to "0" for
+    "no limit".
     (Default: 2)
 
 [[AuthDirPinKeys]] **AuthDirPinKeys** **0**|**1**::
