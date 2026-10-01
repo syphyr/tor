@@ -35,7 +35,6 @@
 #include "feature/nodelist/routerlist.h"
 #include "feature/relay/router.h"
 #include "feature/relay/routerkeys.h"
-#include "feature/stats/rephist.h"
 #include "feature/client/entrynodes.h" /* needed for guardfraction methods */
 #include "feature/nodelist/torcert.h"
 #include "feature/dirauth/voting_schedule.h"
@@ -4760,10 +4759,6 @@ dirserv_generate_networkstatus_vote_obj(crypto_pk_t *private_key,
   routers_sort_by_identity(routers);
   /* Get a digestmap of possible sybil routers, IPv4 or IPv6 */
   digestmap_t *omit_as_sybil = get_all_possible_sybil(routers);
-  DIGESTMAP_FOREACH (omit_as_sybil, sybil_id, void *, ignore) {
-    (void)ignore;
-    rep_hist_make_router_pessimal(sybil_id, now);
-  } DIGESTMAP_FOREACH_END
   /* Count how many have measured bandwidths so we know how to assign flags;
    * this must come before dirserv_compute_performance_thresholds() */
   dirserv_count_measured_bws(routers);
