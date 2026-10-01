@@ -27,6 +27,8 @@
 
 #include "core/or/or.h"
 #include "core/or/circuitbuild.h"
+#include "core/or/channel.h"
+#include "core/or/cpath_build_state_st.h"
 #include "core/or/circuitstats.h"
 #include "app/config/config.h"
 #include "lib/confmgt/confmgt.h"
@@ -65,6 +67,120 @@ static int circuit_build_times_recover_unusable(circuit_build_times_t *cbt,
 // can change frequently, so we'd be building a lot more circuits
 // most likely.
 static circuit_build_times_t circ_times;
+
+/** These aggregate counters intentionally survive estimator resets. */
+STATIC cbt_diagnostics_t cbt_diagnostics;
+
+/** Saturation avoids wraparound during prolonged outages. */
+static void
+cbt_diagnostic_increment(uint64_t *counter)
+{
+  if (*counter < UINT64_MAX)
+    ++*counter;
+}
+
+/** Count exclusion once per attempt, regardless of callback ordering. */
+static void
+cbt_note_excluded(origin_circuit_t *circ)
+{
+  if (circ->cbt_observation_invalidated && !circ->cbt_exclusion_reported &&
+      !circ->cbt_prefix_measurement_done &&
+      circuit_timeout_want_to_count_circ(circ)) {
+    circ->cbt_exclusion_reported = 1;
+    cbt_diagnostic_increment(&cbt_diagnostics.excluded);
+  }
+}
+
+/** Account a soft timeout and remember missing first-hop progress solely for
+ * diagnostics. A late first hop does not change the network-reset policy. */
+void
+circuit_build_times_count_circ_timeout(origin_circuit_t *circ)
+{
+  int first_hop_succeeded = circ->cpath &&
+    circ->cpath->state == CPATH_STATE_OPEN;
+  if (!circuit_build_times_circ_can_record(circ)) {
+    cbt_note_excluded(circ);
+    return;
+  }
+  if (!circuit_build_times_disabled(get_options()) && !first_hop_succeeded)
+    circ->cbt_soft_timeout_before_firsthop = 1;
+  circuit_build_times_count_timeout(get_circuit_build_times_mutable(),
+                                    first_hop_succeeded);
+}
+
+/** Count failed first-hop connections separately from CREATE/build expiry.
+ * Called once when a circuit is marked for close, before channel cleanup.
+ * Administrative cancellations and path-selection failures are not failures
+ * of an attempted connection.
+ */
+void
+circuit_build_times_note_connection_failure(origin_circuit_t *circ, int reason)
+{
+  if (circ->cbt_expiry_reported || circ->has_opened || !circ->build_state ||
+      circ->build_state->desired_path_len < DEFAULT_ROUTE_LEN ||
+      !circ->cpath || circ->cpath->state != CPATH_STATE_CLOSED)
+    return;
+  if (reason != END_CIRC_REASON_CONNECTFAILED &&
+      reason != END_CIRC_REASON_CHANNEL_CLOSED &&
+      reason != END_CIRC_REASON_TIMEOUT)
+    return;
+  circ->cbt_expiry_reported = 1;
+  cbt_diagnostic_increment(&cbt_diagnostics.connection_failed);
+}
+
+/** Record terminal build expiry independently of statistical/liveness gates.
+ * The two marginal distributions must not be interpreted as a joint record.
+ */
+void
+circuit_build_times_note_expiry(origin_circuit_t *circ)
+{
+  int hops;
+  if (circ->cbt_expiry_reported || circ->base_.state == CIRCUIT_STATE_OPEN ||
+      !circ->build_state ||
+      circ->build_state->desired_path_len < DEFAULT_ROUTE_LEN)
+    return;
+  circ->cbt_expiry_reported = 1;
+  hops = circuit_get_cpath_opened_len(circ);
+  if (circ->has_opened || circ->cbt_prefix_measurement_done ||
+      hops >= DEFAULT_ROUTE_LEN)
+    cbt_diagnostic_increment(&cbt_diagnostics.post_prefix);
+  else
+    cbt_diagnostic_increment(&cbt_diagnostics.prefix_hops[hops]);
+  if (circ->base_.n_chan &&
+      circ->base_.n_chan->state == CHANNEL_STATE_OPEN)
+    cbt_diagnostic_increment(&cbt_diagnostics.open_channel);
+  else
+    cbt_diagnostic_increment(&cbt_diagnostics.other_channel);
+  cbt_note_excluded(circ);
+}
+
+/** Emit only during failure, at most once per five minutes. No peer, path,
+ * circuit, service, or individual timing data enters this fixed vocabulary.
+ */
+void
+circuit_build_times_report_diagnostics(time_t now)
+{
+  cbt_diagnostics_t *d = &cbt_diagnostics;
+  if (!(d->prefix_hops[0] || d->prefix_hops[1] || d->prefix_hops[2] ||
+        d->post_prefix || d->connection_failed))
+    return;
+  if (d->have_reported && difftime(now, d->last_report) < 300)
+    return;
+  log_notice(LD_CIRC, "Circuit build expiry summary: "
+      "prefix_hops_0=%"PRIu64" prefix_hops_1=%"PRIu64" "
+      "prefix_hops_2=%"PRIu64" post_prefix=%"PRIu64" "
+      "open_channel=%"PRIu64" other_channel=%"PRIu64" "
+      "late_firsthop=%"PRIu64" completed=%"PRIu64" "
+      "abandoned=%"PRIu64" excluded=%"PRIu64" adaptive=%d "
+      "connection_failed=%"PRIu64,
+      d->prefix_hops[0], d->prefix_hops[1], d->prefix_hops[2], d->post_prefix,
+      d->open_channel, d->other_channel, d->late_firsthop, d->completed,
+      d->abandoned, d->excluded,
+      !circuit_build_times_disabled(get_options()), d->connection_failed);
+  memset(d, 0, sizeof(*d));
+  d->last_report = now;
+  d->have_reported = true;
+}
 
 #ifdef TOR_UNIT_TESTS
 /** If set, we're running the unit tests: we should avoid clobbering
@@ -649,14 +765,8 @@ circuit_build_times_mark_circ_as_measurement_only(origin_circuit_t *circ)
    * have a timeout. We also want to avoid double-counting
    * already "relaxed" circuits, which are counted in
    * circuit_expire_building(). */
-  if (!circ->relaxed_timeout && circuit_build_times_circ_can_record(circ)) {
-    int first_hop_succeeded = circ->cpath &&
-          circ->cpath->state == CPATH_STATE_OPEN;
-
-    circuit_build_times_count_timeout(
-                                 get_circuit_build_times_mutable(),
-                                 first_hop_succeeded);
-  }
+  if (!circ->relaxed_timeout)
+    circuit_build_times_count_circ_timeout(circ);
 }
 
 /** Statistical eligibility, separate from purpose and expiry policy. */
@@ -697,6 +807,14 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
   if (circuit_build_times_disabled(get_options())) {
     return;
   }
+
+  if (circ->cbt_soft_timeout_before_firsthop && circ->cpath &&
+      circ->cpath->state == CPATH_STATE_OPEN) {
+    circ->cbt_soft_timeout_before_firsthop = 0;
+    if (!circ->cbt_observation_invalidated)
+      cbt_diagnostic_increment(&cbt_diagnostics.late_firsthop);
+  }
+  cbt_note_excluded(circ);
 
   /* Is this a circuit for which the timeout applies in a straight-forward
    * way? If so, handle it below. If not, just return (and let
@@ -748,8 +866,9 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
       /* Only count circuit times if the network is live */
       if (circuit_build_times_network_check_live(
                             get_circuit_build_times())) {
-        circuit_build_times_add_time(get_circuit_build_times_mutable(),
-                                     (build_time_t)timediff);
+        if (circuit_build_times_add_time(get_circuit_build_times_mutable(),
+                                        (build_time_t)timediff) == 0)
+          cbt_diagnostic_increment(&cbt_diagnostics.completed);
         circuit_build_times_set_timeout(get_circuit_build_times_mutable());
       }
 
@@ -1699,6 +1818,7 @@ circuit_build_times_count_close(circuit_build_times_t *cbt,
   }
 
   circuit_build_times_add_time(cbt, CBT_BUILD_ABANDONED);
+  cbt_diagnostic_increment(&cbt_diagnostics.abandoned);
   return 1;
 }
 
@@ -1845,7 +1965,9 @@ circuit_build_times_recover_unusable(circuit_build_times_t *cbt,
       "learning. samples=%d abandoned=%d usable=%d "
       "soft_ms=%.0f->%.0f "
       "close_ms=%.0f->%.0f",
-      abandoned, abandoned, old_soft, cbt->timeout_ms, old_close, cbt->close_ms);
+      usable ? "insufficient" : "no", usable + abandoned, abandoned, usable,
+      old_soft, cbt->timeout_ms,
+      old_close, cbt->close_ms);
   return 1;
 }
 

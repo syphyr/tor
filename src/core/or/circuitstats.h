@@ -39,6 +39,11 @@ int circuit_build_times_add_time(circuit_build_times_t *cbt,
 int circuit_build_times_needs_circuits(const circuit_build_times_t *cbt);
 void circuit_build_times_handle_completed_hop(origin_circuit_t *circ);
 int circuit_build_times_circ_can_record(const origin_circuit_t *circ);
+void circuit_build_times_count_circ_timeout(origin_circuit_t *circ);
+void circuit_build_times_note_expiry(origin_circuit_t *circ);
+void circuit_build_times_report_diagnostics(time_t now);
+void circuit_build_times_note_connection_failure(origin_circuit_t *circ,
+                                                 int reason);
 
 int circuit_build_times_needs_circuits_now(const circuit_build_times_t *cbt);
 void circuit_build_times_init(circuit_build_times_t *cbt);
@@ -136,6 +141,19 @@ int32_t circuit_build_times_initial_timeout(void);
 #endif
 
 #ifdef CIRCUITSTATS_PRIVATE
+/** Saturating process-wide interval diagnostics, independent of resets. */
+typedef struct {
+  uint64_t prefix_hops[3];
+  uint64_t post_prefix, open_channel, other_channel;
+  uint64_t connection_failed;
+  uint64_t late_firsthop, completed, abandoned, excluded;
+  time_t last_report;
+  bool have_reported;
+} cbt_diagnostics_t;
+#ifdef TOR_UNIT_TESTS
+extern cbt_diagnostics_t cbt_diagnostics;
+#endif
+
 STATIC double circuit_build_times_calculate_timeout(circuit_build_times_t *cbt,
                                              double quantile);
 STATIC int circuit_build_times_update_alpha(circuit_build_times_t *cbt);

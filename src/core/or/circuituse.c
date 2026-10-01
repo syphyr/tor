@@ -607,8 +607,6 @@ circuit_expire_building(void)
       /* It's still young enough that we wouldn't close it, right? */
       if (timercmp(&victim->timestamp_began, &close_cutoff, OP_GT)) {
         if (!TO_ORIGIN_CIRCUIT(victim)->relaxed_timeout) {
-          int first_hop_succeeded = TO_ORIGIN_CIRCUIT(victim)->cpath->state
-                                      == CPATH_STATE_OPEN;
           if (!fixed_time) {
             log_info(LD_CIRC,
                 "No circuits are opened. Relaxing timeout for circuit %d "
@@ -627,10 +625,7 @@ circuit_expire_building(void)
            * was a timeout, and the timeout value needs to reset if we
            * see enough of them. Note this means we also need to avoid
            * double-counting below, too. */
-          if (circuit_build_times_circ_can_record(TO_ORIGIN_CIRCUIT(victim))) {
-            circuit_build_times_count_timeout(
-                get_circuit_build_times_mutable(), first_hop_succeeded);
-          }
+          circuit_build_times_count_circ_timeout(TO_ORIGIN_CIRCUIT(victim));
           TO_ORIGIN_CIRCUIT(victim)->relaxed_timeout = 1;
         }
         continue;
@@ -732,7 +727,9 @@ circuit_expire_building(void)
       }
 
       if (circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
-          enough_to_compute) {
+          (circuit_build_times_enough_to_compute(get_circuit_build_times()) ||
+           (enough_to_compute &&
+            TO_ORIGIN_CIRCUIT(victim)->cbt_observation_invalidated))) {
 
         log_info(LD_CIRC,
                  "Deciding to count the timeout for circuit %"PRIu32,
@@ -765,6 +762,9 @@ circuit_expire_building(void)
             get_circuit_build_times_mutable(),
             first_hop_succeeded,
             (time_t)victim->timestamp_created.tv_sec)) {
+          /* Record this accepted abandonment before a possible recovery
+           * invalidates outstanding attempts. It was not excluded. */
+          circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
           circuit_build_times_set_timeout(get_circuit_build_times_mutable());
         }
       }
@@ -820,6 +820,7 @@ circuit_expire_building(void)
                  -1);
 
     circuit_log_path(LOG_INFO,LD_CIRC,TO_ORIGIN_CIRCUIT(victim));
+    circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
     tor_trace(TR_SUBSYS(circuit), TR_EV(timeout), TO_ORIGIN_CIRCUIT(victim));
     if (victim->purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT)
       circuit_mark_for_close(victim, END_CIRC_REASON_MEASUREMENT_EXPIRED);
@@ -828,6 +829,7 @@ circuit_expire_building(void)
 
     pathbias_count_timeout(TO_ORIGIN_CIRCUIT(victim));
   } SMARTLIST_FOREACH_END(victim);
+  circuit_build_times_report_diagnostics(now.tv_sec);
 }
 
 /**
