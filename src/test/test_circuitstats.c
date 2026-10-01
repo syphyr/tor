@@ -1017,11 +1017,171 @@ test_circuitstats_mixed_rendezvous(void *arg)
   UNMOCK(circuit_launch_by_extend_info);
 }
 
+/* Callback/expiry order must not change the number of timeout events. */
+static void
+test_circuitstats_late_firsthop(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  origin_circuit_t *circ = NULL, *opened = NULL;
+  const struct timeval start = { 1000, 0 };
+  (void)arg;
+  get_options_mutable()->LearnCircuitBuildTimeout = 1;
+  get_options_mutable()->AvoidDiskWrites = 1;
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
+  circuit_build_times_init(cbt);
+  for (int have_open = 0; have_open < 2; ++have_open) {
+    if (have_open)
+      opened = add_opened_threehop();
+    /* Callback first, expiration first, no response, recovery exclusion,
+     * and learning disabled between the timeout and the response. */
+    for (int kind = 0; kind < 5; ++kind) {
+      circuit_build_times_reset(cbt);
+      memset(cbt->liveness.timeouts_after_firsthop, 0,
+             cbt->liveness.num_recent_circs);
+      cbt->liveness.after_firsthop_idx = 0;
+      for (int i = 0; i < CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE; ++i)
+        circuit_build_times_add_time(cbt, 500);
+      cbt->timeout_ms = 1000;
+      cbt->close_ms = 60000;
+      circ = build_unopened_fourhop(start);
+      circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
+      cbt_test_now = start;
+      cbt_test_now.tv_sec += 3;
+      if (kind == 0) {
+        circ->cpath->state = CPATH_STATE_OPEN;
+        circuit_build_times_handle_completed_hop(circ);
+      }
+      circuit_expire_building();
+      tt_int_op(cbt->num_circ_timeouts, OP_EQ, 1);
+      if (kind == 3)
+        circ->cbt_observation_invalidated = 1;
+      if (kind == 4)
+        get_options_mutable()->LearnCircuitBuildTimeout = 0;
+      if (kind != 2)
+        circ->cpath->state = CPATH_STATE_OPEN;
+      circuit_build_times_handle_completed_hop(circ);
+      circuit_build_times_handle_completed_hop(circ);
+      circuit_expire_building();
+      tt_int_op(cbt->num_circ_timeouts, OP_EQ, 1);
+      tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, kind < 2);
+      tt_int_op(cbt->liveness.timeouts_after_firsthop[0], OP_EQ, kind < 2);
+      get_options_mutable()->LearnCircuitBuildTimeout = 1;
+      if (kind < 2) {
+        circ->cpath->next->state = CPATH_STATE_OPEN;
+        circ->cpath->next->next->state = CPATH_STATE_OPEN;
+        circuit_build_times_handle_completed_hop(circ);
+        tt_int_op(cbt->total_build_times, OP_EQ,
+                  CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE + 1);
+        tt_int_op(cbt->liveness.timeouts_after_firsthop[0], OP_EQ, 1);
+        int recent_idx = cbt->liveness.after_firsthop_idx;
+        circuit_build_times_handle_completed_hop(circ);
+        cbt_test_now.tv_sec = 1061;
+        circuit_expire_building();
+        circuit_expire_building();
+        tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, recent_idx);
+        tt_int_op(cbt->num_circ_timeouts, OP_EQ, 1);
+      }
+      circuit_free_(TO_CIRCUIT(circ));
+      circ = NULL;
+    }
+    circuit_free_(TO_CIRCUIT(opened));
+    opened = NULL;
+  }
+ done:
+  get_options_mutable()->LearnCircuitBuildTimeout = 1;
+  circuit_free_(TO_CIRCUIT(circ));
+  circuit_free_(TO_CIRCUIT(opened));
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(circuit_mark_for_close_);
+}
+
+/* Reset in the callback is allowed. Old short deadlines must not be replayed,
+ * but genuine completion samples and later current-deadline misses survive. */
+static void
+test_circuitstats_late_firsthop_reset(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  origin_circuit_t *circs[40] = { NULL };
+  origin_circuit_t *opened = NULL;
+  const struct timeval start = { 1000, 0 };
+  (void)arg;
+  circuitbuild_running_unit_tests();
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
+  circuit_build_times_init(cbt);
+  opened = add_opened_threehop();
+  for (int i = 0; i < CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE; ++i)
+    circuit_build_times_add_time(cbt, 500);
+  cbt->timeout_ms = 1000;
+  cbt->close_ms = 60000;
+  cbt_test_now = start;
+  cbt_test_now.tv_sec += 3;
+  for (unsigned i = 0; i < ARRAY_LENGTH(circs); ++i) {
+    circs[i] = build_unopened_fourhop(start);
+    circs[i]->cpath->state = CPATH_STATE_AWAITING_KEYS;
+  }
+  circuit_expire_building();
+  tt_int_op(cbt->num_circ_timeouts, OP_EQ, ARRAY_LENGTH(circs));
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+  for (int i = 0; i < CBT_DEFAULT_MAX_RECENT_TIMEOUT_COUNT; ++i) {
+    circs[i]->cpath->state = CPATH_STATE_OPEN;
+    circuit_build_times_handle_completed_hop(circs[i]);
+  }
+  tt_double_op(fabs(cbt->timeout_ms - 60000), OP_LT, 0.001);
+  tt_int_op(cbt->total_build_times, OP_EQ, 0);
+  tt_int_op(cbt->num_circ_timeouts, OP_EQ, 0); /* Reset clears totals. */
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+  for (unsigned i = 0; i < ARRAY_LENGTH(circs); ++i) {
+    circs[i]->cpath->state = CPATH_STATE_OPEN;
+    circuit_build_times_handle_completed_hop(circs[i]);
+    circuit_build_times_handle_completed_hop(circs[i]);
+  }
+  tt_double_op(fabs(cbt->timeout_ms - 60000), OP_LT, 0.001);
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+
+  /* An old attempt finishing below the new deadline remains a real sample. */
+  origin_circuit_t *success = circs[39];
+  success->cpath->next->state = CPATH_STATE_OPEN;
+  success->cpath->next->next->state = CPATH_STATE_OPEN;
+  circuit_build_times_handle_completed_hop(success);
+  tt_int_op(cbt->total_build_times, OP_EQ, 1);
+  tt_int_op(cbt->circuit_build_times[0], OP_EQ, 3000);
+  tt_assert(success->cbt_prefix_measurement_done);
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+
+  /* No new hop callbacks: the expiry pass qualifies pending attempts when
+   * they really exceed 60 seconds. Its reset to 120 seconds must apply to
+   * the rest of the backlog and to this pass's physical expiry cutoffs. */
+  cbt_test_now.tv_sec = 1060;
+  circuit_expire_building();
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+  cbt_test_now.tv_sec = 1061;
+  marked_for_close = 0;
+  circuit_expire_building();
+  tt_double_op(fabs(cbt->timeout_ms - 120000), OP_LT, 0.001);
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+  tt_int_op(marked_for_close, OP_EQ, 0);
+  circuit_expire_building();
+  tt_double_op(fabs(cbt->timeout_ms - 120000), OP_LT, 0.001);
+  tt_int_op(cbt->num_circ_timeouts, OP_EQ, 0);
+ done:
+  for (unsigned i = 0; i < ARRAY_LENGTH(circs); ++i)
+    circuit_free_(TO_CIRCUIT(circs[i]));
+  circuit_free_(TO_CIRCUIT(opened));
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(circuit_mark_for_close_);
+}
+
 #define TEST_CIRCUITSTATS(name, flags) \
     { #name, test_##name, (flags), &helper_pubsub_setup, NULL }
 
 struct testcase_t circuitstats_tests[] = {
   TEST_CIRCUITSTATS(circuitstats_hoplen, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_late_firsthop, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_late_firsthop_reset, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_prefix_accounting, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_prefix_lifecycle, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_recovery, TT_FORK),
