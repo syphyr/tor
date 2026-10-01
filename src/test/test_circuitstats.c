@@ -4,6 +4,8 @@
 #define CIRCUITBUILD_PRIVATE
 #define CIRCUITSTATS_PRIVATE
 #define CIRCUITLIST_PRIVATE
+#define STATEFILE_PRIVATE
+#define CONTROL_EVENTS_PRIVATE
 #define CHANNEL_FILE_PRIVATE
 
 #include "core/or/or.h"
@@ -11,6 +13,15 @@
 #include "test/test_helpers.h"
 #include "test/log_test_helpers.h"
 #include "app/config/config.h"
+#include "app/config/statefile.h"
+#include "app/config/or_state_st.h"
+#include "app/config/or_options_st.h"
+#include "feature/control/control_events.h"
+#include "lib/encoding/confline.h"
+#include "lib/confmgt/confmgt.h"
+#include "lib/fs/dir.h"
+#include "lib/fs/files.h"
+#include <math.h>
 #include "core/or/circuitlist.h"
 #include "core/or/circuitbuild.h"
 #include "core/or/circuitstats.h"
@@ -355,6 +366,335 @@ test_circuitstats_prefix_lifecycle(void *arg)
   UNMOCK(circuit_launch_by_extend_info);
 }
 
+static or_state_t *cbt_test_state;
+static int cbt_reset_events;
+static or_state_t *
+mock_cbt_get_state(void)
+{
+  return cbt_test_state;
+}
+
+static void
+mock_cbt_event(uint16_t event, char *msg)
+{
+  if (event == EVENT_BUILDTIMEOUT_SET && strstr(msg, "RESET"))
+    ++cbt_reset_events;
+  tor_free(msg);
+}
+
+static void
+test_circuitstats_recovery(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  or_options_t *options = get_options_mutable();
+  origin_circuit_t *old = NULL, *fresh = NULL;
+  struct timeval start = { 1000, 0 };
+  (void)arg;
+  cbt_test_state = or_state_new();
+  MOCK(get_or_state, mock_cbt_get_state);
+  MOCK(queue_control_event_string, mock_cbt_event);
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  control_testing_set_global_event_mask(EVENT_MASK_(EVENT_BUILDTIMEOUT_SET));
+  options->LearnCircuitBuildTimeout = 1;
+  circuit_build_times_init(cbt);
+  old = build_unopened_fourhop(start);
+  for (int i = 0; i < CBT_NCIRCUITS_TO_OBSERVE; ++i)
+    circuit_build_times_add_time(cbt, 465);
+  cbt->timeout_ms = 465;
+  cbt->close_ms = 90000;
+  cbt->have_computed_timeout = 1;
+  for (int i = 0; i < CBT_NCIRCUITS_TO_OBSERVE; ++i) {
+    circuit_build_times_network_is_live(cbt);
+    circuit_build_times_count_timeout(cbt, 0);
+    tt_assert(circuit_build_times_count_close(cbt, 0, 1));
+    if (i < CBT_NCIRCUITS_TO_OBSERVE - 1)
+      tt_int_op(cbt->total_build_times, OP_EQ, CBT_NCIRCUITS_TO_OBSERVE);
+  }
+  cbt_reset_events = 0;
+  setup_full_capture_of_logs(LOG_NOTICE);
+  circuit_build_times_set_timeout(cbt);
+  tt_int_op(cbt_reset_events, OP_EQ, 1);
+  expect_log_msg_containing("restarting conservative learning");
+  tt_int_op(cbt->total_build_times, OP_EQ, 0);
+  tt_int_op(cbt->build_times_idx, OP_EQ, 0);
+  tt_int_op(cbt->have_computed_timeout, OP_EQ, 0);
+  tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
+  tt_double_op(fabs(cbt->timeout_ms - (60000)), OP_LT, 0.001);
+  tt_double_op(fabs(cbt->close_ms - (90000)), OP_LT, 0.001);
+  tt_assert(circuit_build_times_needs_circuits(cbt));
+  tt_assert(old->cbt_observation_invalidated);
+  mock_clean_saved_logs();
+  for (int i = 0; i < 100; ++i)
+    circuit_build_times_set_timeout(cbt);
+  expect_no_log_entry();
+  tt_int_op(cbt_reset_events, OP_EQ, 1);
+
+  /* An old success still builds but cannot enter the repaired population. */
+  cbt_test_now = start;
+  cbt_test_now.tv_usec = 100000;
+  old->cpath->state = CPATH_STATE_OPEN;
+  old->cpath->next->state = CPATH_STATE_OPEN;
+  old->cpath->next->next->state = CPATH_STATE_OPEN;
+  circuit_build_times_handle_completed_hop(old);
+  tt_int_op(cbt->total_build_times, OP_EQ, 0);
+  fresh = build_unopened_fourhop(start);
+  tt_assert(!fresh->cbt_observation_invalidated);
+  fresh->cpath->state = CPATH_STATE_OPEN;
+  fresh->cpath->next->state = CPATH_STATE_OPEN;
+  fresh->cpath->next->next->state = CPATH_STATE_OPEN;
+  circuit_build_times_handle_completed_hop(fresh);
+  tt_int_op(cbt->total_build_times, OP_EQ, 1);
+
+  /* Partial histories can keep learning, but a full sparse one recovers. */
+  circuit_build_times_set_timeout(cbt);
+  tt_int_op(cbt->total_build_times, OP_EQ, 1);
+  for (int i = 1; i < CBT_NCIRCUITS_TO_OBSERVE; ++i)
+    circuit_build_times_add_time(cbt, CBT_BUILD_ABANDONED);
+  circuit_build_times_set_timeout(cbt);
+  tt_int_op(cbt->total_build_times, OP_EQ, 0);
+  tt_int_op(cbt_reset_events, OP_EQ, 2);
+  /* An entirely abandoned history also recovers. Configured floor wins. */
+  options->CircuitBuildTimeout = 120;
+  circuit_build_times_add_time(cbt, CBT_BUILD_ABANDONED);
+  circuit_build_times_set_timeout(cbt);
+  tt_double_op(fabs(cbt->timeout_ms - (120000)), OP_LT, 0.001);
+  tt_double_op(fabs(cbt->close_ms - (120000)), OP_LT, 0.001);
+  tt_int_op(cbt_reset_events, OP_EQ, 3);
+  for (int variant = 0; variant < 3; ++variant) {
+    circuit_build_times_add_time(cbt, CBT_BUILD_ABANDONED);
+    cbt->timeout_ms = variant == 0 ? (double)NAN : variant == 1 ? -1 : 180000;
+    cbt->close_ms = variant == 0 ? (double)INFINITY : variant == 1 ? -1 : 240000;
+    circuit_build_times_set_timeout(cbt);
+    tt_double_op(fabs(cbt->timeout_ms - (variant == 2 ? 180000 : 120000)), OP_LT, 0.001);
+    tt_double_op(fabs(cbt->close_ms - (variant == 2 ? 240000 : 120000)), OP_LT, 0.001);
+  }
+  /* Disabled learning neither fits nor repairs observations. */
+  options->LearnCircuitBuildTimeout = 0;
+  circuit_build_times_add_time(cbt, CBT_BUILD_ABANDONED);
+  circuit_build_times_set_timeout(cbt);
+  tt_int_op(cbt->total_build_times, OP_EQ, 1);
+ done:
+  teardown_capture_of_logs();
+  circuit_free_(TO_CIRCUIT(old));
+  circuit_free_(TO_CIRCUIT(fresh));
+  circuit_build_times_free_timeouts(cbt);
+  or_state_free(cbt_test_state);
+  UNMOCK(get_or_state);
+  UNMOCK(queue_control_event_string);
+  UNMOCK(tor_gettimeofday);
+}
+
+static void
+test_circuitstats_recovery_mixed(void *arg)
+{
+  circuit_build_times_t cbt = {0}, loaded = {0};
+  or_state_t *state = or_state_new();
+  const int mincircs = CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE;
+  const struct {
+    int usable;
+    int total;
+    int recover;
+  } cases[] = {
+    { mincircs - 1, CBT_NCIRCUITS_TO_OBSERVE - 1, 0 },
+    { mincircs - 1, CBT_NCIRCUITS_TO_OBSERVE, 1 },
+    { mincircs, CBT_NCIRCUITS_TO_OBSERVE, 0 },
+    { 1, CBT_NCIRCUITS_TO_OBSERVE, 1 },
+    { mincircs - 1, mincircs - 1, 0 },
+    { mincircs, mincircs, 0 },
+  };
+  (void)arg;
+  cbt_test_state = state;
+  MOCK(get_or_state, mock_cbt_get_state);
+  get_options_mutable()->LearnCircuitBuildTimeout = 1;
+
+  for (unsigned i = 0; i < ARRAY_LENGTH(cases); ++i) {
+    circuit_build_times_init(&cbt);
+    for (int j = 0; j < cases[i].total; ++j)
+      circuit_build_times_add_time(&cbt, j < cases[i].usable ?
+                                   (build_time_t)(400 + (j % 10) * 50) :
+                                   CBT_BUILD_ABANDONED);
+    cbt.timeout_ms = 465;
+    cbt.close_ms = 90000;
+    /* Startup and runtime must apply the same recovery threshold. */
+    circuit_build_times_update_state(&cbt, state);
+    tt_int_op(circuit_build_times_parse_state(&loaded, state), OP_EQ, 0);
+    circuit_build_times_set_timeout(&cbt);
+    tt_int_op(cbt.total_build_times, OP_EQ,
+              cases[i].recover ? 0 : cases[i].total);
+    tt_int_op(loaded.total_build_times, OP_EQ, cbt.total_build_times);
+    tt_int_op(cbt.have_computed_timeout, OP_EQ,
+              !cases[i].recover && cases[i].total >= mincircs);
+    tt_int_op(loaded.have_computed_timeout, OP_EQ, cbt.have_computed_timeout);
+    if (cases[i].recover) {
+      tt_double_op(fabs(cbt.timeout_ms - 60000), OP_LT, 0.001);
+      tt_double_op(fabs(cbt.close_ms - 90000), OP_LT, 0.001);
+      tt_double_op(fabs(loaded.timeout_ms - 60000), OP_LT, 0.001);
+      tt_assert(circuit_build_times_needs_circuits(&cbt));
+    }
+    circuit_build_times_free_timeouts(&cbt);
+    circuit_build_times_free_timeouts(&loaded);
+  }
+ done:
+  circuit_build_times_free_timeouts(&cbt);
+  circuit_build_times_free_timeouts(&loaded);
+  or_state_free(state);
+  UNMOCK(get_or_state);
+}
+
+static void
+test_circuitstats_recovery_load(void *arg)
+{
+  circuit_build_times_t cbt;
+  or_options_t *options = get_options_mutable();
+  char *before = NULL, *after = NULL;
+  (void)arg;
+  memset(&cbt, 0, sizeof(cbt));
+  cbt_test_state = or_state_new();
+  MOCK(get_or_state, mock_cbt_get_state);
+  options->LearnCircuitBuildTimeout = 1;
+  config_line_append(&cbt_test_state->Guard, "Guard", "unchanged-guard-state");
+  before = config_dump(get_state_mgr(), NULL, cbt_test_state, 1, 0);
+  for (int avoid = 0; avoid < 2; ++avoid) {
+    options->AvoidDiskWrites = avoid;
+    cbt_test_state->TotalBuildTimes = CBT_NCIRCUITS_TO_OBSERVE;
+    cbt_test_state->CircuitBuildAbandonedCount = CBT_NCIRCUITS_TO_OBSERVE;
+    cbt_test_state->next_write = TIME_MAX;
+    tt_int_op(circuit_build_times_parse_state(&cbt, cbt_test_state), OP_EQ, 0);
+    tt_int_op(cbt.total_build_times, OP_EQ, 0);
+    tt_double_op(fabs(cbt.timeout_ms - (60000)), OP_LT, 0.001);
+    tt_assert(circuit_build_times_needs_circuits(&cbt));
+    if (avoid) {
+      tt_i64_op(cbt_test_state->next_write, OP_GE, time(NULL));
+      tt_i64_op(cbt_test_state->next_write, OP_LE, time(NULL) + 3600);
+    } else {
+      tt_i64_op(cbt_test_state->next_write, OP_EQ, 0);
+    }
+    circuit_build_times_update_state(&cbt, cbt_test_state);
+    after = config_dump(get_state_mgr(), NULL, cbt_test_state, 1, 0);
+    tt_str_op(before, OP_EQ, after);
+    tor_free(after);
+    circuit_build_times_free_timeouts(&cbt);
+  }
+  /* Restarting in fixed mode ignores abandoned history. */
+  options->LearnCircuitBuildTimeout = 0;
+  options->CircuitBuildTimeout = 60;
+  cbt_test_state->TotalBuildTimes = CBT_NCIRCUITS_TO_OBSERVE;
+  cbt_test_state->CircuitBuildAbandonedCount = CBT_NCIRCUITS_TO_OBSERVE;
+  tt_int_op(circuit_build_times_parse_state(&cbt, cbt_test_state), OP_EQ, 0);
+  tt_double_op(fabs(cbt.timeout_ms - (60000)), OP_LT, 0.001);
+  tt_double_op(fabs(cbt.close_ms - (60000)), OP_LT, 0.001);
+  tt_int_op(cbt.total_build_times, OP_EQ, 0);
+ done:
+  circuit_build_times_free_timeouts(&cbt);
+  or_state_free(cbt_test_state);
+  tor_free(before);
+  tor_free(after);
+  UNMOCK(get_or_state);
+}
+
+static void
+test_circuitstats_recovery_backlog(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  smartlist_t *old = smartlist_new();
+  origin_circuit_t *opened = NULL;
+  struct timeval start = { 1000, 0 };
+  (void)arg;
+  circuitbuild_running_unit_tests();
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(assert_circuit_ok, mock_cbt_assert_circuit_ok);
+  circuit_build_times_init(cbt);
+  opened = add_opened_threehop();
+  for (int i = 0; i < 400; ++i) {
+    origin_circuit_t *circ = build_unopened_fourhop(start);
+    circ->base_.state = CIRCUIT_STATE_BUILDING;
+    circ->base_.purpose = CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT;
+    circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
+    smartlist_add(old, circ);
+  }
+  for (int i = 0; i < CBT_NCIRCUITS_TO_OBSERVE; ++i)
+    circuit_build_times_add_time(cbt, i ? CBT_BUILD_ABANDONED : 465);
+  cbt->timeout_ms = 465;
+  cbt->close_ms = 60000;
+  cbt_test_now.tv_sec = 1061;
+  cbt_test_now.tv_usec = 0;
+  circuit_build_times_network_is_live(cbt);
+  /* First terminal close overwrites the last completion; the rest of this
+   * very same expiration pass must not refill the repaired history. */
+  circuit_expire_building();
+  tt_int_op(cbt->total_build_times, OP_EQ, 0);
+  tt_int_op(cbt->num_circ_closed, OP_EQ, 0);
+  SMARTLIST_FOREACH_BEGIN(old, origin_circuit_t *, circ) {
+    tt_assert(circ->base_.marked_for_close);
+    tt_assert(circ->cbt_observation_invalidated);
+  } SMARTLIST_FOREACH_END(circ);
+  tt_double_op(fabs(cbt->timeout_ms - (60000)), OP_LT, 0.001);
+ done:
+  SMARTLIST_FOREACH(old, origin_circuit_t *, circ,
+                    circuit_free_(TO_CIRCUIT(circ)));
+  smartlist_free(old);
+  circuit_free_(TO_CIRCUIT(opened));
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(assert_circuit_ok);
+}
+
+/* Use the actual installed state and file writer, including delayed writes. */
+static void
+test_circuitstats_recovery_statefile(void *arg)
+{
+  or_options_t *options = get_options_mutable();
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  char *path = NULL, *contents = NULL;
+  const char *abandoned = "TotalBuildTimes 1000\n"
+                          "CircuitBuildAbandonedCount 1000\n";
+  (void)arg;
+  tor_free(options->DataDirectory);
+  options->DataDirectory = tor_strdup(get_fname("cbt-state"));
+  tt_int_op(check_private_dir(options->DataDirectory, CPD_CREATE, NULL),
+            OP_EQ, 0);
+  path = get_datadir_fname("state");
+  options->LearnCircuitBuildTimeout = 1;
+  for (int avoid = 0; avoid < 2; ++avoid) {
+    time_t now = time(NULL);
+    options->AvoidDiskWrites = avoid;
+    tt_int_op(write_str_to_file(path, abandoned, 0), OP_EQ, 0);
+    tt_int_op(or_state_load(), OP_EQ, 0);
+    tt_int_op(cbt->total_build_times, OP_EQ, 0);
+    tt_int_op(or_state_save(now), OP_EQ, 0);
+    contents = read_file_to_str(path, 0, NULL);
+    tt_assert(contents);
+    if (avoid) {
+      /* Startup already has a write pending. Once flushed, runtime recovery
+       * must schedule a delayed write without overriding earlier work. */
+      circuit_build_times_add_time(cbt, CBT_BUILD_ABANDONED);
+      circuit_build_times_set_timeout(cbt);
+      tt_i64_op(get_or_state()->next_write, OP_GT, now);
+      tt_int_op(or_state_save(now), OP_EQ, 0);
+      tt_i64_op(get_or_state()->LastWritten, OP_EQ, now);
+      tor_free(contents);
+      tt_int_op(or_state_save(now + 3601), OP_EQ, 0);
+      tt_i64_op(get_or_state()->LastWritten, OP_EQ, now + 3601);
+      contents = read_file_to_str(path, 0, NULL);
+      tt_assert(contents);
+    }
+    tt_assert(!strstr(contents, "TotalBuildTimes 1000"));
+    tt_assert(!strstr(contents, "CircuitBuildAbandonedCount 1000"));
+    tor_free(contents);
+    circuit_build_times_free_timeouts(cbt);
+    or_state_free_all();
+    tt_int_op(or_state_load(), OP_EQ, 0);
+    tt_int_op(cbt->total_build_times, OP_EQ, 0);
+    circuit_build_times_free_timeouts(cbt);
+    or_state_free_all();
+  }
+ done:
+  circuit_build_times_free_timeouts(cbt);
+  or_state_free_all();
+  tor_free(contents);
+  tor_free(path);
+}
+
 #define TEST_CIRCUITSTATS(name, flags) \
     { #name, test_##name, (flags), &helper_pubsub_setup, NULL }
 
@@ -362,6 +702,11 @@ struct testcase_t circuitstats_tests[] = {
   TEST_CIRCUITSTATS(circuitstats_hoplen, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_prefix_accounting, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_prefix_lifecycle, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_recovery, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_recovery_mixed, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_recovery_load, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_recovery_backlog, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_recovery_statefile, TT_FORK),
   END_OF_TESTCASES
 };
 
