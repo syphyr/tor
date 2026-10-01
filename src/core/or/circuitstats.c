@@ -53,6 +53,8 @@
 #include <math.h>
 
 static void circuit_build_times_scale_circ_counts(circuit_build_times_t *cbt);
+static int circuit_build_times_recover_unusable(circuit_build_times_t *cbt,
+                                               or_state_t *state);
 
 #define CBT_BIN_TO_MS(bin) ((bin)*CBT_BIN_WIDTH + (CBT_BIN_WIDTH/2))
 
@@ -661,7 +663,8 @@ circuit_build_times_mark_circ_as_measurement_only(origin_circuit_t *circ)
 int
 circuit_build_times_circ_can_record(const origin_circuit_t *circ)
 {
-  return !circ->cbt_prefix_measurement_done &&
+  return !circ->cbt_observation_invalidated &&
+    !circ->cbt_prefix_measurement_done &&
     circuit_timeout_want_to_count_circ(circ);
 }
 
@@ -699,7 +702,8 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
    * way? If so, handle it below. If not, just return (and let
    * circuit_expire_building() eventually take care of it).
    */
-  if (!circuit_build_times_circ_can_record(circ)) {
+  if (circ->cbt_prefix_measurement_done ||
+      !circuit_timeout_want_to_count_circ(circ)) {
     return;
   }
 
@@ -722,6 +726,10 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
       circuit_build_times_mark_circ_as_measurement_only(circ);
     }
   }
+
+  /* Recovery excludes old observations, but not circuit execution. */
+  if (circ->cbt_observation_invalidated)
+    return;
 
   /* If the circuit is built to exactly the DEFAULT_ROUTE_LEN,
    * add it to our buildtimes. */
@@ -1139,7 +1147,8 @@ circuit_build_times_parse_state(circuit_build_times_t *cbt,
     goto done;
   }
 
-  circuit_build_times_set_timeout(cbt);
+  if (!circuit_build_times_recover_unusable(cbt, state))
+    circuit_build_times_set_timeout(cbt);
 
  done:
   tor_free(loaded_times);
@@ -1768,13 +1777,86 @@ circuit_build_times_set_timeout_worker(circuit_build_times_t *cbt)
 }
 
 /**
+ * Recover a coherent, nonempty history containing no completions, or a full
+ * history containing fewer than cbtmincircs completed observations.
+ *
+ * This is a stopgap in case we have not fully solved Bug 41420. This
+ * check will prevent a permanent hang condition by allowing us to reset
+ * and recover when too many abandoned circuits accumulate.
+ */
+static int
+circuit_build_times_recover_unusable(circuit_build_times_t *cbt,
+                                    or_state_t *state)
+{
+  int abandoned = 0, usable = 0;
+  double initial, old_soft, old_close;
+  static ratelim_t recovery_limit = RATELIM_INIT(300);
+
+  if (!cbt->total_build_times || circuit_build_times_disabled(get_options()))
+    return 0;
+  for (int i = 0; i < CBT_NCIRCUITS_TO_OBSERVE; ++i) {
+    build_time_t t = cbt->circuit_build_times[i];
+    usable += t && t != CBT_BUILD_ABANDONED;
+    abandoned += t == CBT_BUILD_ABANDONED;
+  }
+  if (usable + abandoned != cbt->total_build_times)
+    return 0;
+  /* Give partial histories time to accumulate completions. A full history
+   * dominated by abandoned observations needs conservative learning again. */
+  if (usable && (cbt->total_build_times < CBT_NCIRCUITS_TO_OBSERVE ||
+                 usable >= circuit_build_times_min_circs_to_observe()))
+    return 0;
+
+  old_soft = cbt->timeout_ms;
+  old_close = cbt->close_ms;
+  initial = MAX(circuit_build_times_get_initial_timeout(),
+                circuit_build_times_initial_timeout());
+  circuit_build_times_reset(cbt);
+  cbt->Xm = 0;
+  cbt->alpha = 0;
+  if (cbt->liveness.timeouts_after_firsthop) {
+    memset(cbt->liveness.timeouts_after_firsthop, 0,
+           cbt->liveness.num_recent_circs);
+  }
+  cbt->liveness.after_firsthop_idx = 0;
+  cbt->timeout_ms = MAX(initial,
+      isfinite(old_soft) && old_soft >= 0 ? old_soft : initial);
+  cbt->close_ms = MAX(cbt->timeout_ms,
+      isfinite(old_close) && old_close >= 0 ? old_close : initial);
+  cbt->timeout_ms = MIN(cbt->timeout_ms, CBT_MAX_TIMEOUT_INITIAL_VALUE);
+  cbt->close_ms = MIN(cbt->close_ms, CBT_MAX_TIMEOUT_INITIAL_VALUE);
+
+  if (cbt == get_circuit_build_times()) {
+    SMARTLIST_FOREACH(circuit_get_global_origin_circuit_list(),
+                      origin_circuit_t *, circ,
+                      circ->cbt_observation_invalidated = 1);
+    if (!state && or_state_loaded())
+      state = get_or_state();
+  }
+  if (state) {
+    /* AvoidDiskWrites delays the repair, rather than losing it indefinitely.
+     * The normal state writer changes only the CBT fields for this repair. */
+    or_state_mark_dirty(state,
+                        get_options()->AvoidDiskWrites ? time(NULL)+3600 : 0);
+  }
+  cbt_control_event_buildtimeout_set(cbt, BUILDTIMEOUT_SET_EVENT_RESET);
+  log_fn_ratelim(&recovery_limit, LOG_NOTICE, LD_CIRC,
+      "CBT history has %s completed observations; restarting conservative "
+      "learning. samples=%d abandoned=%d usable=%d "
+      "soft_ms=%.0f->%.0f "
+      "close_ms=%.0f->%.0f",
+      abandoned, abandoned, old_soft, cbt->timeout_ms, old_close, cbt->close_ms);
+  return 1;
+}
+
+/**
  * Exposed function to compute a new timeout. Dispatches events and
  * also filters out extremely high timeout values.
  */
 void
 circuit_build_times_set_timeout(circuit_build_times_t *cbt)
 {
-  long prev_timeout = tor_lround(cbt->timeout_ms/1000);
+  long prev_timeout;
   double timeout_rate;
 
   /*
@@ -1783,6 +1865,10 @@ circuit_build_times_set_timeout(circuit_build_times_t *cbt)
   if (circuit_build_times_disabled(get_options()))
     return;
 
+  if (circuit_build_times_recover_unusable(cbt, NULL))
+    return;
+
+  prev_timeout = tor_lround(cbt->timeout_ms/1000);
   if (!circuit_build_times_set_timeout_worker(cbt))
     return;
 

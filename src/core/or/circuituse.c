@@ -458,6 +458,9 @@ circuit_expire_building(void)
   struct timeval now;
   cpath_build_state_t *build_state;
   int any_opened_circs = 0;
+  /* Match the cached cutoffs for this pass even if a close repairs CBT. */
+  const int enough_to_compute =
+    circuit_build_times_enough_to_compute(get_circuit_build_times());
 
   tor_gettimeofday(&now);
 
@@ -729,7 +732,7 @@ circuit_expire_building(void)
       }
 
       if (circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
-          circuit_build_times_enough_to_compute(get_circuit_build_times())) {
+          enough_to_compute) {
 
         log_info(LD_CIRC,
                  "Deciding to count the timeout for circuit %"PRIu32,
