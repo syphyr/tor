@@ -91,8 +91,7 @@ cbt_note_excluded(origin_circuit_t *circ)
   }
 }
 
-/** Account a soft timeout and remember missing first-hop progress solely for
- * diagnostics. A late first hop does not change the network-reset policy. */
+/** Account a soft timeout, deferring qualification if hop one is pending. */
 void
 circuit_build_times_count_circ_timeout(origin_circuit_t *circ)
 {
@@ -102,8 +101,10 @@ circuit_build_times_count_circ_timeout(origin_circuit_t *circ)
     cbt_note_excluded(circ);
     return;
   }
-  if (!circuit_build_times_disabled(get_options()) && !first_hop_succeeded)
+  if (!circuit_build_times_disabled(get_options()) && !first_hop_succeeded) {
     circ->cbt_soft_timeout_before_firsthop = 1;
+    circ->cbt_timeout_pending_qualification = 1;
+  }
   circuit_build_times_count_timeout(get_circuit_build_times_mutable(),
                                     first_hop_succeeded);
 }
@@ -827,6 +828,7 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
 
   tor_gettimeofday(&end);
   timediff = tv_mdiff(&circ->base_.timestamp_began, &end);
+  circuit_build_times_qualify_timeout(circ, &end);
 
   /* Check if we would have timed out already. If so, change the
    * purpose here. But don't do any timeout handling here if there
@@ -1576,6 +1578,44 @@ circuit_build_times_network_circ_success(circuit_build_times_t *cbt)
   }
 }
 
+/** Record a qualified timeout without incrementing the total timeout count. */
+static void
+circuit_build_times_record_qualified_timeout(circuit_build_times_t *cbt)
+{
+  if (cbt->liveness.timeouts_after_firsthop &&
+      cbt->liveness.num_recent_circs > 0) {
+    cbt->liveness.timeouts_after_firsthop[cbt->liveness.after_firsthop_idx]
+      = 1;
+    cbt->liveness.after_firsthop_idx++;
+    cbt->liveness.after_firsthop_idx %= cbt->liveness.num_recent_circs;
+  }
+}
+
+/** Qualify an earlier soft timeout once hop one opens and the current soft
+ * deadline is exceeded. A reset may have raised that deadline since the
+ * original timeout: keep the event pending until it is actually overdue,
+ * or until the prefix observation ends. Never count the total timeout twice.
+ * Called on hop completion and before the expiry pass snapshots its cutoffs.
+ */
+void
+circuit_build_times_qualify_timeout(origin_circuit_t *circ,
+                                  const struct timeval *now)
+{
+  if (!circ->cbt_timeout_pending_qualification ||
+      circuit_build_times_disabled(get_options()) ||
+      !circuit_build_times_circ_can_record(circ) ||
+      !circ->cpath || circ->cpath->state != CPATH_STATE_OPEN ||
+      tv_mdiff(&circ->base_.timestamp_began, now) <=
+        get_circuit_build_timeout_ms())
+    return;
+
+  /* Consume before checking for a reset, so callbacks cannot replay it. */
+  circ->cbt_timeout_pending_qualification = 0;
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  circuit_build_times_record_qualified_timeout(cbt);
+  circuit_build_times_network_check_changed(cbt);
+}
+
 /**
  * A circuit just timed out. If it failed after the first hop, record it
  * in our history for later deciding if the network speed has changed.
@@ -1596,16 +1636,8 @@ circuit_build_times_network_timeout(circuit_build_times_t *cbt,
     circuit_build_times_scale_circ_counts(cbt);
   }
 
-  /* Check for NULLness because we might not be using adaptive timeouts */
-  if (cbt->liveness.timeouts_after_firsthop &&
-      cbt->liveness.num_recent_circs > 0) {
-    if (did_onehop) {
-      cbt->liveness.timeouts_after_firsthop[cbt->liveness.after_firsthop_idx]
-        = 1;
-      cbt->liveness.after_firsthop_idx++;
-      cbt->liveness.after_firsthop_idx %= cbt->liveness.num_recent_circs;
-    }
-  }
+  if (did_onehop)
+    circuit_build_times_record_qualified_timeout(cbt);
 }
 
 /**

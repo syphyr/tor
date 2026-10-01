@@ -40,6 +40,8 @@ int circuit_build_times_needs_circuits(const circuit_build_times_t *cbt);
 void circuit_build_times_handle_completed_hop(origin_circuit_t *circ);
 int circuit_build_times_circ_can_record(const origin_circuit_t *circ);
 void circuit_build_times_count_circ_timeout(origin_circuit_t *circ);
+void circuit_build_times_qualify_timeout(origin_circuit_t *circ,
+                                         const struct timeval *now);
 void circuit_build_times_note_expiry(origin_circuit_t *circ);
 void circuit_build_times_report_diagnostics(time_t now);
 void circuit_build_times_note_connection_failure(origin_circuit_t *circ,

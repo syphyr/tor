@@ -458,11 +458,19 @@ circuit_expire_building(void)
   struct timeval now;
   cpath_build_state_t *build_state;
   int any_opened_circs = 0;
+  tor_gettimeofday(&now);
+
+  /* Pending late-first-hop events may reset CBT. Process them before taking
+   * the cutoff snapshot, including attempts with no further hop callbacks. */
+  SMARTLIST_FOREACH_BEGIN(circuit_get_global_origin_circuit_list(),
+                         origin_circuit_t *, circ) {
+    if (!circ->base_.marked_for_close)
+      circuit_build_times_qualify_timeout(circ, &now);
+  } SMARTLIST_FOREACH_END(circ);
+
   /* Match the cached cutoffs for this pass even if a close repairs CBT. */
   const int enough_to_compute =
     circuit_build_times_enough_to_compute(get_circuit_build_times());
-
-  tor_gettimeofday(&now);
 
   /* Check to see if we have any opened circuits. If we don't,
    * we want to be more lenient with timeouts, in case the

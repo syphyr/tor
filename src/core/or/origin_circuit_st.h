@@ -237,6 +237,9 @@ struct origin_circuit_t {
   /** This attempt predates recovery from an unusable CBT history. */
   unsigned int cbt_observation_invalidated : 1;
 
+  /** A counted soft timeout still needs first-hop qualification. */
+  unsigned int cbt_timeout_pending_qualification : 1;
+
   /** Diagnostic bookkeeping only; none of these bits change timeout policy. */
   unsigned int cbt_soft_timeout_before_firsthop : 1;
   unsigned int cbt_expiry_reported : 1;
