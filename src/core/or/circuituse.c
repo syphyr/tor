@@ -504,6 +504,7 @@ circuit_expire_first_hop(origin_circuit_t *circ, bool recovery_timeout)
    * can still trigger channel recovery. */
   if (chan->first_hop_success_count !=
       circ->first_hop_success_count_at_create) {
+    circuit_build_times_note_channel_timeout(false);
     return;
   }
 
@@ -519,6 +520,7 @@ circuit_expire_first_hop(origin_circuit_t *circ, bool recovery_timeout)
            circ->base_.n_circ_id, circ->global_identifier,
            channel_describe_peer(chan));
   channel_mark_bad_for_new_circs(chan);
+  circuit_build_times_note_channel_timeout(true);
   connection_ap_fail_onehop(circ->cpath->extend_info->identity_digest,
                             circ->build_state);
 }

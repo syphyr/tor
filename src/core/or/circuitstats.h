@@ -44,6 +44,7 @@ void circuit_build_times_qualify_timeout(origin_circuit_t *circ,
                                          const struct timeval *now);
 void circuit_build_times_note_expiry(origin_circuit_t *circ);
 void circuit_build_times_report_diagnostics(time_t now);
+void circuit_build_times_note_channel_timeout(bool retired);
 void circuit_build_times_note_connection_failure(origin_circuit_t *circ,
                                                  int reason);
 
@@ -145,9 +146,12 @@ int32_t circuit_build_times_initial_timeout(void);
 #ifdef CIRCUITSTATS_PRIVATE
 /** Saturating process-wide interval diagnostics, independent of resets. */
 typedef struct {
+  /** Stage at measurement or circuit expiry, even if a recovery probe later
+   * completes. These are not counts of eventual recovery failures. */
   uint64_t prefix_hops[3];
   uint64_t post_prefix, open_channel, other_channel;
   uint64_t connection_failed;
+  uint64_t channels_retired, firsthop_preserved;
   uint64_t late_firsthop, completed, abandoned, excluded;
   time_t last_report;
   bool have_reported;
