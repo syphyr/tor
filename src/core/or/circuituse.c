@@ -384,7 +384,7 @@ circuit_get_best(const entry_connection_t *conn,
 }
 
 /** Return the number of not-yet-open general-purpose origin circuits. */
-static int
+STATIC int
 count_pending_general_client_circuits(void)
 {
   int count = 0;
@@ -432,6 +432,35 @@ circuit_conforms_to_options(const origin_circuit_t *circ,
 }
 #endif /* 0 */
 
+/** Keep a timed-out CREATE as a recovery probe without blocking requests.
+ * Statistical measurements already have their own lifetime. For other
+ * attempts, retain at most one measurement-only first hop per channel so
+ * retries cannot accumulate a new recovery probe at every usage timeout. */
+static bool
+circuit_retain_first_hop(origin_circuit_t *circ)
+{
+  if (circ->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT) {
+    return true;
+  }
+
+  SMARTLIST_FOREACH_BEGIN(circuit_get_global_origin_circuit_list(),
+                         origin_circuit_t *, other) {
+    if (other != circ && !other->base_.marked_for_close &&
+        other->base_.n_chan == circ->base_.n_chan &&
+        other->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT &&
+        other->cpath && other->cpath->state == CPATH_STATE_AWAITING_KEYS) {
+      return false;
+    }
+  } SMARTLIST_FOREACH_END(other);
+
+  /* This also removes the attempt from pending circuit selection and the
+   * general-circuit pending limit. One-hop attempts remain excluded from
+   * CBT accounting, even though they share the measurement-only purpose. */
+  circuit_build_times_mark_circ_as_measurement_only(circ);
+  connection_ap_retry_pending();
+  return true;
+}
+
 /** Retire a channel only when this circuit's own first-hop attempt expires.
  * Circuit cancellation (including teardown caused by another circuit) is not
  * evidence that its channel failed. Keep this at the expiry decision, separate
@@ -475,7 +504,7 @@ circuit_expire_building(void)
    * circuit_build_times_get_initial_timeout() if we haven't computed
    * custom timeouts yet */
   struct timeval general_cutoff, begindir_cutoff, fourhop_cutoff,
-    close_cutoff, extremely_old_cutoff,
+    close_cutoff, first_hop_cutoff, extremely_old_cutoff,
     cannibalized_cutoff, c_intro_cutoff, s_intro_cutoff, stream_cutoff,
     c_rend_ready_cutoff;
   const or_options_t *options = get_options();
@@ -579,6 +608,12 @@ circuit_expire_building(void)
   SET_CUTOFF(c_rend_ready_cutoff, get_circuit_build_timeout_ms() * 3 + 1000);
 
   SET_CUTOFF(close_cutoff, get_circuit_build_close_time_ms());
+  /* Channel recovery must not inherit an aggressive circuit usage timeout,
+   * including for one-hop requests and when adaptive learning is disabled.
+   * Snapshot this alongside the other cutoffs for this expiry pass. */
+  SET_CUTOFF(first_hop_cutoff,
+             MAX(get_circuit_build_close_time_ms(),
+                 circuit_build_times_initial_timeout()));
   SET_CUTOFF(extremely_old_cutoff, get_circuit_build_close_time_ms()*2 + 1000);
 
   bool fixed_time = circuit_build_times_disabled(get_options());
@@ -758,10 +793,12 @@ circuit_expire_building(void)
         continue;
       }
 
-      if (circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
-          (circuit_build_times_enough_to_compute(get_circuit_build_times()) ||
-           (enough_to_compute &&
-            TO_ORIGIN_CIRCUIT(victim)->cbt_observation_invalidated))) {
+      const bool measure_timeout =
+        circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
+        (circuit_build_times_enough_to_compute(get_circuit_build_times()) ||
+         (enough_to_compute &&
+          TO_ORIGIN_CIRCUIT(victim)->cbt_observation_invalidated));
+      if (measure_timeout) {
 
         log_info(LD_CIRC,
                  "Deciding to count the timeout for circuit %"PRIu32,
@@ -774,7 +811,9 @@ circuit_expire_building(void)
                                                             victim));
           continue;
         }
+      }
 
+      if (measure_timeout) {
         /*
          * If the circuit build time is much greater than we would have cut
          * it off at, we probably had a suspend event along this codepath,
@@ -799,6 +838,20 @@ circuit_expire_building(void)
           circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
           circuit_build_times_set_timeout(get_circuit_build_times_mutable());
         }
+        /* The measurement deadline ends this observation, even if liveness
+         * or a clock jump prevented recording it. A retained recovery probe
+         * must not count another close or a late successful build. */
+        TO_ORIGIN_CIRCUIT(victim)->cbt_measurement_closed = 1;
+      }
+
+      /* Keep a recovery probe until the conservative channel deadline,
+       * but release requests at the usage timeout. If another measurement
+       * already probes this channel, let this attempt expire normally. */
+      if (TO_ORIGIN_CIRCUIT(victim)->cpath->state ==
+            CPATH_STATE_AWAITING_KEYS &&
+          timercmp(&victim->timestamp_began, &first_hop_cutoff, OP_GT) &&
+          circuit_retain_first_hop(TO_ORIGIN_CIRCUIT(victim))) {
+        continue;
       }
     }
 
@@ -853,13 +906,20 @@ circuit_expire_building(void)
 
     circuit_log_path(LOG_INFO,LD_CIRC,TO_ORIGIN_CIRCUIT(victim));
     circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
-    circuit_expire_first_hop(TO_ORIGIN_CIRCUIT(victim));
+    /* A retry may expire earlier while another attempt probes the channel.
+     * Only the recovery deadline can justify retiring the connection. */
+    if (!timercmp(&victim->timestamp_began, &first_hop_cutoff, OP_GT)) {
+      circuit_expire_first_hop(TO_ORIGIN_CIRCUIT(victim));
+    }
     tor_trace(TR_SUBSYS(circuit), TR_EV(timeout), TO_ORIGIN_CIRCUIT(victim));
     if (victim->purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT)
       circuit_mark_for_close(victim, END_CIRC_REASON_MEASUREMENT_EXPIRED);
     else
       circuit_mark_for_close(victim, END_CIRC_REASON_TIMEOUT);
 
+    if (build_state && build_state->onehop_tunnel) {
+      connection_ap_retry_pending();
+    }
     pathbias_count_timeout(TO_ORIGIN_CIRCUIT(victim));
   } SMARTLIST_FOREACH_END(victim);
   circuit_build_times_report_diagnostics(now.tv_sec);

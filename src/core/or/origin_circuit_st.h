@@ -234,6 +234,9 @@ struct origin_circuit_t {
    * Later extensions must not contribute adaptive failure observations. */
   unsigned int cbt_prefix_measurement_done : 1;
 
+  /** The CBT close deadline was handled, possibly before probe expiry. */
+  unsigned int cbt_measurement_closed : 1;
+
   /** This attempt predates recovery from an unusable CBT history. */
   unsigned int cbt_observation_invalidated : 1;
 

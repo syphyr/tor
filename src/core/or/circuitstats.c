@@ -775,6 +775,7 @@ int
 circuit_build_times_circ_can_record(const origin_circuit_t *circ)
 {
   return !circ->cbt_observation_invalidated &&
+    !circ->cbt_measurement_closed &&
     !circ->cbt_prefix_measurement_done &&
     circuit_timeout_want_to_count_circ(circ);
 }
@@ -821,7 +822,7 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
    * way? If so, handle it below. If not, just return (and let
    * circuit_expire_building() eventually take care of it).
    */
-  if (circ->cbt_prefix_measurement_done ||
+  if (circ->cbt_prefix_measurement_done || circ->cbt_measurement_closed ||
       !circuit_timeout_want_to_count_circ(circ)) {
     return;
   }
