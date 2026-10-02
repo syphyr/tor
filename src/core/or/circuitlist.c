@@ -1699,6 +1699,17 @@ circuit_unlink_all_from_channel(channel_t *chan, int reason)
   SMARTLIST_FOREACH_BEGIN(detached, circuit_t *, circ) {
     int mark = 0;
     if (circ->n_chan == chan) {
+      /* An established connection can fail while CREATE is outstanding.
+       * Notify its pending directory requests here: generic circuit cleanup
+       * must not mistake cancellation for a failed connection. */
+      if (!circ->marked_for_close && CIRCUIT_IS_ORIGIN(circ)) {
+        origin_circuit_t *ocirc = TO_ORIGIN_CIRCUIT(circ);
+        if (ocirc->cpath &&
+            ocirc->cpath->state == CPATH_STATE_AWAITING_KEYS) {
+          connection_ap_fail_onehop(ocirc->cpath->extend_info->identity_digest,
+                                    ocirc->build_state);
+        }
+      }
 
       circuit_set_n_circid_chan(circ, 0, NULL);
       mark = 1;

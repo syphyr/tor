@@ -1545,8 +1545,8 @@ connection_ap_fail_onehop(const char *failed_digest,
                                   entry_conn->socks_request->port))
         continue;
     }
-    log_info(LD_APP, "Closing one-hop stream to '%s/%s' because the OR conn "
-                     "just failed.", entry_conn->chosen_exit_name,
+    log_info(LD_APP, "Closing one-hop stream to '%s/%s' because its first-hop "
+                     "attempt failed.", entry_conn->chosen_exit_name,
                      entry_conn->socks_request->address);
     connection_mark_unattached_ap(entry_conn, END_STREAM_REASON_TIMEOUT);
   } SMARTLIST_FOREACH_END(conn);

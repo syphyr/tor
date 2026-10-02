@@ -655,6 +655,8 @@ circuit_handle_first_hop_with_guard(origin_circuit_t *circ,
                               true);
       if (!n_chan) { /* connect failed, forget the whole thing */
         log_info(LD_CIRC,"connect to firsthop failed. Closing.");
+        connection_ap_fail_onehop(firsthop->extend_info->identity_digest,
+                                  circ->build_state);
         return -END_CIRC_REASON_CONNECTFAILED;
       }
       /* We didn't find a channel, but we're launching one for an origin
@@ -743,6 +745,16 @@ circuit_n_chan_done,(channel_t *chan, int status))
       }
       if (!status) { /* chan failed; close circ */
         log_info(LD_CIRC,"Channel failed; closing circ.");
+        /* Pending directory requests can retry now that their first-hop
+         * connection is gone. Circuit cancellation alone must not do this. */
+        if (CIRCUIT_IS_ORIGIN(circ)) {
+          origin_circuit_t *ocirc = TO_ORIGIN_CIRCUIT(circ);
+          if (ocirc->cpath && ocirc->cpath->state == CPATH_STATE_CLOSED) {
+            connection_ap_fail_onehop(
+                ocirc->cpath->extend_info->identity_digest,
+                ocirc->build_state);
+          }
+        }
         circuit_mark_for_close(circ, END_CIRC_REASON_CHANNEL_CLOSED);
         continue;
       }
@@ -1056,8 +1068,14 @@ circuit_send_first_onion_skin(origin_circuit_t *circ)
   }
   cc.handshake_len = len;
 
-  if (circuit_deliver_create_cell(TO_CIRCUIT(circ), &cc, 0) < 0)
+  if (circuit_deliver_create_cell(TO_CIRCUIT(circ), &cc, 0) < 0) {
+    /* No CREATE is outstanding, so neither a reply nor first-hop expiry
+     * will release pending directory requests. Fail them at the actual
+     * send failure without treating circuit cleanup as channel failure. */
+    connection_ap_fail_onehop(circ->cpath->extend_info->identity_digest,
+                              circ->build_state);
     return - END_CIRC_REASON_RESOURCELIMIT;
+  }
   tor_trace(TR_SUBSYS(circuit), TR_EV(first_onion_skin), circ, circ->cpath);
 
   circ->cpath->state = CPATH_STATE_AWAITING_KEYS;

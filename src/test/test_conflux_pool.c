@@ -16,6 +16,9 @@
 #include "lib/testsupport/testsupport.h"
 #include "core/or/connection_or.h"
 #include "core/or/channel.h"
+#include "core/or/scheduler.h"
+#include "core/mainloop/mainloop.h"
+#include "core/or/extend_info_st.h"
 #include "core/or/channeltls.h"
 #include "core/or/crypt_path.h"
 #include <event.h>
@@ -1748,6 +1751,83 @@ test_conflux_recovery_leg(void *arg)
   test_teardown();
 }
 
+static void
+mock_cross_cancel_assert_circuit_ok(const circuit_t *circ)
+{
+  (void)circ;
+}
+
+static int
+mock_cross_cancel_queued_writes(channel_t *chan)
+{
+  (void)chan;
+  return 1;
+}
+
+/* Conflux set teardown can cancel a leg still waiting for its first hop.
+ * Real close/free callbacks must preserve its channel and pending directory
+ * request. Only the transport and circuit construction are simulated. */
+static void
+test_conflux_cross_cancel_channel(void *arg)
+{
+  channel_t *chan = NULL;
+  entry_connection_t *request = NULL;
+  (void)arg;
+  test_setup();
+  tor_init_connection_lists();
+  scheduler_init();
+  UNMOCK(circuit_mark_for_close_);
+  UNMOCK(circuitmux_attach_circuit);
+  MOCK(assert_circuit_ok, mock_cross_cancel_assert_circuit_ok);
+  chan = new_fake_channel();
+  chan->has_queued_writes = mock_cross_cancel_queued_writes;
+  channel_register(chan);
+  request = entry_connection_new(CONN_TYPE_AP, AF_INET);
+  ENTRY_TO_CONN(request)->state = AP_CONN_STATE_CIRCUIT_WAIT;
+  request->want_onehop = 1;
+  request->chosen_exit_name = tor_strdup(
+      "$4242424242424242424242424242424242424242");
+  smartlist_add(get_connection_array(), ENTRY_TO_CONN(request));
+
+  tt_assert(launch_new_set(2));
+  tt_int_op(smartlist_len(client_circs), OP_EQ, 2);
+  origin_circuit_t *trigger = smartlist_get(client_circs, 0);
+  origin_circuit_t *pending = smartlist_get(client_circs, 1);
+  pending->base_.state = CIRCUIT_STATE_BUILDING;
+  pending->cpath->state = CPATH_STATE_AWAITING_KEYS;
+  memset(pending->cpath->extend_info->identity_digest, 0x42, DIGEST_LEN);
+  circuit_set_n_circid_chan(TO_CIRCUIT(pending), 42, chan);
+  /* Suppress replacement launches during this forced teardown. */
+  conflux_notify_shutdown();
+  conflux_mark_all_for_close(trigger->base_.conflux_pending_nonce, true,
+                             END_CIRC_REASON_TORPROTOCOL);
+  tt_assert(trigger->base_.marked_for_close);
+  tt_assert(pending->base_.marked_for_close);
+  tt_int_op(digest256map_size(get_unlinked_pool(true)), OP_EQ, 0);
+  tt_int_op(chan->is_bad_for_new_circs, OP_EQ, 0);
+  tt_assert(!ENTRY_TO_CONN(request)->marked_for_close);
+  /* The real reaper owns these circuits now. */
+  smartlist_clear(client_circs);
+  circuit_close_all_marked();
+  tt_int_op(chan->is_bad_for_new_circs, OP_EQ, 0);
+  tt_assert(!ENTRY_TO_CONN(request)->marked_for_close);
+  tt_int_op(ENTRY_TO_CONN(request)->state, OP_EQ, AP_CONN_STATE_CIRCUIT_WAIT);
+ done:
+  test_clear_circs();
+  if (request) {
+    smartlist_remove(get_connection_array(), ENTRY_TO_CONN(request));
+    connection_free_(ENTRY_TO_CONN(request));
+  }
+  if (chan) {
+    channel_unregister(chan);
+    chan->state = CHANNEL_STATE_CLOSED;
+    channel_free(chan);
+  }
+  scheduler_free_all();
+  UNMOCK(assert_circuit_ok);
+  test_teardown();
+}
+
 /* CBT repurposing must detach an unlinked leg just like a close. */
 static void
 test_conflux_measurement_cleanup(void *arg)
@@ -1903,6 +1983,8 @@ test_conflux_link_relay_side_checks(void *arg)
 }
 
 struct testcase_t conflux_pool_tests[] = {
+  { "cross_cancel_channel", test_conflux_cross_cancel_channel,
+    TT_FORK, &helper_pubsub_setup, NULL },
   { "measurement_cleanup", test_conflux_measurement_cleanup,
     TT_FORK, &helper_pubsub_setup, NULL },
   { "link", test_conflux_link, TT_FORK, NULL, NULL },

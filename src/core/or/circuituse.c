@@ -432,6 +432,30 @@ circuit_conforms_to_options(const origin_circuit_t *circ,
 }
 #endif /* 0 */
 
+/** Retire a channel only when this circuit's own first-hop attempt expires.
+ * Circuit cancellation (including teardown caused by another circuit) is not
+ * evidence that its channel failed. Keep this at the expiry decision, separate
+ * from CBT sampling eligibility and generic circuit cleanup. */
+static void
+circuit_expire_first_hop(origin_circuit_t *circ)
+{
+  channel_t *chan = circ->base_.n_chan;
+  if (!circ->cpath || circ->cpath->state != CPATH_STATE_AWAITING_KEYS ||
+      circ->base_.received_destroy || !chan || !CHANNEL_IS_OPEN(chan) ||
+      channel_is_bad_for_new_circs(chan)) {
+    return;
+  }
+
+  log_info(LD_OR,
+           "Our circuit %u (id: %" PRIu32 ") timed out waiting for the "
+           "first hop (%s). Trying a new connection.",
+           circ->base_.n_circ_id, circ->global_identifier,
+           channel_describe_peer(chan));
+  channel_mark_bad_for_new_circs(chan);
+  connection_ap_fail_onehop(circ->cpath->extend_info->identity_digest,
+                            circ->build_state);
+}
+
 /**
  * Close all circuits that start at us, aren't open, and were born
  * at least CircuitBuildTimeout seconds ago.
@@ -829,6 +853,7 @@ circuit_expire_building(void)
 
     circuit_log_path(LOG_INFO,LD_CIRC,TO_ORIGIN_CIRCUIT(victim));
     circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
+    circuit_expire_first_hop(TO_ORIGIN_CIRCUIT(victim));
     tor_trace(TR_SUBSYS(circuit), TR_EV(timeout), TO_ORIGIN_CIRCUIT(victim));
     if (victim->purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT)
       circuit_mark_for_close(victim, END_CIRC_REASON_MEASUREMENT_EXPIRED);
@@ -1882,7 +1907,6 @@ circuit_try_attaching_streams(origin_circuit_t *circ)
 void
 circuit_build_failed(origin_circuit_t *circ)
 {
-  channel_t *n_chan = NULL;
   /* we should examine circ and see if it failed because of
    * the last hop or an earlier hop. then use this info below.
    */
@@ -1932,48 +1956,8 @@ circuit_build_failed(origin_circuit_t *circ)
     failed_at_last_hop = 1;
   }
 
-  /* Check if we failed at first hop */
-  if (circ->cpath &&
-      circ->cpath->state != CPATH_STATE_OPEN &&
-      ! circ->base_.received_destroy) {
-    /* We failed at the first hop for some reason other than a DESTROY cell.
-     * If there's an OR connection to blame, blame it. Also, avoid this relay
-     * for a while, and fail any one-hop directory fetches destined for it. */
-    const char *n_chan_ident = circ->cpath->extend_info->identity_digest;
-    tor_assert(n_chan_ident);
-    int already_marked = 0;
-    if (circ->base_.n_chan) {
-      n_chan = circ->base_.n_chan;
-
-      if (n_chan->is_bad_for_new_circs) {
-        /* We only want to blame this router when a fresh healthy
-         * connection fails. So don't mark this router as newly failed,
-         * since maybe this was just an old circuit attempt that's
-         * finally timing out now. Also, there's no need to blow away
-         * circuits/streams/etc, since the failure of an unhealthy conn
-         * doesn't tell us much about whether a healthy conn would
-         * succeed. */
-        already_marked = 1;
-      }
-      log_info(LD_OR,
-               "Our circuit %u (id: %" PRIu32 ") failed to get a response "
-               "from the first hop (%s). I'm going to try to rotate to a "
-               "better connection.",
-               TO_CIRCUIT(circ)->n_circ_id, circ->global_identifier,
-               channel_describe_peer(n_chan));
-      n_chan->is_bad_for_new_circs = 1;
-    } else {
-      log_info(LD_OR,
-               "Our circuit %u (id: %" PRIu32 ") died before the first hop "
-               "with no connection",
-               TO_CIRCUIT(circ)->n_circ_id, circ->global_identifier);
-    }
-    if (!already_marked) {
-      /* if there are any one-hop streams waiting on this circuit, fail
-       * them now so they can retry elsewhere. */
-      connection_ap_fail_onehop(n_chan_ident, circ->build_state);
-    }
-  }
+  /* Channel retirement belongs to actual first-hop expiration, not circuit
+   * cleanup: another circuit or a local cancellation can have closed us. */
 
   switch (circ->base_.purpose) {
     case CIRCUIT_PURPOSE_C_HSDIR_GET:

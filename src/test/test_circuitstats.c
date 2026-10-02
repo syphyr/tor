@@ -7,6 +7,7 @@
 #define STATEFILE_PRIVATE
 #define CONTROL_EVENTS_PRIVATE
 #define CHANNEL_FILE_PRIVATE
+#define CHANNEL_OBJECT_PRIVATE
 
 #include "core/or/or.h"
 #include "test/test.h"
@@ -22,12 +23,20 @@
 #include "lib/fs/dir.h"
 #include "lib/fs/files.h"
 #include <math.h>
+#include "core/or/onion.h"
+#include "core/or/circuitmux.h"
+#include "core/or/circuitmux_ewma.h"
+#include "core/or/scheduler.h"
 #include "core/or/circuitlist.h"
 #include "core/or/circuitbuild.h"
 #include "core/or/circuitstats.h"
 #include "core/or/circuituse.h"
 #include "core/or/channel.h"
 #include "core/or/relay.h"
+#include "core/mainloop/connection.h"
+#include "core/mainloop/mainloop.h"
+#include "core/or/connection_edge.h"
+#include "core/or/entry_connection_st.h"
 
 #include "core/or/cpath_build_state_st.h"
 #include "feature/hs/hs_ident.h"
@@ -39,6 +48,8 @@
 static origin_circuit_t *add_opened_threehop(void);
 static origin_circuit_t *build_unopened_fourhop(struct timeval);
 static origin_circuit_t *subtest_fourhop_circuit(struct timeval, int);
+static const char *mock_cbt_describe_peer(channel_t *chan);
+static int mock_cbt_channel_is_canonical(channel_t *chan);
 
 static int marked_for_close;
 /* Mock function because we are not trying to test the close circuit that does
@@ -604,15 +615,19 @@ test_circuitstats_recovery_backlog(void *arg)
   smartlist_t *old = smartlist_new();
   origin_circuit_t *opened = NULL;
   struct timeval start = { 1000, 0 };
+  channel_t channel = { 0 };
+  channel.state = CHANNEL_STATE_OPEN;
   (void)arg;
   circuitbuild_running_unit_tests();
   MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
   MOCK(assert_circuit_ok, mock_cbt_assert_circuit_ok);
   circuit_build_times_init(cbt);
   setup_full_capture_of_logs(LOG_NOTICE);
   opened = add_opened_threehop();
   for (int i = 0; i < 400; ++i) {
     origin_circuit_t *circ = build_unopened_fourhop(start);
+    circ->base_.n_chan = &channel;
     circ->base_.state = CIRCUIT_STATE_BUILDING;
     circ->base_.purpose = CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT;
     circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
@@ -628,6 +643,7 @@ test_circuitstats_recovery_backlog(void *arg)
   /* First terminal close overwrites the last completion; the rest of this
    * very same expiration pass must not refill the repaired history. */
   circuit_expire_building();
+  tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 1);
   expect_log_msg_containing("prefix_hops_0=400");
   expect_log_msg_containing("abandoned=1 excluded=399");
   tt_int_op(cbt->total_build_times, OP_EQ, 0);
@@ -638,12 +654,16 @@ test_circuitstats_recovery_backlog(void *arg)
   } SMARTLIST_FOREACH_END(circ);
   tt_double_op(fabs(cbt->timeout_ms - (60000)), OP_LT, 0.001);
  done:
-  teardown_capture_of_logs();  SMARTLIST_FOREACH(old, origin_circuit_t *, circ,
-                    circuit_free_(TO_CIRCUIT(circ)));
+  teardown_capture_of_logs();
+  SMARTLIST_FOREACH_BEGIN(old, origin_circuit_t *, circ) {
+    circ->base_.n_chan = NULL;
+    circuit_free_(TO_CIRCUIT(circ));
+  } SMARTLIST_FOREACH_END(circ);
   smartlist_free(old);
   circuit_free_(TO_CIRCUIT(opened));
   circuit_build_times_free_timeouts(cbt);
   UNMOCK(tor_gettimeofday);
+  UNMOCK(channel_describe_peer);
   UNMOCK(assert_circuit_ok);
 }
 
@@ -844,6 +864,7 @@ test_circuitstats_stalled_expiry(void *arg)
   MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
   setup_full_capture_of_logs(LOG_NOTICE);
   for (int live = 0; live < 2; ++live) {
+    channel.is_bad_for_new_circs = 0;
     memset(&cbt_diagnostics, 0, sizeof(cbt_diagnostics));
     circuit_build_times_reset(cbt);
     for (int i = 0; i < CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE; ++i)
@@ -860,12 +881,15 @@ test_circuitstats_stalled_expiry(void *arg)
     cbt_test_now.tv_usec = 0;
     circuit_expire_building();
     tt_assert(circ->relaxed_timeout);
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
     tt_u64_op(cbt_diagnostics.prefix_hops[0], OP_EQ, 0);
     cbt_test_now.tv_sec = 1061;
     circuit_expire_building(); /* Repurpose only, no terminal expiry yet. */
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
     tt_u64_op(cbt_diagnostics.prefix_hops[0], OP_EQ, 0);
     mock_clean_saved_logs();
     circuit_expire_building();
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 1);
     expect_single_log_msg("prefix_hops_0=1 prefix_hops_1=0 prefix_hops_2=0 "
                           "post_prefix=0 open_channel=1 other_channel=0");
     if (live) {
@@ -886,6 +910,357 @@ test_circuitstats_stalled_expiry(void *arg)
   UNMOCK(tor_gettimeofday);
   UNMOCK(channel_describe_peer);
   UNMOCK(circuit_mark_for_close_);
+}
+
+/* Use real one-hop selection with a pending request, but intercept closing
+ * the request so repeated notifications remain observable. */
+static smartlist_t *cbt_pending_connections;
+static unsigned cbt_onehop_failures;
+
+static smartlist_t *
+mock_cbt_connections(void)
+{
+  return cbt_pending_connections;
+}
+
+static void
+mock_cbt_fail_request(entry_connection_t *conn, int reason, int line,
+                      const char *file)
+{
+  (void)conn;
+  (void)reason;
+  (void)line;
+  (void)file;
+  ++cbt_onehop_failures;
+}
+
+/* A channel that opened and then failed must release directory requests
+ * awaiting CREATED. Exercise the real channel, circuit-map, and close
+ * paths. */
+static void
+test_circuitstats_open_channel_failure(void *arg)
+{
+  channel_t channel = { 0 };
+  origin_circuit_t *circ = NULL;
+  entry_connection_t *request = NULL;
+  const struct timeval start = { 1000, 0 };
+  (void)arg;
+  channel_init(&channel);
+  scheduler_init();
+  channel.cmux = circuitmux_alloc();
+  circuitmux_set_policy(channel.cmux, &ewma_policy);
+  channel.has_been_open = 1;
+  channel.reason_for_closing = CHANNEL_CLOSE_FOR_ERROR;
+  MOCK(assert_circuit_ok, mock_cbt_assert_circuit_ok);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
+  MOCK(get_connection_array, mock_cbt_connections);
+  MOCK(connection_mark_unattached_ap_, mock_cbt_fail_request);
+  tor_init_connection_lists();
+  cbt_pending_connections = smartlist_new();
+  request = entry_connection_new(CONN_TYPE_AP, AF_INET);
+  ENTRY_TO_CONN(request)->state = AP_CONN_STATE_CIRCUIT_WAIT;
+  request->want_onehop = 1;
+  request->chosen_exit_name = tor_strdup(
+      "$4242424242424242424242424242424242424242");
+  smartlist_add(cbt_pending_connections, ENTRY_TO_CONN(request));
+
+  for (int firsthop_open = 0; firsthop_open < 2; ++firsthop_open) {
+    channel.state = CHANNEL_STATE_OPEN;
+    channel_register(&channel);
+    cbt_onehop_failures = 0;
+    circ = build_unopened_fourhop(start);
+    circ->base_.state = CIRCUIT_STATE_BUILDING;
+    circ->cpath->state = firsthop_open ? CPATH_STATE_OPEN :
+                                       CPATH_STATE_AWAITING_KEYS;
+    memset(circ->cpath->extend_info->identity_digest, 0x42, DIGEST_LEN);
+    circuit_set_n_circid_chan(TO_CIRCUIT(circ), 42, &channel);
+    channel.state = CHANNEL_STATE_CLOSING;
+    channel_closed(&channel);
+    tt_assert(circ->base_.marked_for_close);
+    tt_ptr_op(circ->base_.n_chan, OP_EQ, NULL);
+    tt_uint_op(cbt_onehop_failures, OP_EQ, !firsthop_open);
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
+    circ = NULL;
+    circuit_close_all_marked();
+    channel_closed(&channel);
+    tt_uint_op(cbt_onehop_failures, OP_EQ, !firsthop_open);
+    channel_unregister(&channel);
+  }
+ done:
+  circuit_free_(TO_CIRCUIT(circ));
+  channel_unregister(&channel);
+  circuitmux_free(channel.cmux);
+  scheduler_free_all();
+  smartlist_clear(cbt_pending_connections);
+  connection_free_(ENTRY_TO_CONN(request));
+  smartlist_free(cbt_pending_connections);
+  cbt_pending_connections = NULL;
+  UNMOCK(assert_circuit_ok);
+  UNMOCK(channel_describe_peer);
+  UNMOCK(get_connection_array);
+  UNMOCK(connection_mark_unattached_ap_);
+}
+
+/* Shared transport and pending-request fixture for channel expiry tests. */
+static void
+setup_channel_expiry_test(void)
+{
+  circuitbuild_running_unit_tests();
+  circuit_build_times_init(get_circuit_build_times_mutable());
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
+  MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
+  MOCK(get_connection_array, mock_cbt_connections);
+  MOCK(connection_mark_unattached_ap_, mock_cbt_fail_request);
+  tor_init_connection_lists();
+  cbt_pending_connections = smartlist_new();
+  entry_connection_t *request = entry_connection_new(CONN_TYPE_AP, AF_INET);
+  ENTRY_TO_CONN(request)->state = AP_CONN_STATE_CIRCUIT_WAIT;
+  request->want_onehop = 1;
+  request->chosen_exit_name = tor_strdup(
+      "$4242424242424242424242424242424242424242");
+  smartlist_add(cbt_pending_connections, ENTRY_TO_CONN(request));
+}
+
+static void
+teardown_channel_expiry_test(void)
+{
+  connection_free_(smartlist_get(cbt_pending_connections, 0));
+  smartlist_free(cbt_pending_connections);
+  cbt_pending_connections = NULL;
+  circuit_build_times_free_timeouts(get_circuit_build_times_mutable());
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(channel_describe_peer);
+  UNMOCK(circuit_mark_for_close_);
+  UNMOCK(get_connection_array);
+  UNMOCK(connection_mark_unattached_ap_);
+}
+
+static channel_t *cbt_bootstrap_channel;
+
+static channel_t *
+mock_cbt_get_channel(const char *rsa_id,
+                     const struct ed25519_public_key_t *ed_id,
+                     const tor_addr_t *ipv4, const tor_addr_t *ipv6,
+                     bool origin, const char **msg, int *launch)
+{
+  (void)rsa_id;
+  (void)ed_id;
+  (void)ipv4;
+  (void)ipv6;
+  (void)origin;
+  *msg = "test channel";
+  *launch = 0;
+  return cbt_bootstrap_channel;
+}
+
+static int
+mock_cbt_create_send_failure(circuit_t *circ, const create_cell_t *cell,
+                             int relayed)
+{
+  (void)cell;
+  (void)relayed;
+  /* Match circuit-ID exhaustion: delivery drops the channel pointer. */
+  circ->n_chan = NULL;
+  return -1;
+}
+
+/* A failed first CREATE must release directory requests both when reusing
+ * an open channel and when finishing a newly opened connection. */
+static void
+test_circuitstats_create_send_failure(void *arg)
+{
+  origin_circuit_t *circ = NULL;
+  extend_info_t *hop = NULL;
+  const struct timeval start = { 1000, 0 };
+  channel_t channel = { 0 };
+  tor_addr_t addr;
+  (void)arg;
+  setup_channel_expiry_test();
+  MOCK(channel_get_for_extend, mock_cbt_get_channel);
+  MOCK(circuit_deliver_create_cell, mock_cbt_create_send_failure);
+  channel.state = CHANNEL_STATE_OPEN;
+  channel.global_identifier = 1;
+  channel.is_canonical = mock_cbt_channel_is_canonical;
+  memset(channel.identity_digest, 0x42, DIGEST_LEN);
+  cbt_bootstrap_channel = &channel;
+  tor_addr_parse(&addr, "192.0.2.123");
+  hop = extend_info_new("test", channel.identity_digest, NULL, NULL,
+                        &addr, 9001, NULL, false);
+
+  for (int pending = 0; pending < 2; ++pending) {
+    cbt_onehop_failures = 0;
+    marked_for_close = 0;
+    circ = new_test_origin_circuit(false, start, 1, &hop);
+    circ->build_state->onehop_tunnel = 1;
+    if (pending) {
+      circ->base_.n_hop = extend_info_dup(hop);
+      circuit_set_state(TO_CIRCUIT(circ), CIRCUIT_STATE_CHAN_WAIT);
+      circuit_n_chan_done(&channel, 1);
+      tt_int_op(marked_for_close, OP_EQ, 1);
+    } else {
+      tt_int_op(circuit_handle_first_hop(circ), OP_EQ,
+                -END_CIRC_REASON_RESOURCELIMIT);
+    }
+    tt_uint_op(cbt_onehop_failures, OP_EQ, 1);
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
+    tt_int_op(circ->cpath->state, OP_EQ, CPATH_STATE_CLOSED);
+    /* Generic cleanup must not repeat the notification. */
+    circuit_build_failed(circ);
+    tt_uint_op(cbt_onehop_failures, OP_EQ, 1);
+    circuit_free_(TO_CIRCUIT(circ));
+    circ = NULL;
+  }
+ done:
+  if (circ) {
+    circ->base_.n_chan = NULL;
+  }
+  circuit_free_(TO_CIRCUIT(circ));
+  extend_info_free(hop);
+  cbt_bootstrap_channel = NULL;
+  UNMOCK(channel_get_for_extend);
+  UNMOCK(circuit_deliver_create_cell);
+  teardown_channel_expiry_test();
+}
+
+/* Expiration is independent of CBT eligibility, circuit purpose, and the
+ * reason supplied by unrelated cleanup. Exercise the actual expiry loop. */
+static void
+test_circuitstats_channel_retirement(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  origin_circuit_t *circ = NULL, *opened = NULL;
+  entry_connection_t *request = NULL;
+  const struct timeval start = { 1000, 0 };
+  channel_t channel;
+  const int cancel_reasons[] = {
+    END_CIRC_REASON_INTERNAL, END_CIRC_REASON_FINISHED,
+    END_CIRC_REASON_RESOURCELIMIT, END_CIRC_REASON_REQUESTED,
+    END_CIRC_REASON_TORPROTOCOL, END_CIRC_REASON_TIMEOUT,
+    END_CIRC_REASON_MEASUREMENT_EXPIRED
+  };
+  (void)arg;
+  circuitbuild_running_unit_tests();
+  circuit_build_times_init(cbt);
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
+  MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
+  MOCK(get_connection_array, mock_cbt_connections);
+  MOCK(connection_mark_unattached_ap_, mock_cbt_fail_request);
+  tor_init_connection_lists();
+  cbt_pending_connections = smartlist_new();
+  request = entry_connection_new(CONN_TYPE_AP, AF_INET);
+  ENTRY_TO_CONN(request)->state = AP_CONN_STATE_CIRCUIT_WAIT;
+  request->want_onehop = 1;
+  request->chosen_exit_name = tor_strdup(
+      "$4242424242424242424242424242424242424242");
+  smartlist_add(cbt_pending_connections, ENTRY_TO_CONN(request));
+
+  for (int adaptive = 0; adaptive < 2; ++adaptive) {
+    get_options_mutable()->LearnCircuitBuildTimeout = adaptive;
+    get_options_mutable()->CircuitBuildTimeout = 60;
+    for (int kind = 0; kind < 9; ++kind) {
+      memset(&channel, 0, sizeof(channel));
+      channel.state = CHANNEL_STATE_OPEN;
+      cbt_onehop_failures = 0;
+      circuit_build_times_reset(cbt);
+      if (adaptive) {
+        for (int i = 0; i < CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE; ++i)
+          circuit_build_times_add_time(cbt, 500);
+      }
+      cbt->timeout_ms = 1000;
+      cbt->close_ms = 60000;
+      circ = build_unopened_fourhop(start);
+      circ->base_.state = CIRCUIT_STATE_BUILDING;
+      circ->base_.purpose = adaptive ? CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT :
+                                      CIRCUIT_PURPOSE_C_GENERAL;
+      circ->base_.n_chan = &channel;
+      memset(circ->cpath->extend_info->identity_digest, 0x42, DIGEST_LEN);
+      circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
+      /* Normal first-hop expiry, excluded observation, later-hop expiry,
+       * connection wait, closing/missing/retired channel, DESTROY, one-hop. */
+      if (kind == 1)
+        circ->cbt_observation_invalidated = 1;
+      if (kind == 2)
+        circ->cpath->state = CPATH_STATE_OPEN;
+      if (kind == 3)
+        circ->cpath->state = CPATH_STATE_CLOSED;
+      if (kind == 4)
+        channel.state = CHANNEL_STATE_CLOSING;
+      if (kind == 5)
+        circ->base_.n_chan = NULL;
+      if (kind == 6)
+        channel.is_bad_for_new_circs = 1;
+      if (kind == 7)
+        circ->base_.received_destroy = 1;
+      if (kind == 8) {
+        circ->build_state->onehop_tunnel = 1;
+        circ->build_state->desired_path_len = 1;
+      }
+      cbt_test_now = start;
+      cbt_test_now.tv_sec += 120;
+      marked_for_close = 0;
+      circuit_expire_building();
+
+      tt_int_op(marked_for_close, OP_EQ, kind != 3);
+      const int retire = kind == 0 || kind == 1 || kind == 8;
+      tt_int_op(channel.is_bad_for_new_circs, OP_EQ, retire || kind == 6);
+      tt_uint_op(cbt_onehop_failures, OP_EQ, retire);
+      /* Repeated expiry/cleanup cannot abort new requests on this channel. */
+      circuit_expire_building();
+      circuit_build_failed(circ);
+      tt_uint_op(cbt_onehop_failures, OP_EQ, retire);
+      circ->base_.n_chan = NULL;
+      circuit_free_(TO_CIRCUIT(circ));
+      circ = NULL;
+    }
+  }
+
+  for (unsigned i = 0; i < ARRAY_LENGTH(cancel_reasons); ++i) {
+    memset(&channel, 0, sizeof(channel));
+    channel.state = CHANNEL_STATE_OPEN;
+    cbt_onehop_failures = 0;
+    circ = build_unopened_fourhop(start);
+    circ->base_.state = CIRCUIT_STATE_BUILDING;
+    circ->base_.n_chan = &channel;
+    circ->base_.marked_for_close_orig_reason = cancel_reasons[i];
+    circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
+    memset(circ->cpath->extend_info->identity_digest, 0x42, DIGEST_LEN);
+    circuit_build_failed(circ);
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
+    tt_uint_op(cbt_onehop_failures, OP_EQ, 0);
+    circ->base_.n_chan = NULL;
+    circuit_free_(TO_CIRCUIT(circ));
+    circ = NULL;
+  }
+  /* Actual connection failure still wakes directory requests promptly. */
+  memset(&channel, 0, sizeof(channel));
+  memset(channel.identity_digest, 0x42, DIGEST_LEN);
+  channel.is_canonical = mock_cbt_channel_is_canonical;
+  cbt_onehop_failures = 0;
+  circ = build_unopened_fourhop(start);
+  memset(circ->cpath->extend_info->identity_digest, 0x42, DIGEST_LEN);
+  circ->base_.n_hop = extend_info_dup(circ->cpath->extend_info);
+  circuit_set_state(TO_CIRCUIT(circ), CIRCUIT_STATE_CHAN_WAIT);
+  circuit_n_chan_done(&channel, 0);
+  tt_uint_op(cbt_onehop_failures, OP_EQ, 1);
+  tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
+
+ done:
+  if (circ)
+    circ->base_.n_chan = NULL;
+  circuit_free_(TO_CIRCUIT(circ));
+  circuit_free_(TO_CIRCUIT(opened));
+  smartlist_clear(cbt_pending_connections);
+  connection_free_(ENTRY_TO_CONN(request));
+  smartlist_free(cbt_pending_connections);
+  cbt_pending_connections = NULL;
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(channel_describe_peer);
+  UNMOCK(circuit_mark_for_close_);
+  UNMOCK(get_connection_array);
+  UNMOCK(connection_mark_unattached_ap_);
 }
 
 static int
@@ -1025,10 +1400,13 @@ test_circuitstats_late_firsthop(void *arg)
   circuit_build_times_t *cbt = get_circuit_build_times_mutable();
   origin_circuit_t *circ = NULL, *opened = NULL;
   const struct timeval start = { 1000, 0 };
+  channel_t channel = { 0 };
+  channel.state = CHANNEL_STATE_OPEN;
   (void)arg;
   get_options_mutable()->LearnCircuitBuildTimeout = 1;
   get_options_mutable()->AvoidDiskWrites = 1;
   MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
   MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
   circuit_build_times_init(cbt);
   for (int have_open = 0; have_open < 2; ++have_open) {
@@ -1046,6 +1424,7 @@ test_circuitstats_late_firsthop(void *arg)
       cbt->timeout_ms = 1000;
       cbt->close_ms = 60000;
       circ = build_unopened_fourhop(start);
+      circ->base_.n_chan = &channel;
       circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
       cbt_test_now = start;
       cbt_test_now.tv_sec += 3;
@@ -1083,6 +1462,8 @@ test_circuitstats_late_firsthop(void *arg)
         tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, recent_idx);
         tt_int_op(cbt->num_circ_timeouts, OP_EQ, 1);
       }
+      tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
+      circ->base_.n_chan = NULL;
       circuit_free_(TO_CIRCUIT(circ));
       circ = NULL;
     }
@@ -1090,11 +1471,14 @@ test_circuitstats_late_firsthop(void *arg)
     opened = NULL;
   }
  done:
+  if (circ)
+    circ->base_.n_chan = NULL;
   get_options_mutable()->LearnCircuitBuildTimeout = 1;
   circuit_free_(TO_CIRCUIT(circ));
   circuit_free_(TO_CIRCUIT(opened));
   circuit_build_times_free_timeouts(cbt);
   UNMOCK(tor_gettimeofday);
+  UNMOCK(channel_describe_peer);
   UNMOCK(circuit_mark_for_close_);
 }
 
@@ -1107,9 +1491,12 @@ test_circuitstats_late_firsthop_reset(void *arg)
   origin_circuit_t *circs[40] = { NULL };
   origin_circuit_t *opened = NULL;
   const struct timeval start = { 1000, 0 };
+  channel_t channel = { 0 };
+  channel.state = CHANNEL_STATE_OPEN;
   (void)arg;
   circuitbuild_running_unit_tests();
   MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
   MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
   circuit_build_times_init(cbt);
   opened = add_opened_threehop();
@@ -1121,6 +1508,7 @@ test_circuitstats_late_firsthop_reset(void *arg)
   cbt_test_now.tv_sec += 3;
   for (unsigned i = 0; i < ARRAY_LENGTH(circs); ++i) {
     circs[i] = build_unopened_fourhop(start);
+    circs[i]->base_.n_chan = &channel;
     circs[i]->cpath->state = CPATH_STATE_AWAITING_KEYS;
   }
   circuit_expire_building();
@@ -1164,15 +1552,20 @@ test_circuitstats_late_firsthop_reset(void *arg)
   tt_double_op(fabs(cbt->timeout_ms - 120000), OP_LT, 0.001);
   tt_int_op(cbt->liveness.after_firsthop_idx, OP_EQ, 0);
   tt_int_op(marked_for_close, OP_EQ, 0);
+  tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
   circuit_expire_building();
   tt_double_op(fabs(cbt->timeout_ms - 120000), OP_LT, 0.001);
   tt_int_op(cbt->num_circ_timeouts, OP_EQ, 0);
  done:
-  for (unsigned i = 0; i < ARRAY_LENGTH(circs); ++i)
+  for (unsigned i = 0; i < ARRAY_LENGTH(circs); ++i) {
+    if (circs[i])
+      circs[i]->base_.n_chan = NULL;
     circuit_free_(TO_CIRCUIT(circs[i]));
+  }
   circuit_free_(TO_CIRCUIT(opened));
   circuit_build_times_free_timeouts(cbt);
   UNMOCK(tor_gettimeofday);
+  UNMOCK(channel_describe_peer);
   UNMOCK(circuit_mark_for_close_);
 }
 
@@ -1323,7 +1716,10 @@ struct testcase_t circuitstats_tests[] = {
   TEST_CIRCUITSTATS(circuitstats_recovery_statefile, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_diagnostics, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_stalled_expiry, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_open_channel_failure, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_channel_retirement, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_connection_failure, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_mixed_rendezvous, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_create_send_failure, TT_FORK),
   END_OF_TESTCASES
 };
