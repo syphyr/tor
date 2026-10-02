@@ -1076,6 +1076,8 @@ circuit_send_first_onion_skin(origin_circuit_t *circ)
                               circ->build_state);
     return - END_CIRC_REASON_RESOURCELIMIT;
   }
+  circ->first_hop_success_count_at_create =
+    circ->base_.n_chan->first_hop_success_count;
   tor_trace(TR_SUBSYS(circuit), TR_EV(first_onion_skin), circ, circ->cpath);
 
   circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
@@ -1400,6 +1402,10 @@ circuit_finish_handshake(origin_circuit_t *circ,
         hop->ccontrol = congestion_control_new(&params, CC_PATH_SBWS);
       }
     }
+  }
+
+  if (hop == circ->cpath && circ->base_.n_chan) {
+    ++circ->base_.n_chan->first_hop_success_count;
   }
 
   hop->state = CPATH_STATE_OPEN;

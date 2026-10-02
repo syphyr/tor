@@ -433,25 +433,48 @@ circuit_conforms_to_options(const origin_circuit_t *circ,
 #endif /* 0 */
 
 /** Keep a timed-out CREATE as a recovery probe without blocking requests.
- * Statistical measurements already have their own lifetime. For other
- * attempts, retain at most one measurement-only first hop per channel so
+ * Statistical measurements keep their normal lifetime before reaching here.
+ * After that deadline, keep only the oldest eligible measurement per channel.
+ * Other attempts can become probes only if no measurement is outstanding, so
  * retries cannot accumulate a new recovery probe at every usage timeout. */
 static bool
 circuit_retain_first_hop(origin_circuit_t *circ)
 {
-  if (circ->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT) {
-    return true;
+  channel_t *chan = circ->base_.n_chan;
+  /* There is no recovery decision left to wait for on an unusable channel
+   * or one that has already demonstrated concurrent first-hop progress. */
+  if (circ->base_.received_destroy || !chan || !CHANNEL_IS_OPEN(chan) ||
+      channel_is_bad_for_new_circs(chan) ||
+      chan->first_hop_success_count !=
+        circ->first_hop_success_count_at_create) {
+    return false;
   }
 
   SMARTLIST_FOREACH_BEGIN(circuit_get_global_origin_circuit_list(),
                          origin_circuit_t *, other) {
     if (other != circ && !other->base_.marked_for_close &&
+        !other->base_.received_destroy &&
         other->base_.n_chan == circ->base_.n_chan &&
+        other->first_hop_success_count_at_create ==
+          chan->first_hop_success_count &&
         other->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT &&
-        other->cpath && other->cpath->state == CPATH_STATE_AWAITING_KEYS) {
+        other->cpath && other->cpath->state == CPATH_STATE_AWAITING_KEYS &&
+        (circ->base_.purpose != CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT ||
+         timercmp(&other->base_.timestamp_began,
+                  &circ->base_.timestamp_began, OP_LT) ||
+         (timercmp(&other->base_.timestamp_began,
+                   &circ->base_.timestamp_began, OP_EQ) &&
+          other->global_identifier < circ->global_identifier))) {
       return false;
     }
   } SMARTLIST_FOREACH_END(other);
+
+  /* Do not send another timeout event or repeat accounting for the probe.
+   * The age/identifier ordering above keeps the survivor independent of
+   * circuit-list traversal order, even when several CREATEs share a time. */
+  if (circ->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT) {
+    return true;
+  }
 
   /* This also removes the attempt from pending circuit selection and the
    * general-circuit pending limit. One-hop attempts remain excluded from
@@ -466,12 +489,27 @@ circuit_retain_first_hop(origin_circuit_t *circ)
  * evidence that its channel failed. Keep this at the expiry decision, separate
  * from CBT sampling eligibility and generic circuit cleanup. */
 static void
-circuit_expire_first_hop(origin_circuit_t *circ)
+circuit_expire_first_hop(origin_circuit_t *circ, bool recovery_timeout)
 {
   channel_t *chan = circ->base_.n_chan;
   if (!circ->cpath || circ->cpath->state != CPATH_STATE_AWAITING_KEYS ||
       circ->base_.received_destroy || !chan || !CHANNEL_IS_OPEN(chan) ||
       channel_is_bad_for_new_circs(chan)) {
+    return;
+  }
+
+  /* A different first hop succeeded while this CREATE was outstanding.
+   * Close only this circuit: the channel can still establish circuits.
+   * A later attempt snapshots the new count, so a subsequent complete stall
+   * can still trigger channel recovery. */
+  if (chan->first_hop_success_count !=
+      circ->first_hop_success_count_at_create) {
+    return;
+  }
+
+  /* Ordinary retries may expire while an older attempt probes the channel.
+   * They cannot retire the connection before the recovery deadline. */
+  if (!recovery_timeout) {
     return;
   }
 
@@ -906,11 +944,8 @@ circuit_expire_building(void)
 
     circuit_log_path(LOG_INFO,LD_CIRC,TO_ORIGIN_CIRCUIT(victim));
     circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
-    /* A retry may expire earlier while another attempt probes the channel.
-     * Only the recovery deadline can justify retiring the connection. */
-    if (!timercmp(&victim->timestamp_began, &first_hop_cutoff, OP_GT)) {
-      circuit_expire_first_hop(TO_ORIGIN_CIRCUIT(victim));
-    }
+    circuit_expire_first_hop(TO_ORIGIN_CIRCUIT(victim),
+        !timercmp(&victim->timestamp_began, &first_hop_cutoff, OP_GT));
     tor_trace(TR_SUBSYS(circuit), TR_EV(timeout), TO_ORIGIN_CIRCUIT(victim));
     if (victim->purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT)
       circuit_mark_for_close(victim, END_CIRC_REASON_MEASUREMENT_EXPIRED);

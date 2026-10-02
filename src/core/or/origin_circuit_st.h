@@ -135,6 +135,9 @@ struct origin_circuit_t {
    */
   crypt_path_t *cpath;
 
+  /** Channel first-hop success count when our CREATE was queued. */
+  uint64_t first_hop_success_count_at_create;
+
   /** Holds hidden service identifier on either client or service side. This
    * is for both introduction and rendezvous circuit. */
   struct hs_ident_circuit_t *hs_ident;

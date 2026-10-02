@@ -23,11 +23,9 @@
 #include "lib/fs/dir.h"
 #include "lib/fs/files.h"
 #include <math.h>
-#include "core/crypto/onion_fast.h"
 #include "feature/nodelist/nodelist.h"
 #include "core/or/socks_request_st.h"
 #include "lib/evloop/compat_libevent.h"
-#include "core/or/onion.h"
 #include "core/or/circuitmux.h"
 #include "core/or/circuitmux_ewma.h"
 #include "core/or/scheduler.h"
@@ -37,6 +35,9 @@
 #include "core/or/circuituse.h"
 #include "core/or/channel.h"
 #include "core/or/relay.h"
+#include "core/or/onion.h"
+#include "core/crypto/onion_crypto.h"
+#include "core/crypto/onion_fast.h"
 #include "core/mainloop/connection.h"
 #include "core/mainloop/mainloop.h"
 #include "core/or/connection_edge.h"
@@ -1057,6 +1058,8 @@ test_circuitstats_probe_accounting(void *arg)
       circ = build_unopened_fourhop(start);
       circ->base_.state = CIRCUIT_STATE_BUILDING;
       circ->base_.n_chan = &channel;
+      circ->first_hop_success_count_at_create =
+        channel.first_hop_success_count;
       circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
       cbt_test_now = start;
       cbt_test_now.tv_sec += 3;
@@ -1082,6 +1085,7 @@ test_circuitstats_probe_accounting(void *arg)
          * observation ended at the close deadline. */
         cbt->liveness.nonlive_timeouts = 0;
         cbt->liveness.network_last_live = cbt_test_now.tv_sec;
+        channel.first_hop_success_count++;
         circ->cpath->state = CPATH_STATE_OPEN;
         circ->cpath->next->state = CPATH_STATE_OPEN;
         circ->cpath->next->next->state = CPATH_STATE_OPEN;
@@ -1439,6 +1443,119 @@ test_circuitstats_bootstrap_probe_retry(void *arg)
   UNMOCK(circuit_mark_for_close_);
 }
 
+/* Measurements retain their sampling window, but only the oldest eligible
+ * first-hop probe on each channel survives beyond the close deadline. */
+static void
+test_circuitstats_measurement_probe_limit(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  origin_circuit_t *circs[4] = { NULL }, *opened = NULL;
+  channel_t channels[2];
+  const struct timeval start = { 1000, 0 };
+  (void)arg;
+  setup_channel_expiry_test();
+  UNMOCK(circuit_mark_for_close_);
+  MOCK(circuit_mark_for_close_, mock_cbt_mark_closed);
+  opened = add_opened_threehop();
+  get_options_mutable()->LearnCircuitBuildTimeout = 1;
+
+  for (int reverse = 0; reverse < 2; ++reverse) {
+    for (int kind = 0; kind < 4; ++kind) {
+      /* Different ages, equal ages, an older probe with concurrent success,
+       * and an older probe that already received DESTROY. */
+      memset(channels, 0, sizeof(channels));
+      channels[0].state = channels[1].state = CHANNEL_STATE_OPEN;
+      channels[0].first_hop_success_count = 1;
+      cbt_onehop_failures = 0;
+      circuit_build_times_reset(cbt);
+      for (int i = 0; i < CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE; ++i)
+        circuit_build_times_add_time(cbt, 500);
+      const int samples = cbt->total_build_times;
+      cbt->timeout_ms = 1000;
+      cbt->close_ms = 5000;
+      cbt->liveness.nonlive_timeouts = 0;
+      cbt->liveness.network_last_live = 1060;
+      for (int n = 0; n < 4; ++n) {
+        const int i = reverse ? 3-n : n;
+        struct timeval began = start;
+        if (kind != 1 && i != 0)
+          ++began.tv_sec;
+        circs[i] = build_unopened_fourhop(began);
+        circs[i]->global_identifier = i+1;
+        circs[i]->base_.state = CIRCUIT_STATE_BUILDING;
+        circs[i]->base_.purpose = CIRCUIT_PURPOSE_C_GENERAL;
+        circs[i]->base_.n_chan = &channels[i == 3];
+        circs[i]->first_hop_success_count_at_create =
+          channels[i == 3].first_hop_success_count;
+        circs[i]->cpath->state = CPATH_STATE_AWAITING_KEYS;
+        memset(circs[i]->cpath->extend_info->identity_digest,
+               0x42, DIGEST_LEN);
+      }
+      if (kind == 2)
+        circs[0]->first_hop_success_count_at_create = 0;
+      if (kind == 3)
+        circs[0]->base_.received_destroy = 1;
+
+      /* All four attempts must get their full statistical lifetime. */
+      cbt_test_now = start;
+      cbt_test_now.tv_sec += 4;
+      circuit_expire_building();
+      for (int i = 0; i < 4; ++i) {
+        tt_assert(!circs[i]->base_.marked_for_close);
+        tt_int_op(circs[i]->base_.purpose, OP_EQ,
+                  CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT);
+        tt_assert(!circs[i]->cbt_measurement_closed);
+      }
+      tt_int_op(cbt->num_circ_timeouts, OP_EQ, 4);
+      tt_int_op(cbt->num_circ_closed, OP_EQ, 0);
+
+      cbt_test_now.tv_sec = start.tv_sec + 8;
+      circuit_expire_building();
+      const int survivor = kind >= 2 ? 1 : 0;
+      for (int i = 0; i < 4; ++i) {
+        tt_int_op(!!circs[i]->base_.marked_for_close, OP_EQ,
+                  i != survivor && i != 3);
+        tt_assert(circs[i]->cbt_measurement_closed);
+      }
+      tt_int_op(cbt->num_circ_closed, OP_EQ, 4);
+      tt_int_op(cbt->total_build_times, OP_EQ, samples + 4);
+      tt_int_op(channels[0].is_bad_for_new_circs, OP_EQ, 0);
+      tt_int_op(channels[1].is_bad_for_new_circs, OP_EQ, 0);
+      tt_uint_op(cbt_onehop_failures, OP_EQ, 0);
+
+      /* Repeated expiry cannot duplicate observations or move the oldest
+       * eligible probe's recovery deadline to a newer attempt's deadline. */
+      cbt->close_ms = 5000;
+      cbt_test_now.tv_sec =
+        circs[survivor]->base_.timestamp_began.tv_sec + 59;
+      circuit_expire_building();
+      tt_assert(!circs[survivor]->base_.marked_for_close);
+      tt_int_op(channels[0].is_bad_for_new_circs, OP_EQ, 0);
+      ++cbt_test_now.tv_sec;
+      circuit_expire_building();
+      tt_assert(circs[survivor]->base_.marked_for_close);
+      tt_int_op(channels[0].is_bad_for_new_circs, OP_EQ, 1);
+      tt_int_op(cbt->num_circ_timeouts, OP_EQ, 4);
+      tt_int_op(cbt->num_circ_closed, OP_EQ, 4);
+      tt_int_op(cbt->total_build_times, OP_EQ, samples + 4);
+      for (int i = 0; i < 4; ++i) {
+        circs[i]->base_.n_chan = NULL;
+        circuit_free_(TO_CIRCUIT(circs[i]));
+        circs[i] = NULL;
+      }
+    }
+  }
+
+ done:
+  for (int i = 0; i < 4; ++i) {
+    if (circs[i])
+      circs[i]->base_.n_chan = NULL;
+    circuit_free_(TO_CIRCUIT(circs[i]));
+  }
+  circuit_free_(TO_CIRCUIT(opened));
+  teardown_channel_expiry_test();
+}
+
 /* Expiration is independent of CBT eligibility, circuit purpose, and the
  * reason supplied by unrelated cleanup. Exercise the actual expiry loop. */
 static void
@@ -1472,10 +1589,16 @@ test_circuitstats_channel_retirement(void *arg)
       "$4242424242424242424242424242424242424242");
   smartlist_add(cbt_pending_connections, ENTRY_TO_CONN(request));
 
+  enum {
+    FIRST_HOP, EXCLUDED_OBSERVATION, LATER_HOP,
+    CONNECTION_WAIT, CLOSING_CHANNEL, MISSING_CHANNEL,
+    RETIRED_CHANNEL, RECEIVED_DESTROY, DIRECTORY_ATTEMPT, CONCURRENT_PROGRESS,
+    N_RETIREMENT_CASES
+  };
   for (int adaptive = 0; adaptive < 2; ++adaptive) {
     get_options_mutable()->LearnCircuitBuildTimeout = adaptive;
     get_options_mutable()->CircuitBuildTimeout = 60;
-    for (int kind = 0; kind < 9; ++kind) {
+    for (int kind = 0; kind < N_RETIREMENT_CASES; ++kind) {
       memset(&channel, 0, sizeof(channel));
       channel.state = CHANNEL_STATE_OPEN;
       cbt_onehop_failures = 0;
@@ -1495,32 +1618,39 @@ test_circuitstats_channel_retirement(void *arg)
       circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
       /* Normal first-hop expiry, excluded observation, later-hop expiry,
        * connection wait, closing/missing/retired channel, DESTROY, one-hop. */
-      if (kind == 1)
+      if (kind == EXCLUDED_OBSERVATION)
         circ->cbt_observation_invalidated = 1;
-      if (kind == 2)
+      if (kind == LATER_HOP)
         circ->cpath->state = CPATH_STATE_OPEN;
-      if (kind == 3)
+      if (kind == CONNECTION_WAIT)
         circ->cpath->state = CPATH_STATE_CLOSED;
-      if (kind == 4)
+      if (kind == CLOSING_CHANNEL)
         channel.state = CHANNEL_STATE_CLOSING;
-      if (kind == 5)
+      if (kind == MISSING_CHANNEL)
         circ->base_.n_chan = NULL;
-      if (kind == 6)
+      if (kind == RETIRED_CHANNEL)
         channel.is_bad_for_new_circs = 1;
-      if (kind == 7)
+      if (kind == RECEIVED_DESTROY)
         circ->base_.received_destroy = 1;
-      if (kind == 8) {
+      if (kind == DIRECTORY_ATTEMPT) {
         circ->build_state->onehop_tunnel = 1;
         circ->build_state->desired_path_len = 1;
       }
+      /* Existing successes do not protect a new attempt; only progress
+       * since its snapshot does. A subsequent stalled attempt can recover. */
+      channel.first_hop_success_count = 7;
+      circ->first_hop_success_count_at_create =
+        kind == CONCURRENT_PROGRESS ? 6 : 7;
       cbt_test_now = start;
       cbt_test_now.tv_sec += 120;
       marked_for_close = 0;
       circuit_expire_building();
 
-      tt_int_op(marked_for_close, OP_EQ, kind != 3);
-      const int retire = kind == 0 || kind == 1 || kind == 8;
-      tt_int_op(channel.is_bad_for_new_circs, OP_EQ, retire || kind == 6);
+      tt_int_op(marked_for_close, OP_EQ, kind != CONNECTION_WAIT);
+      const bool retire = kind == FIRST_HOP ||
+        kind == EXCLUDED_OBSERVATION || kind == DIRECTORY_ATTEMPT;
+      tt_int_op(channel.is_bad_for_new_circs, OP_EQ,
+                retire || kind == RETIRED_CHANNEL);
       tt_uint_op(cbt_onehop_failures, OP_EQ, retire);
       /* Repeated expiry/cleanup cannot abort new requests on this channel. */
       circuit_expire_building();
@@ -1536,18 +1666,27 @@ test_circuitstats_channel_retirement(void *arg)
    * In particular, one-hop directory requests must not retire a working
    * channel at a subsecond usage timeout. Keep the same attempt alive. */
   opened = add_opened_threehop();
-  for (int kind = 0; kind < 8; ++kind) {
-    const bool onehop = kind < 3 || kind == 5;
-    const int deadline = kind == 1 ? 120 : 60;
-    get_options_mutable()->LearnCircuitBuildTimeout = kind != 2;
+  enum {
+    DIRECTORY_TIMEOUT, LONG_CLOSE_TIMEOUT, FIXED_TIMEOUT,
+    INVALIDATED_MEASUREMENT, ADAPTIVE_TIMEOUT,
+    DIRECTORY_COMPLETES, FIRST_HOP_COMPLETES, INSUFFICIENT_HISTORY,
+    N_DEADLINE_CASES
+  };
+  for (int kind = 0; kind < N_DEADLINE_CASES; ++kind) {
+    const bool onehop = kind <= FIXED_TIMEOUT ||
+                        kind == DIRECTORY_COMPLETES;
+    const int deadline = kind == LONG_CLOSE_TIMEOUT ? 120 : 60;
+    get_options_mutable()->LearnCircuitBuildTimeout = kind != FIXED_TIMEOUT;
     get_options_mutable()->CircuitBuildTimeout = 1;
     circuit_build_times_reset(cbt);
-    if (kind != 2 && kind != 7) {
+    if (kind != FIXED_TIMEOUT && kind != INSUFFICIENT_HISTORY) {
       for (int i = 0; i < CBT_DEFAULT_MIN_CIRCUITS_TO_OBSERVE; ++i)
         circuit_build_times_add_time(cbt, 500);
     }
     cbt->timeout_ms = 465;
-    cbt->close_ms = kind == 2 || kind == 3 || kind == 7 ? 465 :
+    cbt->close_ms = kind == FIXED_TIMEOUT ||
+                    kind == INVALIDATED_MEASUREMENT ||
+                    kind == INSUFFICIENT_HISTORY ? 465 :
                     deadline * 1000;
     memset(&channel, 0, sizeof(channel));
     channel.state = CHANNEL_STATE_OPEN;
@@ -1564,7 +1703,7 @@ test_circuitstats_channel_retirement(void *arg)
     circ->base_.n_chan = &channel;
     circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
     memset(circ->cpath->extend_info->identity_digest, 0x42, DIGEST_LEN);
-    if (kind == 3) {
+    if (kind == INVALIDATED_MEASUREMENT) {
       circ->cbt_observation_invalidated = 1;
       circ->base_.purpose = CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT;
     }
@@ -1575,14 +1714,14 @@ test_circuitstats_channel_retirement(void *arg)
     tt_int_op(marked_for_close, OP_EQ, 0);
     tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
     tt_uint_op(cbt_onehop_failures, OP_EQ, 0);
-    if (kind == 4 || kind == 6) {
+    if (kind == ADAPTIVE_TIMEOUT || kind == FIRST_HOP_COMPLETES) {
       tt_int_op(circ->base_.purpose, OP_EQ,
                 CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT);
       tt_int_op(cbt->num_circ_timeouts, OP_EQ, 1);
     }
     /* A first hop that answers before the deadline saves the channel,
      * even if a later hop subsequently expires. */
-    if (kind == 5 || kind == 6) {
+    if (kind == DIRECTORY_COMPLETES || kind == FIRST_HOP_COMPLETES) {
       circ->cpath->state = CPATH_STATE_OPEN;
       if (onehop)
         circ->base_.state = CIRCUIT_STATE_OPEN;
@@ -1597,9 +1736,11 @@ test_circuitstats_channel_retirement(void *arg)
     cbt_test_now.tv_sec = start.tv_sec + deadline;
     cbt_test_now.tv_usec = 0;
     circuit_expire_building();
-    tt_int_op(marked_for_close, OP_EQ, kind != 5);
-    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, kind != 5 && kind != 6);
-    tt_uint_op(cbt_onehop_failures, OP_EQ, kind != 5 && kind != 6);
+    tt_int_op(marked_for_close, OP_EQ, kind != DIRECTORY_COMPLETES);
+    const bool retire = kind != DIRECTORY_COMPLETES &&
+                        kind != FIRST_HOP_COMPLETES;
+    tt_int_op(channel.is_bad_for_new_circs, OP_EQ, retire);
+    tt_uint_op(cbt_onehop_failures, OP_EQ, retire);
     circ->base_.n_chan = NULL;
     circuit_free_(TO_CIRCUIT(circ));
     circ = NULL;
@@ -1652,6 +1793,242 @@ test_circuitstats_channel_retirement(void *arg)
   UNMOCK(circuit_mark_for_close_);
   UNMOCK(get_connection_array);
   UNMOCK(connection_mark_unattached_ap_);
+}
+
+/* Once recovery is unnecessary or impossible, the usage timeout suffices.
+ * This also applies to an attempt already retained as a recovery probe. */
+static void
+test_circuitstats_recovery_not_needed(void *arg)
+{
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  origin_circuit_t *circ = NULL;
+  channel_t channel = { 0 };
+  const struct timeval start = { 1000, 0 };
+  extend_info_t hop = { 0 };
+  extend_info_t *path[] = { &hop };
+  (void)arg;
+  circuitbuild_running_unit_tests();
+  tor_init_connection_lists();
+  get_options_mutable()->LearnCircuitBuildTimeout = 0;
+  circuit_build_times_init(cbt);
+  cbt->timeout_ms = cbt->close_ms = 1000;
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
+  MOCK(circuit_mark_for_close_, mock_cbt_mark_closed);
+
+  enum { PROGRESS, RETIRED, CLOSING, MISSING, DESTROYED, N_CASES };
+  for (int retained = 0; retained < 2; ++retained) {
+    for (int kind = 0; kind < N_CASES; ++kind) {
+      memset(&channel, 0, sizeof(channel));
+      channel.state = CHANNEL_STATE_OPEN;
+      circ = new_test_origin_circuit(false, start, 1, path);
+      circ->build_state->onehop_tunnel = 1;
+      circ->base_.state = CIRCUIT_STATE_BUILDING;
+      circ->base_.n_chan = &channel;
+      circ->cpath->state = CPATH_STATE_AWAITING_KEYS;
+      cbt_test_now = start;
+      cbt_test_now.tv_sec += 2;
+      if (retained) {
+        circuit_expire_building();
+        tt_assert(!circ->base_.marked_for_close);
+        tt_int_op(circ->base_.purpose, OP_EQ,
+                  CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT);
+      }
+      if (kind == PROGRESS)
+        channel.first_hop_success_count++;
+      if (kind == RETIRED)
+        channel.is_bad_for_new_circs = 1;
+      if (kind == CLOSING)
+        channel.state = CHANNEL_STATE_CLOSING;
+      if (kind == MISSING)
+        circ->base_.n_chan = NULL;
+      if (kind == DESTROYED)
+        circ->base_.received_destroy = 1;
+      circuit_expire_building();
+      tt_assert(circ->base_.marked_for_close);
+      tt_int_op(channel.is_bad_for_new_circs, OP_EQ, kind == RETIRED);
+      circ->base_.n_chan = NULL;
+      circuit_free_(TO_CIRCUIT(circ));
+      circ = NULL;
+    }
+  }
+ done:
+  if (circ)
+    circ->base_.n_chan = NULL;
+  circuit_free_(TO_CIRCUIT(circ));
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(channel_describe_peer);
+  UNMOCK(circuit_mark_for_close_);
+}
+
+/* Exercise the real CREATE snapshot and validated handshake success hooks.
+ * Only cell delivery is mocked; malformed replies must not count as
+ * progress. */
+static int
+mock_cbt_has_queued_writes(channel_t *chan)
+{
+  (void)chan;
+  return 1;
+}
+
+static void
+test_circuitstats_firsthop_progress(void *arg)
+{
+  origin_circuit_t *circ = NULL;
+  channel_t channel = { 0 }, other_channel = { 0 };
+  const struct timeval start = { 1000, 0 };
+  created_cell_t reply = { 0 }, invalid;
+  uint8_t keys[128];
+  (void)arg;
+  channel.state = other_channel.state = CHANNEL_STATE_OPEN;
+  channel.first_hop_success_count = 7;
+  get_options_mutable()->UseEntryGuards = 0;
+  MOCK(circuit_deliver_create_cell, mock_cbt_deliver_create);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
+  circ = build_unopened_fourhop(start);
+  circ->base_.n_chan = &channel;
+  tt_int_op(circuit_send_next_onion_skin(circ), OP_EQ, 0);
+  tt_int_op(cbt_last_create.cell_type, OP_EQ, CELL_CREATE_FAST);
+  tt_u64_op(circ->first_hop_success_count_at_create, OP_EQ, 7);
+  tt_u64_op(channel.first_hop_success_count, OP_EQ, 7);
+  reply.cell_type = CELL_CREATED_FAST;
+  reply.handshake_len = CREATED_FAST_LEN;
+  tt_int_op(fast_server_handshake(cbt_last_create.onionskin, reply.reply,
+                                  keys, sizeof(keys)), OP_EQ, 0);
+  invalid = reply;
+  invalid.reply[DIGEST_LEN] ^= 1;
+  setup_full_capture_of_logs(LOG_WARN);
+  tt_int_op(circuit_finish_handshake(circ, &invalid), OP_LT, 0);
+  expect_log_msg_containing("onion_skin_client_handshake failed");
+  teardown_capture_of_logs();
+  tt_u64_op(channel.first_hop_success_count, OP_EQ, 7);
+  tt_int_op(circuit_finish_handshake(circ, &reply), OP_EQ, 0);
+  tt_u64_op(channel.first_hop_success_count, OP_EQ, 8);
+  tt_u64_op(other_channel.first_hop_success_count, OP_EQ, 0);
+
+  /* The shared handshake finisher also handles EXTENDED replies. Completing
+   * another hop must not count as successful first-hop CREATE processing. */
+  crypt_path_t *hop = circ->cpath->next;
+  int len = onion_skin_create(ONION_HANDSHAKE_TYPE_FAST, hop->extend_info,
+                              &hop->handshake_state, cbt_last_create.onionskin,
+                              sizeof(cbt_last_create.onionskin));
+  tt_int_op(len, OP_GT, 0);
+  hop->state = CPATH_STATE_AWAITING_KEYS;
+  tt_int_op(fast_server_handshake(cbt_last_create.onionskin, reply.reply,
+                                  keys, sizeof(keys)), OP_EQ, 0);
+  tt_int_op(circuit_finish_handshake(circ, &reply), OP_EQ, 0);
+  tt_u64_op(channel.first_hop_success_count, OP_EQ, 8);
+  circ->base_.n_chan = NULL;
+  circuit_free_(TO_CIRCUIT(circ));
+
+  circ = build_unopened_fourhop(start);
+  circ->base_.n_chan = &other_channel;
+  tt_int_op(circuit_send_next_onion_skin(circ), OP_EQ, 0);
+  tt_u64_op(circ->first_hop_success_count_at_create, OP_EQ, 0);
+  tt_int_op(fast_server_handshake(cbt_last_create.onionskin, reply.reply,
+                                  keys, sizeof(keys)), OP_EQ, 0);
+  tt_int_op(circuit_finish_handshake(circ, &reply), OP_EQ, 0);
+  tt_u64_op(other_channel.first_hop_success_count, OP_EQ, 1);
+  tt_u64_op(channel.first_hop_success_count, OP_EQ, 8);
+ done:
+  if (circ)
+    circ->base_.n_chan = NULL;
+  circuit_free_(TO_CIRCUIT(circ));
+  teardown_capture_of_logs();
+  UNMOCK(circuit_deliver_create_cell);
+  UNMOCK(channel_describe_peer);
+}
+
+/* A productive channel survives an old timeout, but a fresh CREATE that
+ * subsequently stalls must still retire it. Use real close/free handling and
+ * one-hop attempts so the channel diagnostics cannot rely on CBT samples. */
+static void
+test_circuitstats_channel_progress_lifecycle(void *arg)
+{
+  channel_t channel = { 0 };
+  origin_circuit_t *pending = NULL, *successful = NULL;
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  struct timeval start = { 1000, 0 };
+  extend_info_t hop = { 0 };
+  extend_info_t *path[] = { &hop };
+  created_cell_t reply = { 0 };
+  uint8_t keys[128];
+  (void)arg;
+  get_options_mutable()->LearnCircuitBuildTimeout = 0;
+  get_options_mutable()->CircuitBuildTimeout = 60;
+  get_options_mutable()->UseEntryGuards = 0;
+  circuit_build_times_init(cbt);
+  tor_init_connection_lists();
+  scheduler_init();
+  channel_init(&channel);
+  channel.state = CHANNEL_STATE_OPEN;
+  channel.cmux = circuitmux_alloc();
+  channel.has_queued_writes = mock_cbt_has_queued_writes;
+  circuitmux_set_policy(channel.cmux, &ewma_policy);
+  channel_register(&channel);
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(assert_circuit_ok, mock_cbt_assert_circuit_ok);
+  MOCK(channel_describe_peer, mock_cbt_describe_peer);
+  MOCK(circuit_deliver_create_cell, mock_cbt_deliver_create);
+  memset(&cbt_diagnostics, 0, sizeof(cbt_diagnostics));
+  cbt_diagnostics.have_reported = true;
+  cbt_diagnostics.last_report = start.tv_sec;
+  cbt_test_now = start;
+
+  pending = new_test_origin_circuit(false, start, 1, path);
+  pending->build_state->onehop_tunnel = 1;
+  circuit_set_n_circid_chan(TO_CIRCUIT(pending), 42, &channel);
+  tt_int_op(circuit_send_next_onion_skin(pending), OP_EQ, 0);
+  tt_u64_op(pending->first_hop_success_count_at_create, OP_EQ, 0);
+
+  successful = new_test_origin_circuit(false, start, 1, path);
+  successful->build_state->onehop_tunnel = 1;
+  circuit_set_n_circid_chan(TO_CIRCUIT(successful), 43, &channel);
+  tt_int_op(circuit_send_next_onion_skin(successful), OP_EQ, 0);
+  tt_int_op(cbt_last_create.cell_type, OP_EQ, CELL_CREATE_FAST);
+  reply.cell_type = CELL_CREATED_FAST;
+  reply.handshake_len = CREATED_FAST_LEN;
+  tt_int_op(fast_server_handshake(cbt_last_create.onionskin, reply.reply,
+                                  keys, sizeof(keys)), OP_EQ, 0);
+  tt_int_op(circuit_finish_handshake(successful, &reply), OP_EQ, 0);
+  successful->base_.state = CIRCUIT_STATE_OPEN;
+  tt_u64_op(channel.first_hop_success_count, OP_EQ, 1);
+
+  cbt_test_now.tv_sec += 61;
+  circuit_expire_building();
+  tt_assert(pending->base_.marked_for_close);
+  tt_assert(!successful->base_.marked_for_close);
+  tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 0);
+  circuit_expire_building();
+  pending = NULL;
+  circuit_close_all_marked();
+
+  /* This is a new circuit and a new snapshot, not a revived expired one. */
+  pending = new_test_origin_circuit(false, cbt_test_now, 1, path);
+  pending->build_state->onehop_tunnel = 1;
+  circuit_set_n_circid_chan(TO_CIRCUIT(pending), 44, &channel);
+  tt_int_op(circuit_send_next_onion_skin(pending), OP_EQ, 0);
+  tt_u64_op(pending->first_hop_success_count_at_create, OP_EQ, 1);
+  cbt_test_now.tv_sec += 61;
+  circuit_expire_building();
+  tt_assert(pending->base_.marked_for_close);
+  tt_int_op(channel.is_bad_for_new_circs, OP_EQ, 1);
+  tt_u64_op(cbt_diagnostics.prefix_hops[0], OP_EQ, 0);
+  circuit_expire_building();
+  pending = NULL;
+  circuit_close_all_marked();
+ done:
+  circuit_free_(TO_CIRCUIT(pending));
+  circuit_free_(TO_CIRCUIT(successful));
+  channel_unregister(&channel);
+  circuitmux_free(channel.cmux);
+  scheduler_free_all();
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(assert_circuit_ok);
+  UNMOCK(channel_describe_peer);
+  UNMOCK(circuit_deliver_create_cell);
 }
 
 static int
@@ -2110,6 +2487,10 @@ struct testcase_t circuitstats_tests[] = {
   TEST_CIRCUITSTATS(circuitstats_stalled_expiry, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_open_channel_failure, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_channel_retirement, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_measurement_probe_limit, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_recovery_not_needed, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_firsthop_progress, TT_FORK),
+  TEST_CIRCUITSTATS(circuitstats_channel_progress_lifecycle, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_connection_failure, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_mixed_rendezvous, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_create_send_failure, TT_FORK),
