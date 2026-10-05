@@ -2199,18 +2199,18 @@ connection_ap_handshake_rewrite_and_attach(entry_connection_t *conn,
       options->ExcludeExitNodesUnion_ : options->ExcludeExitNodes;
     const node_t *node = NULL;
 
-    /* If this .exit was added by an AUTOMAP, then it came straight from
-     * a user.  That's not safe. */
+    /* If this .exit was added by an AUTOMAP, then either it came straight
+     * from a user (that's not safe), or it came via MapAddress (could be
+     * safe but anyway we broke it and haven't fixed it). */
     if (exit_source == ADDRMAPSRC_AUTOMAP) {
-      /* Whoops; this one is stale.  It must have gotten added earlier?
-       * (Probably this is not possible, since AllowDotExit no longer
-       * exists.) */
-      log_warn(LD_APP,"Stale automapped address for '%s.$fp.exit'. Refusing.",
+      /* When we disabled AllowDotExit, we also broke MapAddress rewriting
+       * to .exit when combined with AutomapHostsOnResolve. See ticket 41418
+       * if you want to make it resume working. */
+      log_warn(LD_APP,"Automapped mapaddress for '%s.exit'. Refusing.",
                safe_str_client(socks->address));
       control_event_client_status(LOG_WARN, "SOCKS_BAD_HOSTNAME HOSTNAME=%s",
                                   escaped(socks->address));
       connection_mark_unattached_ap(conn, END_STREAM_REASON_TORPROTOCOL);
-      tor_assert_nonfatal_unreached();
       return -1;
     }
 
