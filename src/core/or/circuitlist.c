@@ -2256,6 +2256,10 @@ circuit_mark_for_close_, (circuit_t *circ, int reason, int line,
   circ->marked_for_close_reason = reason;
   circ->marked_for_close_orig_reason = orig_reason;
 
+  if (CIRCUIT_IS_ORIGIN(circ))
+    circuit_build_times_note_connection_failure(TO_ORIGIN_CIRCUIT(circ),
+                                               orig_reason);
+
   /* Marked circuits must not remain on the pending channel list (waiting for a
    * n_chan) even before the deferred cleanup in circuit_about_to_free(). */
   if (circ->state == CIRCUIT_STATE_CHAN_WAIT) {
