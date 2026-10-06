@@ -11,6 +11,7 @@
 
 #include "core/or/or.h"
 #include "test/test.h"
+#include "test/test_helpers.h"
 #include "test/log_test_helpers.h"
 #include "lib/testsupport/testsupport.h"
 #include "core/or/connection_or.h"
@@ -1746,7 +1747,33 @@ test_conflux_recovery_leg(void *arg)
   test_teardown();
 }
 
+/* CBT repurposing must detach an unlinked leg just like a close. */
+static void
+test_conflux_measurement_cleanup(void *arg)
+{
+  (void)arg;
+  test_setup();
+  launch_new_set(2);
+  tt_int_op(smartlist_len(client_circs), OP_EQ, 2);
+  origin_circuit_t *circ = smartlist_get(client_circs, 0);
+  tt_int_op(circ->base_.purpose, OP_EQ, CIRCUIT_PURPOSE_CONFLUX_UNLINKED);
+  tt_assert(circ->base_.conflux_pending_nonce);
+  /* Suppress replacement launches so the cleanup itself can be observed. */
+  conflux_notify_shutdown();
+  circ->cbt_observation_invalidated = 1;
+  circuit_build_times_mark_circ_as_measurement_only(circ);
+  tt_int_op(circ->base_.purpose, OP_EQ, CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT);
+  tt_ptr_op(circ->base_.conflux_pending_nonce, OP_EQ, NULL);
+  tt_ptr_op(circ->base_.conflux, OP_EQ, NULL);
+  conflux_circuit_has_closed(TO_CIRCUIT(circ));
+ done:
+  test_clear_circs();
+  test_teardown();
+}
+
 struct testcase_t conflux_pool_tests[] = {
+  { "measurement_cleanup", test_conflux_measurement_cleanup,
+    TT_FORK, &helper_pubsub_setup, NULL },
   { "link", test_conflux_link, TT_FORK, NULL, NULL },
   { "link_retry", test_conflux_link_retry, TT_FORK, NULL, NULL },
   { "link_relink", test_conflux_link_relink, TT_FORK, NULL, NULL },

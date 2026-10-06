@@ -230,6 +230,21 @@ struct origin_circuit_t {
    * no circuits have opened. Used to prevent spamming logs. */
   unsigned int relaxed_timeout : 1;
 
+  /** The initial three-hop CBT observation was handled, even if discarded.
+   * Later extensions must not contribute adaptive failure observations. */
+  unsigned int cbt_prefix_measurement_done : 1;
+
+  /** This attempt predates recovery from an unusable CBT history. */
+  unsigned int cbt_observation_invalidated : 1;
+
+  /** A counted soft timeout still needs first-hop qualification. */
+  unsigned int cbt_timeout_pending_qualification : 1;
+
+  /** Diagnostic bookkeeping only; none of these bits change timeout policy. */
+  unsigned int cbt_soft_timeout_before_firsthop : 1;
+  unsigned int cbt_expiry_reported : 1;
+  unsigned int cbt_exclusion_reported : 1;
+
   /** What commands were sent over this circuit that decremented the
    * RELAY_EARLY counter? This is for debugging task 878. */
   uint8_t relay_early_commands[MAX_RELAY_EARLY_CELLS_PER_CIRCUIT];

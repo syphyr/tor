@@ -458,8 +458,19 @@ circuit_expire_building(void)
   struct timeval now;
   cpath_build_state_t *build_state;
   int any_opened_circs = 0;
-
   tor_gettimeofday(&now);
+
+  /* Pending late-first-hop events may reset CBT. Process them before taking
+   * the cutoff snapshot, including attempts with no further hop callbacks. */
+  SMARTLIST_FOREACH_BEGIN(circuit_get_global_origin_circuit_list(),
+                         origin_circuit_t *, circ) {
+    if (!circ->base_.marked_for_close)
+      circuit_build_times_qualify_timeout(circ, &now);
+  } SMARTLIST_FOREACH_END(circ);
+
+  /* Match the cached cutoffs for this pass even if a close repairs CBT. */
+  const int enough_to_compute =
+    circuit_build_times_enough_to_compute(get_circuit_build_times());
 
   /* Check to see if we have any opened circuits. If we don't,
    * we want to be more lenient with timeouts, in case the
@@ -604,8 +615,6 @@ circuit_expire_building(void)
       /* It's still young enough that we wouldn't close it, right? */
       if (timercmp(&victim->timestamp_began, &close_cutoff, OP_GT)) {
         if (!TO_ORIGIN_CIRCUIT(victim)->relaxed_timeout) {
-          int first_hop_succeeded = TO_ORIGIN_CIRCUIT(victim)->cpath->state
-                                      == CPATH_STATE_OPEN;
           if (!fixed_time) {
             log_info(LD_CIRC,
                 "No circuits are opened. Relaxing timeout for circuit %d "
@@ -624,8 +633,7 @@ circuit_expire_building(void)
            * was a timeout, and the timeout value needs to reset if we
            * see enough of them. Note this means we also need to avoid
            * double-counting below, too. */
-          circuit_build_times_count_timeout(get_circuit_build_times_mutable(),
-              first_hop_succeeded);
+          circuit_build_times_count_circ_timeout(TO_ORIGIN_CIRCUIT(victim));
           TO_ORIGIN_CIRCUIT(victim)->relaxed_timeout = 1;
         }
         continue;
@@ -727,7 +735,9 @@ circuit_expire_building(void)
       }
 
       if (circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
-          circuit_build_times_enough_to_compute(get_circuit_build_times())) {
+          (circuit_build_times_enough_to_compute(get_circuit_build_times()) ||
+           (enough_to_compute &&
+            TO_ORIGIN_CIRCUIT(victim)->cbt_observation_invalidated))) {
 
         log_info(LD_CIRC,
                  "Deciding to count the timeout for circuit %"PRIu32,
@@ -746,7 +756,10 @@ circuit_expire_building(void)
          * it off at, we probably had a suspend event along this codepath,
          * and we should discard the value.
          */
-        if (timercmp(&victim->timestamp_began, &extremely_old_cutoff, OP_LT)) {
+        if (!circuit_build_times_circ_can_record(TO_ORIGIN_CIRCUIT(victim))) {
+          /* Preserve expiry policy, but the prefix was already handled. */
+        } else if (timercmp(&victim->timestamp_began,
+                           &extremely_old_cutoff, OP_LT)) {
           log_notice(LD_CIRC,
                      "Extremely large value for circuit build timeout: %lds. "
                      "Assuming clock jump. Purpose %d (%s)",
@@ -757,6 +770,9 @@ circuit_expire_building(void)
             get_circuit_build_times_mutable(),
             first_hop_succeeded,
             (time_t)victim->timestamp_created.tv_sec)) {
+          /* Record this accepted abandonment before a possible recovery
+           * invalidates outstanding attempts. It was not excluded. */
+          circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
           circuit_build_times_set_timeout(get_circuit_build_times_mutable());
         }
       }
@@ -812,6 +828,7 @@ circuit_expire_building(void)
                  -1);
 
     circuit_log_path(LOG_INFO,LD_CIRC,TO_ORIGIN_CIRCUIT(victim));
+    circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
     tor_trace(TR_SUBSYS(circuit), TR_EV(timeout), TO_ORIGIN_CIRCUIT(victim));
     if (victim->purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT)
       circuit_mark_for_close(victim, END_CIRC_REASON_MEASUREMENT_EXPIRED);
@@ -820,6 +837,7 @@ circuit_expire_building(void)
 
     pathbias_count_timeout(TO_ORIGIN_CIRCUIT(victim));
   } SMARTLIST_FOREACH_END(victim);
+  circuit_build_times_report_diagnostics(now.tv_sec);
 }
 
 /**
@@ -2200,9 +2218,9 @@ circuit_launch_by_extend_info_with_guard(uint8_t purpose,
     extend_info_t *extend_info, int flags,
     const circuit_guard_state_t *guard_state);
 
-origin_circuit_t *
-circuit_launch_by_extend_info(uint8_t purpose,
-                            extend_info_t *extend_info, int flags)
+MOCK_IMPL(origin_circuit_t *,
+circuit_launch_by_extend_info, (uint8_t purpose,
+                              extend_info_t *extend_info, int flags))
 {
   return circuit_launch_by_extend_info_with_guard(purpose, extend_info,
                                                  flags, NULL);
