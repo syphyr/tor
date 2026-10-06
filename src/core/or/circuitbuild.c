@@ -1229,6 +1229,30 @@ circuit_send_intermediate_onion_skin(origin_circuit_t *circ,
       return 0; /* circuit is closed */
   }
   hop->state = CPATH_STATE_AWAITING_KEYS;
+  if (!circ->has_opened &&
+      circ->base_.purpose == CIRCUIT_PURPOSE_S_CONNECT_REND &&
+      circuit_get_cpath_opened_len(circ) >= DEFAULT_ROUTE_LEN) {
+    /* Give a fresh service rendezvous extension the same time origin as a
+     * cannibalized circuit. Under load, the service will actually be out
+     * of pre-build circuits to cannibalize, and so this case should have
+     * more timeout grace. We scope this to service rend circuits because this
+     * is the case observed in simulation as an excessive timeout source.
+     * Additionally, failing a rend circuit now retries the whole handshake,
+     * which is an expensive thing to do in this load condition.
+     *
+     * Reset for each extension beyond the measured prefix: with L3
+     * vanguards, both hop four and hop five get their own full usage budget.
+     * Each reset also moves the measurement/close and idle-age deadlines
+     * forward. CBT remains dynamic, and the separate rendezvous retry expiry
+     * is unchanged.
+     *
+     * circuit_send_next_onion_skin() has already handled three-hop CBT
+     * accounting (or its exclusions). Resetting this timestamp must happen
+     * AFTER that accounting, and must not revive a circuit made measurement-
+     * only by a slow prefix (excluded by the purpose check above).
+     */
+    tor_gettimeofday(&circ->base_.timestamp_began);
+  }
   tor_trace(TR_SUBSYS(circuit), TR_EV(intermediate_onion_skin), circ, hop);
   return 0;
 }

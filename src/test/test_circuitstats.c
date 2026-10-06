@@ -27,6 +27,7 @@
 #include "core/or/circuitstats.h"
 #include "core/or/circuituse.h"
 #include "core/or/channel.h"
+#include "core/or/relay.h"
 
 #include "core/or/cpath_build_state_st.h"
 #include "feature/hs/hs_ident.h"
@@ -1175,10 +1176,141 @@ test_circuitstats_late_firsthop_reset(void *arg)
   UNMOCK(circuit_mark_for_close_);
 }
 
+static int fourth_extend_result, fourth_extend_calls;
+static int
+mock_fourth_extend(streamid_t stream_id, circuit_t *circ, uint8_t command,
+                  const char *payload, size_t len, crypt_path_t *layer,
+                  const char *file, int line)
+{
+  (void)stream_id; (void)circ; (void)payload; (void)len;
+  (void)layer; (void)file; (void)line;
+  tor_assert(command == RELAY_COMMAND_EXTEND2);
+  ++fourth_extend_calls;
+  return fourth_extend_result;
+}
+
+static void
+test_circuitstats_fresh_rend_extension(void *arg)
+{
+  (void)arg;
+  origin_circuit_t *circ = NULL, *opened = NULL;
+  circuit_build_times_t *cbt = get_circuit_build_times_mutable();
+  const struct timeval start = { 1000, 0 };
+  circuitbuild_running_unit_tests();
+  MOCK(tor_gettimeofday, mock_cbt_gettimeofday);
+  MOCK(relay_send_command_from_edge_, mock_fourth_extend);
+  MOCK(circuit_mark_for_close_, mock_circuit_mark_for_close);
+  circuit_build_times_init(cbt);
+  opened = add_opened_threehop();
+  enum { FRESH, CLIENT_INTRO, VANGUARD, MEASUREMENT, CANNIBALIZED,
+         LONG_PATH, EARLIER_HOP, FIXED, SEND_FAILED, SLOW_PREFIX, N_CASES };
+  for (int kind = 0; kind < N_CASES; ++kind) {
+    circuit_build_times_reset(cbt);
+    get_options_mutable()->LearnCircuitBuildTimeout = kind != FIXED;
+    get_options_mutable()->CircuitBuildTimeout = kind == FIXED ? 60 : 0;
+    cbt->timeout_ms = cbt->close_ms = 60000;
+    cbt->liveness.nonlive_timeouts = 0;
+    cbt->liveness.network_last_live = 1005;
+    circ = build_unopened_fourhop(start);
+    circ->base_.state = CIRCUIT_STATE_BUILDING;
+    circ->base_.purpose = CIRCUIT_PURPOSE_S_CONNECT_REND;
+    circ->build_state->expiry_time = 1030;
+    if (kind == CLIENT_INTRO)
+      circ->base_.purpose = CIRCUIT_PURPOSE_C_INTRODUCING;
+    if (kind == VANGUARD)
+      circ->base_.purpose = CIRCUIT_PURPOSE_HS_VANGUARDS;
+    if (kind == MEASUREMENT)
+      circ->base_.purpose = CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT;
+    if (kind == CANNIBALIZED)
+      circ->has_opened = 1;
+    if (kind == LONG_PATH)
+      circuit_append_new_exit(circ, circ->cpath->extend_info);
+    circ->cpath->state = CPATH_STATE_OPEN;
+    circ->cpath->next->state = CPATH_STATE_OPEN;
+    crypt_path_t *hop = circ->cpath->next->next;
+    if (kind != EARLIER_HOP) {
+      hop->state = CPATH_STATE_OPEN;
+      hop = hop->next;
+    }
+    tor_addr_parse(&hop->extend_info->orports[0].addr, "192.0.2.1");
+    hop->extend_info->orports[0].port = 9001;
+    memset(hop->extend_info->identity_digest, 0x43, DIGEST_LEN);
+    memset(hop->extend_info->curve25519_onion_key.public_key, 0x42,
+           CURVE25519_PUBKEY_LEN);
+    fourth_extend_calls = 0;
+    fourth_extend_result = kind == SEND_FAILED ? -1 : 0;
+    cbt_test_now = start;
+    cbt_test_now.tv_sec = 1005;
+    if (kind == SLOW_PREFIX)
+      cbt->timeout_ms = 1000;
+    tt_int_op(circuit_send_next_onion_skin(circ), OP_EQ, 0);
+    tt_int_op(fourth_extend_calls, OP_EQ, 1);
+    const bool reset = kind == FRESH || kind == FIXED || kind == LONG_PATH;
+    tt_int_op(circ->base_.timestamp_began.tv_sec, OP_EQ,
+              reset ? 1005 : 1000);
+    tt_int_op(circ->build_state->expiry_time, OP_EQ, 1030);
+    if (kind == SLOW_PREFIX)
+      tt_int_op(circ->base_.purpose, OP_EQ, CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT);
+    if (kind == LONG_PATH) {
+      /* L3 vanguards use G-L2-L3-M-R. Give each extension beyond the
+       * measured prefix its own budget without sampling that prefix again. */
+      tt_assert(circ->cbt_prefix_measurement_done);
+      tt_int_op(cbt->total_build_times, OP_EQ, 1);
+      tt_int_op(cbt->circuit_build_times[0], OP_EQ, 5000);
+      hop->state = CPATH_STATE_OPEN;
+      hop = hop->next;
+      tor_addr_parse(&hop->extend_info->orports[0].addr, "192.0.2.2");
+      hop->extend_info->orports[0].port = 9001;
+      memset(hop->extend_info->identity_digest, 0x44, DIGEST_LEN);
+      memset(hop->extend_info->curve25519_onion_key.public_key, 0x45,
+             CURVE25519_PUBKEY_LEN);
+      cbt_test_now.tv_sec = 1006;
+      tt_int_op(circuit_send_next_onion_skin(circ), OP_EQ, 0);
+      tt_int_op(fourth_extend_calls, OP_EQ, 2);
+      tt_int_op(circ->base_.timestamp_began.tv_sec, OP_EQ, 1006);
+      tt_int_op(cbt->total_build_times, OP_EQ, 1);
+      tt_int_op(circ->build_state->expiry_time, OP_EQ, 1030);
+    }
+    if (kind == FRESH) {
+      /* The prefix was sampled before resetting the extension's clock. */
+      tt_assert(circ->cbt_prefix_measurement_done);
+      tt_int_op(cbt->total_build_times, OP_EQ, 1);
+      tt_int_op(cbt->circuit_build_times[0], OP_EQ, 5000);
+      cbt->timeout_ms = 1000; /* CBT can still fall after EXTEND. */
+      cbt_test_now.tv_sec = 1006;
+      marked_for_close = 0;
+      circuit_expire_building();
+      tt_int_op(marked_for_close, OP_EQ, 0);
+      tt_int_op(circ->base_.purpose, OP_EQ, CIRCUIT_PURPOSE_S_CONNECT_REND);
+      /* The shared timestamp intentionally shifts the hard close too. */
+      circ->base_.purpose = CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT;
+      cbt_test_now.tv_sec = 1061;
+      circuit_expire_building();
+      tt_int_op(marked_for_close, OP_EQ, 0);
+      cbt_test_now.tv_sec = 1066;
+      circuit_expire_building();
+      tt_int_op(marked_for_close, OP_EQ, 1);
+      tt_int_op(cbt->total_build_times, OP_EQ, 1);
+    }
+    circuit_free_(TO_CIRCUIT(circ));
+    circ = NULL;
+  }
+ done:
+  get_options_mutable()->LearnCircuitBuildTimeout = 1;
+  get_options_mutable()->CircuitBuildTimeout = 0;
+  circuit_free_(TO_CIRCUIT(circ));
+  circuit_free_(TO_CIRCUIT(opened));
+  circuit_build_times_free_timeouts(cbt);
+  UNMOCK(tor_gettimeofday);
+  UNMOCK(relay_send_command_from_edge_);
+  UNMOCK(circuit_mark_for_close_);
+}
+
 #define TEST_CIRCUITSTATS(name, flags) \
     { #name, test_##name, (flags), &helper_pubsub_setup, NULL }
 
 struct testcase_t circuitstats_tests[] = {
+  TEST_CIRCUITSTATS(circuitstats_fresh_rend_extension, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_hoplen, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_late_firsthop, TT_FORK),
   TEST_CIRCUITSTATS(circuitstats_late_firsthop_reset, TT_FORK),
