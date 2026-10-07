@@ -135,6 +135,9 @@ struct origin_circuit_t {
    */
   crypt_path_t *cpath;
 
+  /** Channel first-hop success count when our CREATE was queued. */
+  uint64_t first_hop_success_count_at_create;
+
   /** Holds hidden service identifier on either client or service side. This
    * is for both introduction and rendezvous circuit. */
   struct hs_ident_circuit_t *hs_ident;
@@ -233,6 +236,9 @@ struct origin_circuit_t {
   /** The initial three-hop CBT observation was handled, even if discarded.
    * Later extensions must not contribute adaptive failure observations. */
   unsigned int cbt_prefix_measurement_done : 1;
+
+  /** The CBT close deadline was handled, possibly before probe expiry. */
+  unsigned int cbt_measurement_closed : 1;
 
   /** This attempt predates recovery from an unusable CBT history. */
   unsigned int cbt_observation_invalidated : 1;

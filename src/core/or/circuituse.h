@@ -92,6 +92,8 @@ void circuit_read_valid_data(origin_circuit_t *circ, uint16_t relay_body_len);
 #ifdef TOR_UNIT_TESTS
 /* Used only by circuituse.c and test_circuituse.c */
 
+STATIC int count_pending_general_client_circuits(void);
+
 STATIC int circuit_is_available_for_use(const circuit_t *circ);
 
 STATIC int needs_exit_circuits(time_t now,

@@ -384,7 +384,7 @@ circuit_get_best(const entry_connection_t *conn,
 }
 
 /** Return the number of not-yet-open general-purpose origin circuits. */
-static int
+STATIC int
 count_pending_general_client_circuits(void)
 {
   int count = 0;
@@ -432,6 +432,99 @@ circuit_conforms_to_options(const origin_circuit_t *circ,
 }
 #endif /* 0 */
 
+/** Keep a timed-out CREATE as a recovery probe without blocking requests.
+ * Statistical measurements keep their normal lifetime before reaching here.
+ * After that deadline, keep only the oldest eligible measurement per channel.
+ * Other attempts can become probes only if no measurement is outstanding, so
+ * retries cannot accumulate a new recovery probe at every usage timeout. */
+static bool
+circuit_retain_first_hop(origin_circuit_t *circ)
+{
+  channel_t *chan = circ->base_.n_chan;
+  /* There is no recovery decision left to wait for on an unusable channel
+   * or one that has already demonstrated concurrent first-hop progress. */
+  if (circ->base_.received_destroy || !chan || !CHANNEL_IS_OPEN(chan) ||
+      channel_is_bad_for_new_circs(chan) ||
+      chan->first_hop_success_count !=
+        circ->first_hop_success_count_at_create) {
+    return false;
+  }
+
+  SMARTLIST_FOREACH_BEGIN(circuit_get_global_origin_circuit_list(),
+                         origin_circuit_t *, other) {
+    if (other != circ && !other->base_.marked_for_close &&
+        !other->base_.received_destroy &&
+        other->base_.n_chan == circ->base_.n_chan &&
+        other->first_hop_success_count_at_create ==
+          chan->first_hop_success_count &&
+        other->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT &&
+        other->cpath && other->cpath->state == CPATH_STATE_AWAITING_KEYS &&
+        (circ->base_.purpose != CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT ||
+         timercmp(&other->base_.timestamp_began,
+                  &circ->base_.timestamp_began, OP_LT) ||
+         (timercmp(&other->base_.timestamp_began,
+                   &circ->base_.timestamp_began, OP_EQ) &&
+          other->global_identifier < circ->global_identifier))) {
+      return false;
+    }
+  } SMARTLIST_FOREACH_END(other);
+
+  /* Do not send another timeout event or repeat accounting for the probe.
+   * The age/identifier ordering above keeps the survivor independent of
+   * circuit-list traversal order, even when several CREATEs share a time. */
+  if (circ->base_.purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT) {
+    return true;
+  }
+
+  /* This also removes the attempt from pending circuit selection and the
+   * general-circuit pending limit. One-hop attempts remain excluded from
+   * CBT accounting, even though they share the measurement-only purpose. */
+  circuit_build_times_mark_circ_as_measurement_only(circ);
+  connection_ap_retry_pending();
+  return true;
+}
+
+/** Retire a channel only when this circuit's own first-hop attempt expires.
+ * Circuit cancellation (including teardown caused by another circuit) is not
+ * evidence that its channel failed. Keep this at the expiry decision, separate
+ * from CBT sampling eligibility and generic circuit cleanup. */
+static void
+circuit_expire_first_hop(origin_circuit_t *circ, bool recovery_timeout)
+{
+  channel_t *chan = circ->base_.n_chan;
+  if (!circ->cpath || circ->cpath->state != CPATH_STATE_AWAITING_KEYS ||
+      circ->base_.received_destroy || !chan || !CHANNEL_IS_OPEN(chan) ||
+      channel_is_bad_for_new_circs(chan)) {
+    return;
+  }
+
+  /* A different first hop succeeded while this CREATE was outstanding.
+   * Close only this circuit: the channel can still establish circuits.
+   * A later attempt snapshots the new count, so a subsequent complete stall
+   * can still trigger channel recovery. */
+  if (chan->first_hop_success_count !=
+      circ->first_hop_success_count_at_create) {
+    circuit_build_times_note_channel_timeout(false);
+    return;
+  }
+
+  /* Ordinary retries may expire while an older attempt probes the channel.
+   * They cannot retire the connection before the recovery deadline. */
+  if (!recovery_timeout) {
+    return;
+  }
+
+  log_info(LD_OR,
+           "Our circuit %u (id: %" PRIu32 ") timed out waiting for the "
+           "first hop (%s). Trying a new connection.",
+           circ->base_.n_circ_id, circ->global_identifier,
+           channel_describe_peer(chan));
+  channel_mark_bad_for_new_circs(chan);
+  circuit_build_times_note_channel_timeout(true);
+  connection_ap_fail_onehop(circ->cpath->extend_info->identity_digest,
+                            circ->build_state);
+}
+
 /**
  * Close all circuits that start at us, aren't open, and were born
  * at least CircuitBuildTimeout seconds ago.
@@ -451,7 +544,7 @@ circuit_expire_building(void)
    * circuit_build_times_get_initial_timeout() if we haven't computed
    * custom timeouts yet */
   struct timeval general_cutoff, begindir_cutoff, fourhop_cutoff,
-    close_cutoff, extremely_old_cutoff,
+    close_cutoff, first_hop_cutoff, extremely_old_cutoff,
     cannibalized_cutoff, c_intro_cutoff, s_intro_cutoff, stream_cutoff,
     c_rend_ready_cutoff;
   const or_options_t *options = get_options();
@@ -555,6 +648,12 @@ circuit_expire_building(void)
   SET_CUTOFF(c_rend_ready_cutoff, get_circuit_build_timeout_ms() * 3 + 1000);
 
   SET_CUTOFF(close_cutoff, get_circuit_build_close_time_ms());
+  /* Channel recovery must not inherit an aggressive circuit usage timeout,
+   * including for one-hop requests and when adaptive learning is disabled.
+   * Snapshot this alongside the other cutoffs for this expiry pass. */
+  SET_CUTOFF(first_hop_cutoff,
+             MAX(get_circuit_build_close_time_ms(),
+                 circuit_build_times_initial_timeout()));
   SET_CUTOFF(extremely_old_cutoff, get_circuit_build_close_time_ms()*2 + 1000);
 
   bool fixed_time = circuit_build_times_disabled(get_options());
@@ -734,10 +833,12 @@ circuit_expire_building(void)
         continue;
       }
 
-      if (circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
-          (circuit_build_times_enough_to_compute(get_circuit_build_times()) ||
-           (enough_to_compute &&
-            TO_ORIGIN_CIRCUIT(victim)->cbt_observation_invalidated))) {
+      const bool measure_timeout =
+        circuit_timeout_want_to_count_circ(TO_ORIGIN_CIRCUIT(victim)) &&
+        (circuit_build_times_enough_to_compute(get_circuit_build_times()) ||
+         (enough_to_compute &&
+          TO_ORIGIN_CIRCUIT(victim)->cbt_observation_invalidated));
+      if (measure_timeout) {
 
         log_info(LD_CIRC,
                  "Deciding to count the timeout for circuit %"PRIu32,
@@ -750,7 +851,9 @@ circuit_expire_building(void)
                                                             victim));
           continue;
         }
+      }
 
+      if (measure_timeout) {
         /*
          * If the circuit build time is much greater than we would have cut
          * it off at, we probably had a suspend event along this codepath,
@@ -775,6 +878,20 @@ circuit_expire_building(void)
           circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
           circuit_build_times_set_timeout(get_circuit_build_times_mutable());
         }
+        /* The measurement deadline ends this observation, even if liveness
+         * or a clock jump prevented recording it. A retained recovery probe
+         * must not count another close or a late successful build. */
+        TO_ORIGIN_CIRCUIT(victim)->cbt_measurement_closed = 1;
+      }
+
+      /* Keep a recovery probe until the conservative channel deadline,
+       * but release requests at the usage timeout. If another measurement
+       * already probes this channel, let this attempt expire normally. */
+      if (TO_ORIGIN_CIRCUIT(victim)->cpath->state ==
+            CPATH_STATE_AWAITING_KEYS &&
+          timercmp(&victim->timestamp_began, &first_hop_cutoff, OP_GT) &&
+          circuit_retain_first_hop(TO_ORIGIN_CIRCUIT(victim))) {
+        continue;
       }
     }
 
@@ -829,12 +946,17 @@ circuit_expire_building(void)
 
     circuit_log_path(LOG_INFO,LD_CIRC,TO_ORIGIN_CIRCUIT(victim));
     circuit_build_times_note_expiry(TO_ORIGIN_CIRCUIT(victim));
+    circuit_expire_first_hop(TO_ORIGIN_CIRCUIT(victim),
+        !timercmp(&victim->timestamp_began, &first_hop_cutoff, OP_GT));
     tor_trace(TR_SUBSYS(circuit), TR_EV(timeout), TO_ORIGIN_CIRCUIT(victim));
     if (victim->purpose == CIRCUIT_PURPOSE_C_MEASURE_TIMEOUT)
       circuit_mark_for_close(victim, END_CIRC_REASON_MEASUREMENT_EXPIRED);
     else
       circuit_mark_for_close(victim, END_CIRC_REASON_TIMEOUT);
 
+    if (build_state && build_state->onehop_tunnel) {
+      connection_ap_retry_pending();
+    }
     pathbias_count_timeout(TO_ORIGIN_CIRCUIT(victim));
   } SMARTLIST_FOREACH_END(victim);
   circuit_build_times_report_diagnostics(now.tv_sec);
@@ -1882,7 +2004,6 @@ circuit_try_attaching_streams(origin_circuit_t *circ)
 void
 circuit_build_failed(origin_circuit_t *circ)
 {
-  channel_t *n_chan = NULL;
   /* we should examine circ and see if it failed because of
    * the last hop or an earlier hop. then use this info below.
    */
@@ -1932,48 +2053,8 @@ circuit_build_failed(origin_circuit_t *circ)
     failed_at_last_hop = 1;
   }
 
-  /* Check if we failed at first hop */
-  if (circ->cpath &&
-      circ->cpath->state != CPATH_STATE_OPEN &&
-      ! circ->base_.received_destroy) {
-    /* We failed at the first hop for some reason other than a DESTROY cell.
-     * If there's an OR connection to blame, blame it. Also, avoid this relay
-     * for a while, and fail any one-hop directory fetches destined for it. */
-    const char *n_chan_ident = circ->cpath->extend_info->identity_digest;
-    tor_assert(n_chan_ident);
-    int already_marked = 0;
-    if (circ->base_.n_chan) {
-      n_chan = circ->base_.n_chan;
-
-      if (n_chan->is_bad_for_new_circs) {
-        /* We only want to blame this router when a fresh healthy
-         * connection fails. So don't mark this router as newly failed,
-         * since maybe this was just an old circuit attempt that's
-         * finally timing out now. Also, there's no need to blow away
-         * circuits/streams/etc, since the failure of an unhealthy conn
-         * doesn't tell us much about whether a healthy conn would
-         * succeed. */
-        already_marked = 1;
-      }
-      log_info(LD_OR,
-               "Our circuit %u (id: %" PRIu32 ") failed to get a response "
-               "from the first hop (%s). I'm going to try to rotate to a "
-               "better connection.",
-               TO_CIRCUIT(circ)->n_circ_id, circ->global_identifier,
-               channel_describe_peer(n_chan));
-      n_chan->is_bad_for_new_circs = 1;
-    } else {
-      log_info(LD_OR,
-               "Our circuit %u (id: %" PRIu32 ") died before the first hop "
-               "with no connection",
-               TO_CIRCUIT(circ)->n_circ_id, circ->global_identifier);
-    }
-    if (!already_marked) {
-      /* if there are any one-hop streams waiting on this circuit, fail
-       * them now so they can retry elsewhere. */
-      connection_ap_fail_onehop(n_chan_ident, circ->build_state);
-    }
-  }
+  /* Channel retirement belongs to actual first-hop expiration, not circuit
+   * cleanup: another circuit or a local cancellation can have closed us. */
 
   switch (circ->base_.purpose) {
     case CIRCUIT_PURPOSE_C_HSDIR_GET:

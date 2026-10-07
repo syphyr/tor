@@ -1423,6 +1423,21 @@ attach_pending_entry_connections_cb(mainloop_event_t *ev, void *arg)
   connection_ap_attach_pending(0);
 }
 
+/** Retry waiting streams after a pending circuit becomes unusable. Defer
+ * attachment until after the current callback, since it can launch circuits.
+ * This also works during bootstrap, before periodic attachment is enabled. */
+void
+connection_ap_retry_pending(void)
+{
+  if (!pending_entry_connections ||
+      smartlist_len(pending_entry_connections) == 0) {
+    return;
+  }
+  tor_assert(attach_pending_entry_connections_ev);
+  untried_pending_connections = 1;
+  mainloop_event_activate(attach_pending_entry_connections_ev);
+}
+
 /** Mark <b>entry_conn</b> as needing to get attached to a circuit.
  *
  * And <b>entry_conn</b> must be in AP_CONN_STATE_CIRCUIT_WAIT,
@@ -1545,8 +1560,8 @@ connection_ap_fail_onehop(const char *failed_digest,
                                   entry_conn->socks_request->port))
         continue;
     }
-    log_info(LD_APP, "Closing one-hop stream to '%s/%s' because the OR conn "
-                     "just failed.", entry_conn->chosen_exit_name,
+    log_info(LD_APP, "Closing one-hop stream to '%s/%s' because its first-hop "
+                     "attempt failed.", entry_conn->chosen_exit_name,
                      entry_conn->socks_request->address);
     connection_mark_unattached_ap(entry_conn, END_STREAM_REASON_TIMEOUT);
   } SMARTLIST_FOREACH_END(conn);

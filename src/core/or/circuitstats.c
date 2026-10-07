@@ -129,7 +129,9 @@ circuit_build_times_note_connection_failure(origin_circuit_t *circ, int reason)
   cbt_diagnostic_increment(&cbt_diagnostics.connection_failed);
 }
 
-/** Record terminal build expiry independently of statistical/liveness gates.
+/** Record measurement or circuit expiry independently of statistical/liveness
+ * gates. Hop counts describe the stage at expiry, not the eventual outcome of
+ * a retained recovery probe, which may still complete after measurement ends.
  * The two marginal distributions must not be interpreted as a joint record.
  */
 void
@@ -155,6 +157,17 @@ circuit_build_times_note_expiry(origin_circuit_t *circ)
   cbt_note_excluded(circ);
 }
 
+/** Count channel recovery decisions, including one-hop directory attempts.
+ * A retirement counts a channel; preservation counts an expiring attempt
+ * whose channel completed another first-hop handshake in the meantime.
+ * Called only for terminal expiry, independently of CBT eligibility. */
+void
+circuit_build_times_note_channel_timeout(bool retired)
+{
+  cbt_diagnostic_increment(retired ? &cbt_diagnostics.channels_retired :
+                                    &cbt_diagnostics.firsthop_preserved);
+}
+
 /** Emit only during failure, at most once per five minutes. No peer, path,
  * circuit, service, or individual timing data enters this fixed vocabulary.
  */
@@ -163,8 +176,10 @@ circuit_build_times_report_diagnostics(time_t now)
 {
   cbt_diagnostics_t *d = &cbt_diagnostics;
   if (!(d->prefix_hops[0] || d->prefix_hops[1] || d->prefix_hops[2] ||
-        d->post_prefix || d->connection_failed))
+        d->post_prefix || d->connection_failed || d->channels_retired ||
+        d->firsthop_preserved)) {
     return;
+  }
   if (d->have_reported && difftime(now, d->last_report) < 300)
     return;
   log_notice(LD_CIRC, "Circuit build expiry summary: "
@@ -173,11 +188,15 @@ circuit_build_times_report_diagnostics(time_t now)
       "open_channel=%"PRIu64" other_channel=%"PRIu64" "
       "late_firsthop=%"PRIu64" completed=%"PRIu64" "
       "abandoned=%"PRIu64" excluded=%"PRIu64" adaptive=%d "
-      "connection_failed=%"PRIu64,
+      "connection_failed=%"PRIu64" channels_retired=%"PRIu64" "
+      "firsthop_preserved=%"PRIu64" "
+      "(build stages are at measurement or circuit expiry; "
+      "recovery probes may finish later)",
       d->prefix_hops[0], d->prefix_hops[1], d->prefix_hops[2], d->post_prefix,
       d->open_channel, d->other_channel, d->late_firsthop, d->completed,
       d->abandoned, d->excluded,
-      !circuit_build_times_disabled(get_options()), d->connection_failed);
+      !circuit_build_times_disabled(get_options()), d->connection_failed,
+      d->channels_retired, d->firsthop_preserved);
   memset(d, 0, sizeof(*d));
   d->last_report = now;
   d->have_reported = true;
@@ -775,6 +794,7 @@ int
 circuit_build_times_circ_can_record(const origin_circuit_t *circ)
 {
   return !circ->cbt_observation_invalidated &&
+    !circ->cbt_measurement_closed &&
     !circ->cbt_prefix_measurement_done &&
     circuit_timeout_want_to_count_circ(circ);
 }
@@ -821,7 +841,7 @@ circuit_build_times_handle_completed_hop(origin_circuit_t *circ)
    * way? If so, handle it below. If not, just return (and let
    * circuit_expire_building() eventually take care of it).
    */
-  if (circ->cbt_prefix_measurement_done ||
+  if (circ->cbt_prefix_measurement_done || circ->cbt_measurement_closed ||
       !circuit_timeout_want_to_count_circ(circ)) {
     return;
   }
