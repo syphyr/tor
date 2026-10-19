@@ -38,8 +38,8 @@
 set -e
 set -u
 
-TORGIT="$HOME/projects/tor/tor"
-TORDEBBASE="$HOME/projects/debian/debian/tor"
+TORGIT="${TORGIT:-$HOME/projects/tor/tor}"
+TORDEBBASE="${TORDEBBASE:-$HOME/projects/debian/debian/tor}"
 
 cd "$TORGIT"
 if [ -n "$(git status --porcelain)" ]; then
@@ -82,7 +82,25 @@ fi
 
 # verify upstream tarball
 tarball="$tordebdir/tor-$upv.tar.gz"
-gpg --verify "$tarball.asc"
+
+if [ -e "$tarball.asc" ]; then
+  gpg --verify "$tarball.asc"
+elif [ -e "${tarball}.sha256sum" ] && [ -e "${tarball}.sha256sum.asc" ] ; then
+  gpg --verify "${tarball}.sha256sum.asc"
+  expect="$(awk '{print $1}' < "${tarball}.sha256sum")"
+  if [ -z "${expect}" ]; then
+    echo >&2 "Did not get a checksum"
+    exit 1
+  fi
+  got="$(sha256sum < "${tarball}" | awk '{print $1}')"
+  if [ "${got}" != "${expect}" ]; then
+    echo >&2 "Checksum mismatch: expected: ${expect}; got: ${got}"
+    exit 1
+  fi
+else
+  echo >&2 "Unable to verify upstream tarball."
+  exit 1
+fi
 echo "Continue? [y/N]"; read ans; [ "$ans" = "y" ] || exit 1
 
 # verify git tag
@@ -96,23 +114,37 @@ echo "Continue? [y/N]"; read ans; [ "$ans" = "y" ] || exit 1
 # get current branch
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 tar=$(basename $tarball)
-git co pristine-tar
+git checkout pristine-tar
 if [ -e "$tar.id" ]; then
   echo >&1 "Tarball already committed."
 else
   pristine-tar commit "$tarball" "$tag"
 fi
 
-git co pristine-tar-signatures
-if [ -e "$tar.asc" ]; then
-  echo >&1 "Tarball signature already committed."
+git checkout pristine-tar-signatures
+if [ -e "$tarball.asc" ] ; then
+  if [ -e "$tar.asc" ]; then
+    echo >&1 "Tarball signature already committed."
+  else
+    cp "$tarball.asc" .
+    git add "$tar.asc"
+    git commit -m "Add $tar.asc" "$tar.asc"
+  fi
+elif [ -e "${tarball}.sha256sum" ] && [ -e "${tarball}.sha256sum.asc" ] ; then
+  if [ -e "$tar.sha256sum" ] && [ -e "$tar.sha256sum.asc" ] ; then
+    echo >&1 "Tarball sha256sum+signature already committed."
+  else
+    cp "${tarball}.sha256sum" "${tarball}.sha256sum.asc" .
+    git add "${tar}.sha256sum" "${tar}.sha256sum.asc"
+    git commit -m "Add ${tar}.sha256sum, ${tar}.sha256sum.asc" "${tar}.sha256sum" "${tar}.sha256sum.asc"
+  fi
 else
-  cp "$tarball.asc" .
-  git add "$tar.asc"
-  git ci -m "Add $tar.asc" "$tar.asc"
+  echo >&2 "No way to verify upstream tarball."
+  exit 1
 fi
+
 git push
-git co "$current_branch"
+git checkout "$current_branch"
 
 debtag="debian-tor-$chlogversion"
 if ! git tag -v "$debtag"; then
@@ -122,6 +154,7 @@ if ! git tag -v "$debtag"; then
   echo >&2 "  git tag -s $debtag -m 'tag $debtag'"
   exit 1
 fi
+git push
 git push --tags
 
 echo "All done, for now."
@@ -130,7 +163,7 @@ echo "Do the rest manually"
 
 ###
 cat > /dev/null << 'EOF'
-rsync -Pravz rouyi.torproject.org:/var/lib/jenkins/jobs/tor-debian-release-binaries/configurations/axis-ARCHITECTURE/\*/axis-SUITE/\*/builds/20/archive/RESULT/\* .
+#rsync -Pravz rouyi.torproject.org:/var/lib/jenkins/jobs/tor-debian-release-binaries/configurations/axis-ARCHITECTURE/\*/axis-SUITE/\*/builds/20/archive/RESULT/\* .
 
 
 #echo -n "Tor version: "
@@ -138,12 +171,14 @@ rsync -Pravz rouyi.torproject.org:/var/lib/jenkins/jobs/tor-debian-release-binar
 version=$(basename $(pwd)) &&
 debv=${version##*-} &&
 upv=${version%-*} &&
-echo "Version is $version, upstream is $upv, debian revision $debv"
+prevversion=$(\ls -1 .. | tail -n2 | head -n1) &&
+echo "Version is $version, upstream is $upv, debian revision $debv; prev is $prevversion"
 
-#echo -n "previos Tor version: "
-#if [ -n "${1:-}" ]; then echo "$1"; prevversion="$1"; shift; else read prevversion; fi
-read prevversion
-
+cp -av "gitlab-ci/source-packages/tor_${version}.diff.gz" .
+cp -av "gitlab-ci/source-packages/tor_${version}.dsc" .
+cp -av "gitlab-ci/source-packages/tor_${version}_src.changes" .
+cp -av "gitlab-ci/source-packages/tor_${upv}.orig.tar.gz" .
+cp -av "gitlab-ci/binary-packages/debian-amd64-sid/tor-geoipdb_${version}_all.deb" .
 
 zinterdiff -p1 "../$prevversion/tor_$prevversion.diff.gz" "tor_$version.diff.gz"
 debdiff --controlfiles=ALL "../$prevversion/tor-geoipdb_${prevversion}_all.deb" "tor-geoipdb_${version}_all.deb"
@@ -170,13 +205,28 @@ cat tor_${version}_weasel.changes
 #done > "tor_${version}.dsc"
 #changestool tor_${version}_weasel.changes updatechecksums
 
-gpg --verify tor-${upv}.tar.gz.asc
+if [ -e "tor-${upv}.tar.gz.asc" ]; then
+  gpg --verify tor-${upv}.tar.gz.asc
+elif [ -e "tor-${upv}.tar.gz.sha256sum" ] && [ -e "tor-${upv}.tar.gz.sha256sum.asc" ] ; then
+  gpg --verify "tor-${upv}.tar.gz.sha256sum.asc"
+  expect="$(awk '{print $1}' < "tor-${upv}.tar.gz.sha256sum")"
+  if [ -z "${expect}" ]; then
+    echo >&2 "Did not get a checksum.  Press enter." && read dummy
+  fi
+  got="$(sha256sum < "tor_${upv}.orig.tar.gz" | awk '{print $1}')"
+  if [ "${got}" != "${expect}" ]; then
+    echo -n >&2 "Checksum mismatch: expected: ${expect}; got: ${got};  Press enter." && read dummy
+  fi
+else
+  echo -n >&2 "Unable to verify upstream tarball.  Press enter." && read dummy
+fi
 #gpg --verify tor_${upv}.orig.tar.gz.asc
 grep "$(md5sum tor-${upv}.tar.gz | awk '{print $1}')" tor_${version}_weasel.changes
 grep "$(sha1sum tor-${upv}.tar.gz | awk '{print $1}')" tor_${version}_weasel.changes
 grep "$(sha256sum tor-${upv}.tar.gz | awk '{print $1}')" tor_${version}_weasel.changes
 
 debsign tor_${version}_weasel.changes
+cat tor_${version}_weasel.changes
 dput tor_${version}_weasel.changes
 
 # promote proposed-updates to release on palmeri

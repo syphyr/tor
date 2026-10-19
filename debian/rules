@@ -28,6 +28,7 @@ endif
 		$@ \
 		--with quilt \
 		--with autoreconf \
+		--with runit \
 		$(dhoptions) \
 		--builddirectory=build \
 		--parallel

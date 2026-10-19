@@ -39,6 +39,9 @@ jessie		d8.jessie	1
 stretch		d9.stretch	1
 buster		d10.buster	1
 bullseye	d11.bullseye	1
+bookworm	d12.bookworm	1
+trixie		d13.trixie	1
+forky       d14.forky   1
 
 lenny-bpo	bpo5		1	lenny-backports
 squeeze-bpo	bpo6		1	squeeze-backports
@@ -47,6 +50,9 @@ jessie-bpo	bpo8		1	jessie-backports
 stretch-bpo	bpo9		1	stretch-backports
 buster-bpo	bpo10		1	buster-backports
 bullseye-bpo	bpo11		1	bullseye-backports
+bookworm-bpo	bpo12		1	bookworm-backports
+trixie-bpo	bpo13		1	trixie-backports
+forky-bpo   bpo14       1   forky-backports
 
 dapper		dapper		1
 edgy		edgy		1
@@ -77,6 +83,18 @@ cosmic		cosmic		1
 disco		disco		1
 eoan		eoan		1
 focal		focal		1
+groovy		groovy		1
+hirsute		hirsute		1
+impish		impish		1
+jammy		jammy		1
+kinetic		kinetic		1
+lunar		lunar		1
+mantic		mantic		1
+noble		noble		1
+oracular	oracular	1
+plucky		plucky		1
+questing	questing	1
+resolute	resolute	1
 EOF
 )
 	if [ -z "$result" ] ; then

@@ -1,21 +1,23 @@
 Source: tor
 Section: net
 Priority: optional
-Maintainer: Peter Palfrader <weasel@debian.org>
-Build-Depends: debhelper (>= 9.20160114), quilt, libssl-dev, zlib1g-dev, libevent-dev (>= 1.1), asciidoc (>= 8.2), docbook-xml, docbook-xsl, xmlto, dh-apparmor, libseccomp-dev [amd64 i386], dh-systemd [linux-any], libsystemd-dev [linux-any], pkg-config [linux-any], libcap-dev [linux-any], dh-autoreconf, liblzma-dev, libzstd-dev
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Peter Palfrader <weasel@debian.org>
+Build-Depends: debhelper (>= 10), quilt, libssl-dev, zlib1g-dev, libevent-dev (>= 1.1), asciidoc (>= 8.2), docbook-xml, docbook-xsl, xmlto, dh-apparmor, libseccomp-dev [amd64 i386], libsystemd-dev [linux-any], pkg-config [linux-any], libcap-dev [linux-any], dh-autoreconf, liblzma-dev, libzstd-dev, dh-runit (>= 2.8.8)
 Build-Conflicts: libnacl-dev, libseccomp-dev [!amd64 !i386]
-Standards-Version: 3.9.8
+Standards-Version: 4.4.0
 Homepage: https://www.torproject.org/
-Vcs-Git: https://git.torproject.org/debian/tor.git
-Vcs-Browser: https://gitweb.torproject.org/debian/tor.git
+Vcs-Git: https://gitlab.torproject.org/tpo/core/debian/tor/
+Vcs-Browser: https://gitlab.torproject.org/tpo/core/debian/tor/
 
 Package: tor
 Architecture: any
 Depends: ${shlibs:Depends}, adduser, ${misc:Depends}, lsb-base
 Pre-Depends: ${misc:Pre-Depends}
 Conflicts: libssl0.9.8 (<< 0.9.8g-9)
+Breaks: ${runit:Breaks}
 Recommends: logrotate, tor-geoipdb, torsocks
-Suggests: mixmaster, torbrowser-launcher, socat, tor-arm, apparmor-utils, tor-arm, obfs4proxy
+Suggests: mixmaster, torbrowser-launcher, socat, apparmor-utils, nyx, obfs4proxy
 Description: anonymizing overlay network for TCP
  Tor is a connection-based low-latency anonymous communication system.
  .
@@ -49,7 +51,7 @@ Description: anonymizing overlay network for TCP
 
 Package: tor-geoipdb
 Architecture: all
-Priority: extra
+Priority: optional
 Depends: tor (>= ${source:Version}), ${misc:Depends}
 Replaces: tor (<< 0.2.4.8)
 Breaks: tor (<< 0.2.4.8)

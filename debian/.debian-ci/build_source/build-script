@@ -1,0 +1,205 @@
+#!/bin/bash
+
+# given upstream tor and the debian-tor repos in src/tor and src/debian-tor, build a debian
+# source package.
+
+
+# Copyright 2007--2021 Peter Palfrader
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+set -e
+set -u
+set -x
+
+fudge_upstream_version() {
+  # set the upstream version in configure.ac correctly
+  local pkggitdir="$1"; shift
+
+  if ! [ -e configure.ac ]; then
+    echo >&2 "Did not find configure.at"
+    exit 1
+  fi
+
+  if [ "$(grep -c AC_INIT configure.ac)" != 1 ]; then
+    echo >&2 "Did not find exactly one AC_INIT"
+    exit 1
+  fi
+
+  sed -i -e '/^AC_INIT(/ s/\(-dev\)\?])/-dev])/' configure.ac
+
+  if [ "$(grep -c "AC_INIT.*-dev" configure.ac)" != 1 ]; then
+    echo >&2 "Unexpect version in configure.ac."
+    exit 1
+  fi
+}
+
+
+pkg=tor
+
+pkggitdir="src/${pkg}"
+pkggitdir="$(readlink -f "$pkggitdir")"
+
+debgitdir="src/debian-${pkg}"
+debgitdir="$(readlink -f "$debgitdir")"
+
+rm -rf RESULT
+rm -f *.tar.gz
+
+if [ -z "${CI_COMMIT_BRANCH:-}" ] ; then
+  # building a (release?) tag
+  echo >&2 "Only can build branches currently."
+  exit 1
+fi
+
+# building a branch
+if [ "${CI_COMMIT_BRANCH#debian-}" = "$CI_COMMIT_BRANCH" ]; then
+  echo >&2 "Branch name does not start with 'debian-'."
+  exit 1
+elif [ "${CI_COMMIT_BRANCH}" = "debian-main" ]; then
+  upstream_branch=main
+else
+  upstream_branch="maint-${CI_COMMIT_BRANCH#debian-}"
+fi
+
+
+# prepare upstream dir
+echo "Preparing upstream directory"
+echo "========================================"
+pushd .
+cd "$pkggitdir"
+
+git checkout "$upstream_branch"
+rev_upstream_branch="$(  git rev-parse --short=16 "$upstream_branch" )"
+if [ -z "${rev_upstream_branch}" ]; then echo >&2 "Could not get revision of upstream branch $upstream_branch."; exit 1; fi
+
+if [ "$upstream_branch" = "main" ]; then
+  pkgrev="${rev_upstream_branch}"
+  distribution="${pkg}-nightly-main"
+else
+  upstream_branch_version_number="${upstream_branch#maint-}"
+  upstream_release_branch="release-${upstream_branch_version_number}" &&
+
+  git checkout "${upstream_release_branch}"
+  rev_release_branch="$(git rev-parse --short=16 "$upstream_release_branch")"
+  if [ -z "${rev_release_branch}" ]; then echo >&2 "Could not get revision of release branch $upstream_release_branch."; exit 1; fi
+
+  git merge --no-commit "${upstream_branch}"
+
+  pkgrev="${rev_release_branch}+${rev_upstream_branch}"
+  distribution="${pkg}-nightly-${upstream_branch_version_number}.x"
+fi
+
+fudge_upstream_version "${pkggitdir}"
+popd
+
+
+debianrev=$(cd "$debgitdir" && git rev-parse --short HEAD)
+ts="$(TZ=UTC date +%Y%m%dT%H%M%SZ)"
+
+
+# build release tarball
+#######################
+echo "Building release tarball"
+echo "========================================"
+pushd .
+
+(cd "${pkggitdir}" && ./autogen.sh)
+
+mkdir build-tree-dist
+cd build-tree-dist
+
+"${pkggitdir}/configure" --disable-silent-rules --enable-gcc-warnings
+if [ "$(ls -1 *.tar.gz 2>/dev/null | wc -l)" != 0 ] ; then
+    echo >&2 "We already have one .tar.gz file before make dist. Confused."
+    exit 1
+fi
+make dist
+if [ "$(ls -1 *.tar.gz | wc -l)" != 1 ] ; then
+    echo >&2 "Do not have exactly one .tar.gz file after make dist. Confused."
+    exit 1
+fi
+
+tgz="$(echo -n *.tar.gz)"
+tgz="$(readlink -f "$tgz")"
+
+popd
+
+# prepare debian source package
+###############################
+echo "Prepearing Debian source package"
+echo "========================================"
+pushd .
+
+tardir="$(tar taf "$tgz" 2>/dev/null | head -n1)"
+tardir="${tardir%%/}"
+dir_version="${tardir##${pkg}-}"
+build_version="${dir_version}-${ts}"
+ddir="${pkg}-${build_version}"
+debian_version="${build_version}-1"
+
+mkdir build-tree-deb
+cd build-tree-deb
+
+tar xaf "$tgz"
+[ "$tardir" = "$ddir" ] || mv "$tardir" "$ddir"
+echo "\"$pkgrev\"" > "$ddir/micro-revision.i"
+
+origtar="${pkg}_${build_version}.orig.tar.gz"
+tar caf "$origtar" "$ddir"
+
+cp -ra "${debgitdir}/debian" "$ddir"
+echo "\"${pkgrev}+${debianrev}\"" > "${ddir}/debian/micro-revision.i"
+
+( cd "$ddir" &&
+  dch --force-distribution \
+    --distribution "$distribution" \
+    --force-bad-version \
+    --newversion "${debian_version}" \
+    "Automated build of "$pkg"-nightly at $ts, git revision $pkgrev with debiantree $debianrev."
+)
+
+dpkg-source -b $ddir $origtar
+
+# build them ALL
+echo "Creating backported debian source packages"
+echo "===================="
+PATH="$debgitdir/debian/misc:$PATH"
+
+. "$(which build-tor-sources)"
+set -x
+set +e
+backport_all "$pkg" "$ddir" "$origtar" "$debian_version"
+
+include_orig="-sa"
+for i in *.dsc; do
+    dpkg-source -x "$i"
+    (cd "$ddir" && dpkg-genchanges -S $include_orig) > ${i%.dsc}_src.changes
+    include_orig=""
+    rm -r "$ddir"
+done
+
+mkdir RESULT
+for i in *changes; do dcmd mv -v $i RESULT; done
+echo "$build_version" > RESULT/version.txt
+echo "$debian_version" >> RESULT/version.txt
+mv RESULT ..
+
+popd

@@ -22,7 +22,7 @@ for details.
 As of the 0.3.0.x tree, the Debian packages for Tor by
 default log to syslog.
 
-You can restore the previous behaviour by adding something
+You can restore the previous behavior by adding something
 like "Log notice file /var/log/tor/log" to your torrc.
 
 # Filesystem access by the Tor service
@@ -40,11 +40,11 @@ via UNIX domain sockets (see also the tor(1) manpage).
 UNIX domain sockets are not currently covered by filesystem restrictions
 from systemd and apparmor.  As such, they can be put anywhere as long as
 the filesystem namespace is visible.  In particular, this means /home
-does not not work by default, but anything under /var should.
+does not work by default, but anything under /var should.
 
 It is suggested that sockets be placed in a special directory under
 /var/lib [3].  Note that while systemd and apparmor do not currently
-limit access to to sockets, you still need to ensure that the Tor
+limit access to sockets, you still need to ensure that the Tor
 process may access them according to the default UNIX file and directory
 permissions.
 

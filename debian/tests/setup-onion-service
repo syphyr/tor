@@ -89,7 +89,7 @@ launchshare() {
       echo "================"
     fi
     echo "(Re-)Launching onionshare."
-    pipetty onionshare --debug data > "$ONIONSHARELOG" 2>&1 &
+    pipetty onionshare-cli --public --verbose data > "$ONIONSHARELOG" 2>&1 &
     onionsharepid="$!"
   fi
 }
@@ -139,7 +139,7 @@ launchshare
 
 timeout=600
 while [ "$timeout" -ge 0 ]; do
-  url=$(grep '^http.*\.onion/' "$ONIONSHARELOG" || true)
+  url=$(grep --only-matching 'http.*\.onion' "$ONIONSHARELOG" || true)
   [ -n "$url" ] && break
   sleep 1
   launchshare
@@ -156,7 +156,7 @@ torsocks 2>&1 -a "$socksaddr" -P "$socksport" \
     --retry 5 \
     --max-time 300 \
     --location \
-    -o data.zip \
+    -o data.out \
     --stderr - \
     "$url/download" && rc=0 || rc=$?
 
@@ -167,9 +167,7 @@ fi
 
 echo "Comparing file."
 
-(mkdir unzip && cd unzip && unzip ../data.zip)
-
-if cmp data unzip/data; then
+if cmp data data.out; then
   echo "Successfully downloaded file."
   exit 0
 else

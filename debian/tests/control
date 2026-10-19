@@ -4,5 +4,5 @@ Depends: tor, netcat-openbsd, torsocks, curl, ca-certificates
 # Restrictions: isolation-container
 
 Tests: setup-onion-service
-Depends: tor, netcat-openbsd, torsocks, curl, onionshare, colorized-logs, unzip, diffutils
+Depends: tor, netcat-openbsd, torsocks, curl, onionshare-cli, colorized-logs, diffutils
 Restrictions: flaky

@@ -1,8 +1,470 @@
-tor (0.4.2.7-1) unstable; urgency=medium
+tor (0.4.9.14-1b) unstable; urgency=medium
+
+  * Backport 0.4.9.11
+    - This minor release fixes various bugs and prevents several
+      denial of service issues.
+    - This prevents being rendered non functional when older
+      versions will be sunset on September 2026
+      https://blog.torproject.org/sunsetting-tor-048/
+      (LP: #2163259)
+    - Consult the upstream changelog for more details.
+
+ -- Christian Ehrhardt <christian.ehrhardt@canonical.com>  Thu, 13 Aug 2026 10:25:03 +0200
+
+tor (0.4.9.11-1build1) stonking; urgency=medium
+
+  * No-change rebuild against libssl4
+
+ -- Ravi Kant Sharma <ravi.kant.sharma@canonical.com>  Fri, 24 Jul 2026 11:22:29 +0000
+
+tor (0.4.9.11-1) unstable; urgency=medium
 
   * New upstream version.
 
- -- Peter Palfrader <weasel@debian.org>  Wed, 18 Mar 2020 21:33:26 +0100
+ -- Jérôme Charaoui <jerome@riseup.net>  Fri, 26 Jun 2026 10:54:15 -0400
+
+tor (0.4.9.10-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Wed, 24 Jun 2026 09:38:44 -0400
+
+tor (0.4.9.9-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Mon, 01 Jun 2026 14:00:15 -0400
+
+tor (0.4.9.8-1) unstable; urgency=medium
+
+  [ Jérôme Charaoui ]
+  * New upstream version.
+
+  [ Peter Palfrader ]
+  * Update the apparmor profile to allow tor reading everything below
+    /etc/tor/, not just at the top level.  Thanks to alexey.
+    Re: #888728.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Thu, 07 May 2026 11:23:20 -0400
+
+tor (0.4.9.7-1) unstable; urgency=medium
+
+  [ Jérôme Charaoui ]
+  * New upstream version.
+
+  [ Peter Palfrader ]
+  * Update Vcs-Git and Vcs-Browser fields.  Thanks to onders.
+    Closes: #1132669.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Wed, 06 May 2026 14:02:01 -0400
+
+tor (0.4.9.6-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Drop 64b5638b backport patch
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Wed, 25 Mar 2026 14:55:12 -0400
+
+tor (0.4.9.5-2) unstable; urgency=medium
+
+  * Include 64b5638b from
+    https://gitlab.torproject.org/tpo/core/tor/-/merge_requests/990
+    to fix issues on big-endian systems (closes: #1128946)
+  * tests/setup-onion-service: include onionshare -> onionshare-cli dependency
+    change from the debian-main branch, also dropping the unzip dependency.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 26 Feb 2026 12:29:42 +0100
+
+tor (0.4.9.5-1) unstable; urgency=medium
+
+  * New upsteam tree.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Thu, 12 Feb 2026 13:11:02 -0500
+
+tor (0.4.8.22-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Wed, 28 Jan 2026 14:36:16 -0500
+
+tor (0.4.8.21-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Mon, 17 Nov 2025 15:05:05 -0500
+
+tor (0.4.8.20-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Mon, 10 Nov 2025 15:37:11 -0500
+
+tor (0.4.8.19-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Gabriel Filion <lelutin@torproject.org>  Thu, 09 Oct 2025 16:31:29 -0400
+
+tor (0.4.8.18-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Tue, 16 Sep 2025 13:05:13 -0400
+
+tor (0.4.8.17-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Gabriel Filion <lelutin@torproject.org>  Thu, 17 Jul 2025 15:37:06 -0400
+
+tor (0.4.8.16-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Tue, 25 Mar 2025 14:01:26 -0400
+
+tor (0.4.8.15-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Drop sandboxing patch which has been merged upstream.
+
+ -- Jérôme Charaoui <jerome@riseup.net>  Thu, 20 Mar 2025 15:02:20 -0400
+
+tor (0.4.8.14-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sat, 08 Feb 2025 10:39:20 +0100
+
+tor (0.4.8.13-2) unstable; urgency=medium
+
+  * Incorporate work by Helmut Grohne, Chris Hofstaedtler and others to
+    install systemd services into /usr (DEP17 M2; closes: #1073748).
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 31 Oct 2024 19:49:08 +0100
+
+tor (0.4.8.13-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Include patch from
+    https://gitlab.torproject.org/tpo/core/tor/-/merge_requests/821
+    to make sandboxing work again in some cases.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 28 Oct 2024 20:13:37 +0100
+
+tor (0.4.8.12-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 06 Jun 2024 16:47:06 +0200
+
+tor (0.4.8.11-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Fri, 12 Apr 2024 09:22:56 +0200
+
+tor (0.4.8.10-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sun, 10 Dec 2023 20:09:09 +0100
+
+tor (0.4.8.9-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Fri, 10 Nov 2023 18:29:41 +0100
+
+tor (0.4.8.8-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sun, 05 Nov 2023 18:58:59 +0100
+
+tor (0.4.8.7-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Wed, 04 Oct 2023 19:58:14 +0200
+
+tor (0.4.8.6-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 18 Sep 2023 20:07:19 +0200
+
+tor (0.4.8.5-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Retire postinst code that deals with broken keys from 2008
+    and apparmor migrations from 2012.
+  * tor.postinst: use command -v in place of which.
+
+ -- Peter Palfrader <weasel@debian.org>  Wed, 30 Aug 2023 20:19:26 +0200
+
+tor (0.4.8.4-2) unstable; urgency=medium
+
+  * Enable building with the Proof-of-Work feature by configuring with
+    --enable-gpl.  Note that this causes the resulting binary to be covered
+    by the GPL.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 24 Aug 2023 08:02:38 +0200
+
+tor (0.4.8.4-1) unstable; urgency=medium
+
+  * New upstream tree.
+
+ -- Peter Palfrader <weasel@debian.org>  Wed, 23 Aug 2023 21:51:49 +0200
+
+tor (0.4.7.13-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 12 Jan 2023 18:31:32 +0100
+
+tor (0.4.7.12-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Put tor services after network-online.target instead of after
+    network.target (re: tpo/core/tor#40679).
+
+ -- Peter Palfrader <weasel@debian.org>  Sat, 10 Dec 2022 17:15:53 +0100
+
+tor (0.4.7.11-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sat, 12 Nov 2022 09:58:38 +0100
+
+tor (0.4.7.10-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Wed, 17 Aug 2022 21:26:27 +0200
+
+tor (0.4.7.9-1) unstable; urgency=medium
+
+  [ Pier Angelo Vendrame ]
+  * Update apparmor policy to allow running snowflake-client.
+
+  [ Peter Palfrader ]
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 11 Aug 2022 17:47:24 +0200
+
+tor (0.4.7.8-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sun, 19 Jun 2022 14:19:53 +0200
+
+tor (0.4.7.7-1) unstable; urgency=medium
+
+  * Upload 0.4.7.x tree to unstable.
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Wed, 27 Apr 2022 23:52:43 +0200
+
+tor (0.4.7.6-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 25 Apr 2022 20:55:00 +0200
+
+tor (0.4.7.5-alpha-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Fri, 25 Mar 2022 20:21:04 +0100
+
+tor (0.4.7.4-alpha-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sat, 26 Feb 2022 22:01:37 +0100
+
+tor (0.4.7.3-alpha-1) experimental; urgency=medium
+
+  * New upstream tree.
+
+ -- Peter Palfrader <weasel@debian.org>  Sun, 19 Dec 2021 21:59:38 +0100
+
+tor (0.4.6.8-1) unstable; urgency=medium
+
+  * Upload 0.4.6.x tree to unstable.
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Sun, 31 Oct 2021 13:35:00 +0100
+
+tor (0.4.6.7-1) experimental; urgency=medium
+
+  * New upstream version.
+    - Resolve an assertion failure caused by a behavior mismatch between our
+      batch-signature verification code and our single-signature verification
+      code. This assertion failure could be triggered remotely, leading to a
+      denial of service attack. We fix this issue by disabling batch
+      verification. Fixes bug 40078; bugfix on 0.2.6.1-alpha. This issue is
+      also tracked as TROVE-2021-007 and CVE-2021-38385. Found by Henry de
+      Valence.
+  * Raise debian/compat from 9 to 10.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 19 Aug 2021 20:28:49 +0200
+
+tor (0.4.6.6-1) experimental; urgency=medium
+
+  * New upstream version.
+  * Update Suggests: from tor-arm to nyx (closes: #991012).
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 13 Jul 2021 09:55:23 +0200
+
+tor (0.4.6.5-1) experimental; urgency=medium
+
+  * New upstream version, fixing several (security) issues (closes: #990000).
+    For a full list see the upstream changelog.  It includes:
+    - Don't allow relays to spoof RELAY_END or RELAY_RESOLVED cell on
+      half-closed streams. Previously, clients failed to validate which
+      hop sent these cells: this would allow a relay on a circuit to end
+      a stream that wasn't actually built with it.
+      Bugfix on 0.3.5.1-alpha. This issue is also tracked as TROVE-2021-
+      003 and CVE-2021-34548.
+    - Detect more failure conditions from the OpenSSL RNG code.
+      Previously, we would detect errors from a missing RNG
+      implementation, but not failures from the RNG code itself.
+      Fortunately, it appears those failures do not happen in practice
+      when Tor is using OpenSSL's default RNG implementation.
+      Bugfix on 0.2.8.1-alpha. This issue is also tracked as
+      TROVE-2021-004. Reported by Jann Horn at Google's Project Zero.
+    - Resist a hashtable-based CPU denial-of-service attack against
+      relays. Previously we used a naive unkeyed hash function to look
+      up circuits in a circuitmux object. An attacker could exploit this
+      to construct circuits with chosen circuit IDs, to create
+      collisions and make the hash table inefficient. Now we use a
+      SipHash construction here instead. Bugfix on
+      0.2.4.4-alpha. This issue is also tracked as TROVE-2021-005 and
+      CVE-2021-34549. Reported by Jann Horn from Google's Project Zero.
+    - Fix an out-of-bounds memory access in v3 onion service descriptor
+      parsing. An attacker could exploit this bug by crafting an onion
+      service descriptor that would crash any client that tried to visit
+      it. Bugfix on 0.3.0.1-alpha. This issue is also
+      tracked as TROVE-2021-006 and CVE-2021-34550. Reported by Sergei
+      Glazunov from Google's Project Zero.
+
+ -- Peter Palfrader <weasel@debian.org>  Fri, 18 Jun 2021 11:57:06 +0200
+
+tor (0.4.6.4-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 03 Jun 2021 14:12:41 +0200
+
+tor (0.4.6.3-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 10 May 2021 16:47:40 +0200
+
+tor (0.4.6.2-alpha-1) experimental; urgency=medium
+
+  * New upstream tree.
+
+ -- Peter Palfrader <weasel@debian.org>  Thu, 06 May 2021 15:19:54 +0200
+
+tor (0.4.5.7-1) unstable; urgency=high
+
+  * New upstream version, fixes two security issues:
+    - Disable the dump_desc() function.
+      (TROVE-2021-001 and CVE-2021-28089).
+    - Fix a bug in appending detached signatures.
+      (TROVE-2021-002 and CVE-2021-28090)
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 16 Mar 2021 15:01:09 +0100
+
+tor (0.4.5.6-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 16 Feb 2021 08:43:47 +0100
+
+tor (0.4.5.5-rc-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Upload 0.4.5.x tree to unstable; this is the last RC of that tree.
+    If all goes well, it will be the next stable, so try to get it some
+    more testing.
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 02 Feb 2021 07:36:28 +0100
+
+tor (0.4.5.4-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Fri, 22 Jan 2021 18:09:28 +0100
+
+tor (0.4.5.3-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Wed, 13 Jan 2021 09:02:04 +0100
+
+tor (0.4.5.2-alpha-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 24 Nov 2020 08:24:24 +0100
+
+tor (0.4.5.1-alpha-1) experimental; urgency=medium
+
+  * New upstream tree.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 02 Nov 2020 12:51:15 +0100
+
+tor (0.4.4.5-1) unstable; urgency=medium
+
+  * Upload 0.4.4.x tree to unstable.
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 15 Sep 2020 15:39:59 +0200
+
+tor (0.4.4.4-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+  * Drop build dependency on (now obsolete) dh-systemd and instead raise
+    the debhelper versioned dependency to >= 9.20160114 from >= 9.20160709
+    (closes: #958622).
+
+ -- Peter Palfrader <weasel@debian.org>  Sat, 05 Sep 2020 13:33:31 +0200
+
+tor (0.4.4.2-alpha-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 13 Jul 2020 15:08:23 +0200
+
+tor (0.4.4.1-alpha-1) experimental; urgency=medium
+
+  * New upstream tree.
+
+ -- Peter Palfrader <weasel@debian.org>  Mon, 22 Jun 2020 08:00:16 +0200
+
+tor (0.4.3.5-1) unstable; urgency=medium
+
+  * Upload 0.4.3.x tree to unstable.
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Fri, 15 May 2020 15:01:38 +0200
+
+tor (0.4.3.4-rc-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 14 Apr 2020 07:40:28 +0200
+
+tor (0.4.3.2-alpha-1) experimental; urgency=medium
+
+  * New upstream tree.
+
+ -- Peter Palfrader <weasel@debian.org>  Tue, 11 Feb 2020 08:18:43 +0100
 
 tor (0.4.2.6-1) unstable; urgency=medium
 
